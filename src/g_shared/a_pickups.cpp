@@ -13,6 +13,15 @@
 #include "gstrings.h"
 #include "templates.h"
 #include "a_strifeglobal.h"
+#include "deathmatch.h"
+#include "network.h"
+#include "sv_commands.h"
+#include "team.h"
+#include "invasion.h"
+#include "cooperative.h"
+#include "cl_commands.h"
+#include "announcer.h"
+#include "scoreboard.h"
 
 static FRandom pr_restore ("RestorePos");
 
@@ -76,7 +85,9 @@ bool AAmmo::HandlePickup (AInventory *item)
 			int receiving = item->Amount;
 
 			// extra ammo in baby mode and nightmare mode
-			if (gameskill == sk_baby || (gameskill == sk_nightmare && gameinfo.gametype != GAME_Strife))
+			// [BC] Also allow this to be done via dmflags.
+			if ((gameskill == sk_baby || (gameskill == sk_nightmare && gameinfo.gametype != GAME_Strife)) ||
+				( dmflags2 & DF2_YES_DOUBLEAMMO ))
 			{
 				if (gameinfo.gametype & (GAME_Doom|GAME_Strife))
 					receiving += receiving;
@@ -98,7 +109,8 @@ bool AAmmo::HandlePickup (AInventory *item)
 			assert (Owner != NULL);
 
 			if (oldamount == 0 && Owner != NULL && Owner->player != NULL &&
-				!Owner->player->userinfo.neverswitch &&
+				( NETWORK_GetState( ) != NETSTATE_SERVER ) && // [BC] Let clients decide if they want to switch weapons.
+				( Owner->player->userinfo.switchonpickup > 0 ) &&
 				Owner->player->PendingWeapon == WP_NOCHANGE && 
 				(Owner->player->ReadyWeapon == NULL ||
 				 (Owner->player->ReadyWeapon->WeaponFlags & WIF_WIMPY_WEAPON)))
@@ -108,6 +120,10 @@ bool AAmmo::HandlePickup (AInventory *item)
 					best->SelectionOrder < Owner->player->ReadyWeapon->SelectionOrder))
 				{
 					Owner->player->PendingWeapon = best;
+
+					// [BC] If we're a client, tell the server we're switching weapons.
+					if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && (( Owner->player - players ) == consoleplayer ))
+						CLIENTCOMMANDS_WeaponSelect( ( char *)best->GetClass( )->TypeName.GetChars( ));
 				}
 			}
 		}
@@ -132,7 +148,9 @@ AInventory *AAmmo::CreateCopy (AActor *other)
 	int amount = Amount;
 
 	// extra ammo in baby mode and nightmare mode
-	if (gameskill == sk_baby || (gameskill == sk_nightmare && gameinfo.gametype != GAME_Strife))
+	// [BC] Also allow this to be done via dmflags.
+	if ((gameskill == sk_baby || (gameskill == sk_nightmare && gameinfo.gametype != GAME_Strife)) ||
+		( dmflags2 & DF2_YES_DOUBLEAMMO ))
 	{
 		if (gameinfo.gametype & (GAME_Doom|GAME_Strife))
 			amount <<= 1;
@@ -146,7 +164,16 @@ AInventory *AAmmo::CreateCopy (AActor *other)
 		assert (type->ActorInfo != NULL);
 		if (!GoAway ())
 		{
-			Destroy ();
+			// [BC] In certain modes, hide this item indefinitely so we can respawn it if
+			// necessary.
+			if ((( flags & MF_DROPPED ) == false ) && ( survival || duel || lastmanstanding || teamlms || invasion ))
+				SetState( &AInventory::States[17] );
+			// [BC] Changed this so it stays around for one frame.
+			else
+			{
+				SetState (&AInventory::States[16]);
+//				Destroy ();
+			}
 		}
 
 		copy = static_cast<AInventory *>(Spawn (type, 0, 0, 0, NO_REPLACE));
@@ -182,7 +209,12 @@ bool P_GiveBody (AActor *actor, int num)
 
 	if (player != NULL)
 	{
-		max = static_cast<APlayerPawn*>(actor)->GetMaxHealth() + player->stamina;
+		// [BC] Apply the prosperity power.
+		if ( player->Powers & PW_PROSPERITY )
+			max = deh.MaxSoulsphere + 50;
+		// [BC] Add the player's max. health bonus to his max.
+		else
+			max = static_cast<APlayerPawn*>(actor)->GetMaxHealth() + player->stamina + player->lMaxHealthBonus;
 		if (player->morphTics)
 		{
 			max = MAXMORPHHEALTH;
@@ -304,6 +336,14 @@ END_DEFAULTS
 
 void A_RestoreSpecialDoomThing (AActor *self)
 {
+	// [BC] Clients have their own version of this function.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		// Just go back into hiding until the server tells this item to respawn.
+		static_cast<AInventory *>( self )->Hide( );
+		return;
+	}
+
 	self->renderflags &= ~RF_INVISIBLE;
 	self->flags |= MF_SPECIAL;
 	if (!(self->GetDefault()->flags & MF_NOGRAVITY))
@@ -312,6 +352,10 @@ void A_RestoreSpecialDoomThing (AActor *self)
 	}
 	if (static_cast<AInventory *>(self)->DoRespawn ())
 	{
+		// [BC] Tell clients that this item has respawned.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_RespawnThing( self, true );
+
 		self->SetState (self->SpawnState);
 		S_Sound (self, CHAN_VOICE, "misc/spawn", 1, ATTN_IDLE);
 		Spawn<AItemFog> (self->x, self->y, self->z, ALLOW_REPLACE);
@@ -420,6 +464,10 @@ FState AInventory::States[] =
 
 #define S_HOLDANDDESTROY (S_HELD+1)
 	S_NORMAL (TNT1, 'A',	1, NULL							, NULL),
+
+// [BC] Hide this item until told to return.
+#define S_HIDEINDEFINITELY (S_HOLDANDDESTROY+1)
+	S_NORMAL (TNT1, 'A', 1050, NULL							, &States[S_HIDEINDEFINITELY]),
 };
 
 int AInventory::StaticLastMessageTic;
@@ -601,7 +649,13 @@ bool AInventory::GoAway ()
 		{
 			Spawn<APickupFlash> (x, y, z, ALLOW_REPLACE);
 		}
-		Hide ();
+/*
+		// [BC] Test
+		if ( invasion || survival || duel || lastmanstanding || teamlms )
+			HideIndefinitely( );
+		else
+*/
+			Hide ();
 		if (ShouldRespawn ())
 		{
 			return true;
@@ -625,7 +679,13 @@ void AInventory::GoAwayAndDie ()
 	if (!GoAway ())
 	{
 		flags &= ~MF_SPECIAL;
-		SetState (&States[S_HOLDANDDESTROY]);
+
+		// [BC] In certain modes, hide this item indefinitely so we can respawn it if
+		// necessary.
+		if ((( flags & MF_DROPPED ) == false ) && ( survival || duel || lastmanstanding || teamlms || invasion ))
+			SetState( &States[S_HIDEINDEFINITELY] );
+		else
+			SetState (&States[S_HOLDANDDESTROY]);
 	}
 }
 
@@ -810,6 +870,26 @@ bool AInventory::Use (bool pickup)
 
 void AInventory::Hide ()
 {
+	ULONG	ulIdx;
+
+	// [BC] If this is a bot's goal object, tell the bot it's been removed.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playeringame[ulIdx] == false )
+			continue;
+
+		if ( players[ulIdx].pSkullBot == NULL )
+			continue;
+
+		if ( this == players[ulIdx].pSkullBot->m_pGoalActor )
+		{
+			players[ulIdx].pSkullBot->m_pGoalActor = NULL;
+			players[ulIdx].pSkullBot->PostEvent( BOTEVENT_GOAL_REMOVED );
+			players[ulIdx].pSkullBot->m_ulPathType = BOTPATHTYPE_NONE;
+//			ASTAR_ClearPath( ulIdx );
+		}
+	}
+
  	flags = (flags & ~MF_SPECIAL) | MF_NOGRAVITY;
 	renderflags |= RF_INVISIBLE;
 	if (gameinfo.gametype & GAME_Raven)
@@ -829,6 +909,38 @@ void AInventory::Hide ()
 	}
 }
 
+//===========================================================================
+//
+// [BC] AInventory :: HideIndefinitely
+//
+// Hides this actor until an event comes along that brings it back.
+//
+//===========================================================================
+
+void AInventory::HideIndefinitely ()
+{
+	ULONG	ulIdx;
+
+	// If this is a bot's goal object, tell the bot it's been removed.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] == false ) || ( players[ulIdx].pSkullBot == NULL ))
+			continue;
+
+		if ( this == players[ulIdx].pSkullBot->m_pGoalActor )
+		{
+			players[ulIdx].pSkullBot->m_pGoalActor = NULL;
+			players[ulIdx].pSkullBot->PostEvent( BOTEVENT_GOAL_REMOVED );
+			players[ulIdx].pSkullBot->m_ulPathType = BOTPATHTYPE_NONE;
+//			ASTAR_ClearPath( ulIdx );
+		}
+	}
+
+	flags = (flags & ~MF_SPECIAL) | MF_NOGRAVITY;
+	renderflags |= RF_INVISIBLE;
+
+	SetState (&States[S_HIDEINDEFINITELY]);
+}
 
 //===========================================================================
 //
@@ -858,6 +970,20 @@ static void PrintPickupMessage (const char *str)
 
 void AInventory::Touch (AActor *toucher)
 {
+	AInventory	*pInventory;
+
+	// [BC] If this item was a bot's goal item, and it's reaching it, let the bot know that.
+	if ( toucher->player && toucher->player->pSkullBot )
+	{
+		if ( toucher->player->pSkullBot->m_pGoalActor == this )
+		{
+			toucher->player->pSkullBot->m_pGoalActor = NULL;
+			toucher->player->pSkullBot->PostEvent( BOTEVENT_REACHED_GOAL );
+			toucher->player->pSkullBot->m_ulPathType = BOTPATHTYPE_NONE;
+//			ASTAR_ClearPath( toucher->player - players );
+		}
+	}
+
 	// If a voodoo doll touches something, pretend the real player touched it instead.
 	if (toucher->player != NULL)
 	{
@@ -867,34 +993,65 @@ void AInventory::Touch (AActor *toucher)
 	if (!TryPickup (toucher))
 		return;
 
+	// [BC] Tell the client that he successfully picked up the item.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
+		( toucher->player ) &&
+		(( this->ulNetworkFlags & NETFL_SPECIALPICKUP ) == false ) &&
+		( this->GetClass( )->IsDescendantOf( PClass::FindClass( "DehackedPickup" )) == false ))
+	{
+		pInventory = toucher->FindInventory( this->GetClass( ));
+		if ( pInventory )
+			SERVERCOMMANDS_GiveInventory( ULONG( toucher->player - players ), pInventory );
+		else
+			SERVERCOMMANDS_GiveInventory( ULONG( toucher->player - players ), this );
+	}
+
 	if (!(ItemFlags & IF_QUIET))
 	{
-		const char * message = PickupMessage ();
-
-		if (toucher->CheckLocalView (consoleplayer)
-			&& (StaticLastMessageTic != gametic || StaticLastMessage != message))
+		// [BC] If we're the server, just tell clients to do this. There's no need
+		// to do it ourselves.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			StaticLastMessageTic = gametic;
-			StaticLastMessage = message;
-			PrintPickupMessage (message);
-			StatusBar->FlashCrosshair ();
-		}
-
-		// Special check so voodoo dolls picking up items cause the
-		// real player to make noise.
-		if (toucher->player != NULL)
-		{
-			PlayPickupSound (toucher->player->mo);
-			toucher->player->bonuscount = BONUSADD;
+			if (( toucher->player ) &&
+				( this->GetClass( )->IsDescendantOf( PClass::FindClass( "DehackedPickup" )) == false ))
+			{
+				SERVERCOMMANDS_DoInventoryPickup( ULONG( toucher->player - players ), (char *)this->GetClass( )->TypeName.GetChars( ), (char *)this->PickupMessage( ));
+			}
 		}
 		else
 		{
-			PlayPickupSound (toucher);
+			const char * message = PickupMessage ();
+
+			if (toucher->CheckLocalView (consoleplayer)
+				&& (StaticLastMessageTic != gametic || StaticLastMessage != message))
+			{
+				StaticLastMessageTic = gametic;
+				StaticLastMessage = message;
+				PrintPickupMessage (message);
+				StatusBar->FlashCrosshair ();
+			}
+
+			// Special check so voodoo dolls picking up items cause the
+			// real player to make noise.
+			if (toucher->player != NULL)
+			{
+				PlayPickupSound (toucher->player->mo);
+				toucher->player->bonuscount = BONUSADD;
+			}
+			else
+			{
+				PlayPickupSound (toucher);
+			}
 		}
-	}							
+	}
 
 	// [RH] Execute an attached special (if any)
 	DoPickupSpecial (toucher);
+
+	// [BC] If this item was spawned from an invasion spot, tell the spot that the item
+	// it spawned has been picked up.
+	if ( InvasionSpot.pPickupSpot )
+		InvasionSpot.pPickupSpot->PickedUp( );
 
 	if (flags & MF_COUNTITEM)
 	{
@@ -905,12 +1062,31 @@ void AInventory::Touch (AActor *toucher)
 		level.found_items++;
 	}
 
-	//Added by MC: Check if item taken was the roam destination of any bot
-	for (int i = 0; i < MAXPLAYERS; i++)
+	// [BC] If the item has an announcer sound, play it.
+	if ( toucher->CheckLocalView( consoleplayer ))
+		ANNOUNCER_PlayEntry( cl_announcer, this->PickupAnnouncerEntry( ));
+
+	// [BC] Potentially give clients update about this item.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		if (playeringame[i] && this == players[i].dest)
-    		players[i].dest = NULL;
+		// If this item was destroyed, and we're the server, tell clients to
+		// destroy the object.
+		if (( this->state == &States[S_HOLDANDDESTROY] ) ||
+			( this->state == &States[S_HELD] ))
+		{
+			SERVERCOMMANDS_DestroyThing( this );
+		}
+		// If this item was hidden, tell clients to hide the object.
+		else if (( this->state == &States[S_HIDEINDEFINITELY] ) ||
+			( this->state == &States[S_HIDEDOOMISH] ))
+		{
+			SERVERCOMMANDS_HideThing( this );
+		}
 	}
+
+	// [BC] Finally, refresh the HUD.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		SCOREBOARD_RefreshHUD( );
 }
 
 //===========================================================================
@@ -944,6 +1120,19 @@ const char *AInventory::PickupMessage ()
 	const char *message = GetClass()->Meta.GetMetaString (AIMETA_PickupMessage);
 
 	return message != NULL? message : "You got a pickup";
+}
+
+//===========================================================================
+//
+// [BC] AInventory :: PickupAnnouncerEntry
+//
+// Returns the announcer entry to play when this actor is picked up.
+//
+//===========================================================================
+
+const char *AInventory::PickupAnnouncerEntry( )
+{
+	return ( szPickupAnnouncerEntry );
 }
 
 //===========================================================================
@@ -1083,6 +1272,12 @@ bool AInventory::DrawPowerup (int x, int y)
 /***************************************************************************/
 
 IMPLEMENT_STATELESS_ACTOR (APowerupGiver, Any, -1, 0)
+	PROP_Inventory_DefMaxAmount
+	PROP_Inventory_FlagsSet (IF_INVBAR|IF_FANCYPICKUPSOUND)
+	PROP_Inventory_PickupSound ("misc/p_pkup")
+END_DEFAULTS
+
+IMPLEMENT_STATELESS_ACTOR (ARuneGiver, Any, -1, 0)
 	PROP_Inventory_DefMaxAmount
 	PROP_Inventory_FlagsSet (IF_INVBAR|IF_FANCYPICKUPSOUND)
 	PROP_Inventory_PickupSound ("misc/p_pkup")
@@ -1324,6 +1519,13 @@ IMPLEMENT_STATELESS_ACTOR (ABasicArmorBonus, Any, -1, 0)
 	PROP_BasicArmorBonus_SavePercent (FRACUNIT/3)
 END_DEFAULTS
 
+// [BC] Implement the basic max. armor bonus.
+IMPLEMENT_STATELESS_ACTOR( ABasicMaxArmorBonus, Any, -1, 0 )
+	PROP_Inventory_MaxAmount( 0 )
+	PROP_Inventory_FlagsSet( IF_AUTOACTIVATE|IF_ALWAYSPICKUP )
+	PROP_BasicArmorBonus_SavePercent( FRACUNIT/3 )
+END_DEFAULTS
+
 IMPLEMENT_STATELESS_ACTOR (AHexenArmor, Any, -1, 0)
 	PROP_Inventory_FlagsSet (IF_UNDROPPABLE)
 END_DEFAULTS
@@ -1370,6 +1572,7 @@ AInventory *ABasicArmorPickup::CreateCopy (AActor *other)
 bool ABasicArmorPickup::Use (bool pickup)
 {
 	ABasicArmor *armor = Owner->FindInventory<ABasicArmor> ();
+	LONG	lMaxAmount;
 
 	if (armor == NULL)
 	{
@@ -1381,20 +1584,49 @@ bool ABasicArmorPickup::Use (bool pickup)
 		Owner->AddInventory (armor);
 		return true;
 	}
+
+	// [BC] Handle max. armor bonuses, and the prosperity rune.
+	lMaxAmount = SaveAmount;
+	if ( Owner->player )
+	{
+		if ( Owner->player->Powers & PW_PROSPERITY )
+			lMaxAmount = ( deh.BlueAC * 100 ) + 50;
+		else
+			lMaxAmount += Owner->player->lMaxArmorBonus;
+	}
+
+	// [BC] Changed ">=" to ">" so we can do a check below to potentially pick up armor
+	// that offers the same amount of armor, but a better SavePercent.
+
 	// If you already have more armor than this item gives you, you can't
 	// use it.
-	if (armor->Amount >= SaveAmount)
+	if (armor->Amount > lMaxAmount)
 	{
 		return false;
 	}
+
+	// [BC] If we have the same amount of the armor we're trying to use, but our armor offers
+	// better protection, don't pick it up.
+	if (( armor->Amount == lMaxAmount ) && ( armor->SavePercent >= SavePercent ))
+		return ( false );
+
 	// Don't use it if you're picking it up and already have some.
 	if (pickup && armor->Amount > 0 && MaxAmount > 0)
 	{
 		return false;
 	}
 	armor->SavePercent = SavePercent;
-	armor->Amount = armor->MaxAmount = SaveAmount;
+	armor->MaxAmount = SaveAmount;
+	armor->Amount += SaveAmount;
+	if ( armor->Amount > lMaxAmount )
+		armor->Amount = lMaxAmount;
 	armor->Icon = Icon;
+
+	// [BC] Take away the power of fire resistance since we're changing
+	// the armor type.
+	if ( Owner->player )
+		Owner->player->Powers &= ~PW_FIRERESISTANT;
+
 	return true;
 }
 
@@ -1436,8 +1668,22 @@ AInventory *ABasicArmorBonus::CreateCopy (AActor *other)
 bool ABasicArmorBonus::Use (bool pickup)
 {
 	ABasicArmor *armor = Owner->FindInventory<ABasicArmor> ();
-	int saveAmount = MIN (SaveAmount, MaxSaveAmount);
+	// [BC] The true max. save amount is the armor's max. save amount, plus the player's
+	// max. armor bonus.
+	LONG	lMaxSaveAmount;
+	int saveAmount;
 
+	lMaxSaveAmount = MaxSaveAmount;
+	if ( Owner->player )
+	{
+		// [BC] Apply the prosperity power.
+		if ( Owner->player->Powers & PW_PROSPERITY )
+			lMaxSaveAmount = ( deh.BlueAC * 100 ) + 50;
+		else
+			lMaxSaveAmount += Owner->player->lMaxArmorBonus;
+	}
+ 
+	saveAmount = MIN (SaveAmount, (int)lMaxSaveAmount);
 	if (saveAmount <= 0)
 	{ // If it can't give you anything, it's as good as used.
 		return true;
@@ -1448,14 +1694,14 @@ bool ABasicArmorBonus::Use (bool pickup)
 		armor->BecomeItem ();
 		armor->SavePercent = SavePercent;
 		armor->Amount = saveAmount;
-		armor->MaxAmount = MaxSaveAmount;
+		armor->MaxAmount = lMaxSaveAmount;
 		armor->Icon = Icon;
 		Owner->AddInventory (armor);
 		return true;
 	}
 	// If you already have more armor than this item can give you, you can't
 	// use it.
-	if (armor->Amount >= MaxSaveAmount)
+	if (armor->Amount >= lMaxSaveAmount)
 	{
 		return false;
 	}
@@ -1466,8 +1712,92 @@ bool ABasicArmorBonus::Use (bool pickup)
 		armor->SavePercent = SavePercent;
 	}
 	armor->Amount += saveAmount;
-	armor->MaxAmount = MAX (armor->MaxAmount, MaxSaveAmount);
+	armor->MaxAmount = MAX (armor->MaxAmount, (int)lMaxSaveAmount);
+	if ( armor->Amount > armor->MaxAmount )
+		armor->Amount = armor->MaxAmount;
 	return true;
+}
+
+//===========================================================================
+//
+// [BC] ABasicMaxArmorBonus :: Use
+//
+// Tries to add to the amount of BasicArmor a player has, and increased the
+// player's max. armor bonus.
+//
+//===========================================================================
+
+bool ABasicMaxArmorBonus::Use( bool bPickup )
+{
+	ABasicArmor		*pArmor;
+	LONG			lSaveAmount;
+	LONG			lMaxSaveAmount;
+	bool			bGaveMaxBonus;
+
+	pArmor = Owner->FindInventory<ABasicArmor>( );
+
+	// Always give the bonus if the player's max. armor bonus isn't maxed out.
+	bGaveMaxBonus = Owner->player->lMaxArmorBonus < this->lMaxBonusMax;
+
+	lMaxSaveAmount = MaxSaveAmount;
+	if ( Owner->player )
+	{
+		// Give him the max. armor bonus.
+		Owner->player->lMaxArmorBonus += this->lMaxBonus;
+		if ( Owner->player->lMaxArmorBonus > this->lMaxBonusMax )
+			Owner->player->lMaxArmorBonus = this->lMaxBonusMax;
+
+		// Apply the prosperity power.
+		if ( Owner->player->Powers & PW_PROSPERITY )
+			lMaxSaveAmount = ( deh.BlueAC * 100 ) + 50;
+		else
+			lMaxSaveAmount += Owner->player->lMaxArmorBonus;
+	}
+
+	lSaveAmount = MIN( SaveAmount, (int)lMaxSaveAmount );
+
+	// If this armor bonus doesn't give us any armor, and it doesn't offer any
+	// max. armor bonus, pick it up.
+	if (( lSaveAmount <= 0 ) && ( this->lMaxBonus <= 0 ))
+		return ( false );
+
+	// If the owner doesn't possess any armor, then give him armor, and give it this
+	// bonus's properties (oh yeah, and give him the max. armor bonus).
+	if ( pArmor == NULL )
+	{
+		pArmor = Spawn<ABasicArmor>( 0, 0, 0, NO_REPLACE );
+		pArmor->BecomeItem( );
+		pArmor->SavePercent = SavePercent;
+		pArmor->Amount = lSaveAmount;
+		pArmor->MaxAmount = MaxSaveAmount;
+		pArmor->Icon = Icon;
+		Owner->AddInventory( pArmor );
+
+		// Return true since the object was used successfully.
+		return ( true );
+	}
+
+	// If you already have more armor than this item can give you, and it
+	// doesn't offer any bonus to the player's max. armor bonus, you can't
+	// use it.
+	if ( pArmor->Amount >= lMaxSaveAmount )
+		return ( bGaveMaxBonus );
+
+	// Should never be less than 0, but might as well check anyway
+	if ( pArmor->Amount <= 0 )
+	{
+		pArmor->Amount = 0;
+		pArmor->Icon = Icon;
+		pArmor->SavePercent = SavePercent;
+	}
+
+	pArmor->Amount += lSaveAmount;
+	pArmor->MaxAmount = MAX( pArmor->MaxAmount, (int)lMaxSaveAmount );
+	if ( pArmor->Amount > pArmor->MaxAmount )
+		pArmor->Amount = pArmor->MaxAmount;
+
+	// Return true since the object was used successfully.
+	return ( true );
 }
 
 //===========================================================================
@@ -1576,6 +1906,11 @@ void ABasicArmor::AbsorbDamage (int damage, int damageType, int &newdamage)
 		{
 			// The armor has become useless
 			SavePercent = 0;
+
+			// [BC] Take away the power of fire resistance.
+			if ( Owner->player )
+				Owner->player->Powers &= ~PW_FIRERESISTANT;
+
 			// Now see if the player has some more armor in their inventory
 			// and use it if so. As in Strife, the best armor is used up first.
 			ABasicArmorPickup *best = NULL;
@@ -1813,14 +2148,22 @@ bool AHealth::TryPickup (AActor *other)
 	if (player != NULL)
 	{
 		PrevHealth = other->player->health;
-		if (max == 0)
+		// [BC] Apply the prosperity power.
+		if ( player->Powers & PW_PROSPERITY )
+			max = deh.MaxSoulsphere + 50;
+		else if (max == 0)
 		{
-			max = static_cast<APlayerPawn*>(other)->GetMaxHealth() + player->stamina;
+			// [BC] Add the player's max. health bonus to his max.
+			max = static_cast<APlayerPawn*>(other)->GetMaxHealth() + player->stamina + player->lMaxHealthBonus;
 			if (player->morphTics)
 			{
 				max = MAXMORPHHEALTH;
 			}
 		}
+		// [BC] Apply max. health bonus to the max. allowable health.
+		else
+			max = max + player->lMaxHealthBonus;
+
 		if (player->health >= max)
 		{
 			// You should be able to pick up the Doom health bonus even if
@@ -1919,6 +2262,106 @@ bool AHealthPickup::Use (bool pickup)
 	return P_GiveBody (Owner, health);
 }
 
+// [BC] New definition here for pickups that increase your max. health.
+IMPLEMENT_STATELESS_ACTOR( AMaxHealth, Any, -1, 0 )
+	PROP_Inventory_MaxAmount( 50 )
+	PROP_Inventory_PickupSound( "misc/health_pkup" )
+END_DEFAULTS
+
+
+//===========================================================================
+//
+// AMaxHealth :: TryPickup
+//
+//===========================================================================
+
+bool AMaxHealth::TryPickup( AActor *pOther )
+{
+	LONG		lMax;
+	player_s	*pPlayer;
+
+	pPlayer = pOther->player;
+	if ( pPlayer != NULL )
+	{
+		// Increase the player's max. health.
+		pPlayer->lMaxHealthBonus += Amount;
+
+		// If it exceeds the maximum amount allowable by this object, cap it. The default
+		// is 50.
+		if ( pPlayer->lMaxHealthBonus > MaxAmount )
+			pPlayer->lMaxHealthBonus = MaxAmount;
+	}
+
+	// [BC] The rest of this is based on AHealth::TryPickup. It just has to be different
+	// because max. health pickups use the "health" property to determine the maximum health
+	// the player's health can be after picking up this object, minus stamina and the player's
+	// max. health bonus.
+
+	lMax = health;
+	if ( pPlayer != NULL )
+	{
+		PrevHealth = pPlayer->health;
+
+		// Apply the prosperity power.
+		if ( pPlayer->Powers & PW_PROSPERITY )
+			lMax = deh.MaxSoulsphere + 50;
+		// If a maximum allowable health isn't specified, then use the player's base health,
+		// plus any bonuses to his max. health.
+		else if ( lMax == 0 )
+		{
+			// [BC] Add the player's max. health bonus to his max.
+			lMax = static_cast<APlayerPawn *>( pOther )->GetMaxHealth( ) + pPlayer->stamina + pPlayer->lMaxHealthBonus;
+			if ( pPlayer->morphTics )
+				lMax = MAXMORPHHEALTH;
+		}
+		// Apply max. health bonus to the max. allowable health.
+		else
+			lMax = lMax + pPlayer->lMaxHealthBonus;
+
+		// The player's health already exceeds his maximum allowable health.
+		if ( pPlayer->health >= lMax )
+		{
+			// You should be able to pick up the Doom health bonus even if
+			// you are already full on health.
+			if ( ItemFlags & IF_ALWAYSPICKUP )
+			{
+				GoAwayAndDie( );
+				return ( true );
+			}
+
+			// We have no use for the object, so don't pick it up.
+			return ( false );
+		}
+		
+		// Give the player the health.
+		pPlayer->health += Amount;
+		if ( pPlayer->health > lMax )
+			pPlayer->health = lMax;
+
+		// Make the player's body's health match the player's health.
+		pPlayer->mo->health = pPlayer->health;
+	}
+	else
+	{
+		PrevHealth = INT_MAX;
+
+		// If we actually received health from the object, or we should always pick it up
+		// even if it does no good, destroy the health object.
+		if (( P_GiveBody( pOther, Amount )) || ( ItemFlags & IF_ALWAYSPICKUP ))
+		{
+			GoAwayAndDie( );
+			return ( true );
+		}
+
+		// Return false because we did not pickup the object.
+		return ( false );
+	}
+
+	// We picked up the object, so destroy it.
+	GoAwayAndDie( );
+	return ( true );
+}
+
 // Backpack -----------------------------------------------------------------
 
 //===========================================================================
@@ -2008,6 +2451,11 @@ bool ABackpack::HandlePickup (AInventory *item)
 					{
 						probe->Amount = probe->MaxAmount;
 					}
+
+					// [BC] If we're the server, give the client the ammo given here.
+					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( Owner->player ))
+						SERVERCOMMANDS_GiveInventory( ULONG( Owner->player - players ), probe, ULONG( Owner->player - players ), SVCF_ONLYTHISCLIENT );
+
 				}
 			}
 		}
@@ -2119,4 +2567,3 @@ IMPLEMENT_ACTOR (ACommunicator, Strife, 206, 0)
 	PROP_Inventory_PickupSound ("misc/p_pkup")
 	PROP_Inventory_PickupMessage("$TXT_COMMUNICATOR")
 END_DEFAULTS
-

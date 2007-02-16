@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 static FRandom pr_smoke ("MWandSmoke");
 
@@ -49,7 +50,6 @@ IMPLEMENT_ACTOR (AMWeapWand, Hexen, -1, 0)
 	PROP_Weapon_HoldAtkState (S_MWANDATK)
 	PROP_Weapon_Kickback (0)
 	PROP_Weapon_YAdjust (9)
-	PROP_Weapon_MoveCombatDist (25000000)
 	PROP_Weapon_ProjectileType ("MageWandMissile")
 END_DEFAULTS
 
@@ -200,6 +200,10 @@ void AMageWandMissile::Tick ()
 void A_MWandAttack (AActor *actor)
 {
 	AActor *mo;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	mo = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(AMageWandMissile));
 	S_Sound (actor, CHAN_WEAPON, "MageWandFire", 1, ATTN_NORM);

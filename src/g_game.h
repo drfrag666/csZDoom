@@ -31,7 +31,36 @@
 //
 // GAME
 //
-void G_DeathMatchSpawnPlayer (int playernum);
+void G_DeathMatchSpawnPlayer( int playernum, bool bClientUpdate );
+void G_TemporaryTeamSpawnPlayer( ULONG ulPlayer, bool bClientUpdate );
+void G_TeamgameSpawnPlayer( ULONG ulPlayer, ULONG ulTeam, bool bClientUpdate );
+void G_CooperativeSpawnPlayer( ULONG ulPlayer, bool bClientUpdate );
+
+// [BC] Determines the game type by map spots and other items placed on the level.
+void	GAME_CheckMode( void );
+
+// [BC] Function that reverts the map into its original state when it first loaded, without
+// actually reloading the map.
+void	GAME_ResetMap( void );
+
+// [BC] Spawn the terminator artifact at a random deathmatch spot for terminator games.
+void	GAME_SpawnTerminatorArtifact( void );
+
+// [BC] Spawn the possession artifact at a random deathmatch spot for possession/team possession games.
+void	GAME_SpawnPossessionArtifact( void );
+
+// [BC] Access functions.
+void	GAME_SetEndLevelDelay( ULONG ulTicks );
+ULONG	GAME_GetEndLevelDelay( void );
+
+void	GAME_SetLevelIntroTicks( USHORT usTicks );
+USHORT	GAME_GetLevelIntroTicks( void );
+
+void	GAME_SetFreezeMode( bool bFreeze );
+bool	GAME_GetFreezeMode( void );
+
+LONG	GAME_GetGameType( void );
+// [BC] End changes.
 
 void G_DeferedPlayDemo (char* demo);
 

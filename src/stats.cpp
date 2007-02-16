@@ -40,6 +40,7 @@
 #include "st_stuff.h"
 #include "c_dispatch.h"
 #include "m_swap.h"
+#include "network.h"
 
 FStat *FStat::FirstStat;
 
@@ -89,24 +90,37 @@ void FStat::ToggleStat ()
 
 void FStat::PrintStat ()
 {
-	int y = SCREENHEIGHT - SmallFont->GetHeight();
+	// [BC] The server doesn't actually load any fonts.
+	int y = ( NETWORK_GetState( ) == NETSTATE_SERVER ) ? 0 : SCREENHEIGHT - SmallFont->GetHeight();
 	int count = 0;
 
-	screen->SetFont (ConFont);
+	// [BC] The server doesn't actually load any fonts.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		screen->SetFont (ConFont);
 	for (FStat *stat = FirstStat; stat != NULL; stat = stat->m_Next)
 	{
 		if (stat->m_Active)
 		{
 			FString stattext(stat->GetStats());
-			screen->DrawText (CR_GREEN, 5, y, stattext, TAG_DONE);
-			y -= SmallFont->GetHeight() + 1;
-			count++;
+			// [BC] In server mode, just display the stats in the console.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				Printf( "%s\n", stattext );
+			else
+			{
+				screen->DrawText (CR_GREEN, 5, y, stattext, TAG_DONE);
+				y -= SmallFont->GetHeight() + 1;
+				count++;
+			}
 		}
 	}
-	screen->SetFont (SmallFont);
-	if (count)
+	// [BC] The server doesn't actually load any fonts.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
-		SB_state = screen->GetPageCount ();
+		screen->SetFont (SmallFont);
+		if (count)
+		{
+			SB_state = screen->GetPageCount ();
+		}
 	}
 }
 

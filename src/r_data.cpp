@@ -53,6 +53,7 @@
 #include "gi.h"
 #include "cmdlib.h"
 #include "templates.h"
+#include "network.h"
 
 static void R_InitPatches ();
 void R_InitBuildTiles();
@@ -202,6 +203,8 @@ int FTextureManager::AddTexture (FTexture *texture)
 	size_t bucket = MakeKey (texture->Name) % HASH_SIZE;
 	TextureHash hasher = { texture, HashFirst[bucket] };
 	WORD trans = Textures.Push (hasher);
+	// [BC] ZDoomGL thing.
+	texture->index = Textures.Size() - 1;
 	Translation.Push (trans);
 	HashFirst[bucket] = trans;
 	return trans;
@@ -335,7 +338,7 @@ void FTextureManager::AddHiresTextures ()
 				else
 				{
 					FTexture * oldtex = Textures[oldtexno].Texture;
-	
+
 					// Replace the entire texture and adjust the scaling and offset factors.
 					newtex->ScaleX = 8 * newtex->GetWidth() / oldtex->GetWidth();
 					newtex->ScaleY = 8 * newtex->GetHeight() / oldtex->GetHeight();
@@ -360,7 +363,7 @@ void FTextureManager::LoadHiresTex()
 	char src[9];
 	bool is32bit;
 	int width, height;
-	int type, mode;
+	int type,mode;
 
 	lastLump = 0;
 	src[8] = '\0';
@@ -386,7 +389,7 @@ void FTextureManager::LoadHiresTex()
 
 				if (tex<0)
 				{
-					tex= AddPatch(sc_String);
+					tex=AddPatch(sc_String);
 				}
 
 				SC_MustGetString();
@@ -436,9 +439,9 @@ void FTextureManager::LoadHiresTex()
 						// Replace the entire texture and adjust the scaling and offset factors.
 						newtex->bWorldPanning = true;
 						newtex->ScaleX = 8 * newtex->GetWidth() / width;
-						newtex->ScaleY = 8 * newtex->GetHeight() / height;
+						newtex->ScaleY = 8 *  newtex->GetHeight() / height;
 						memcpy(newtex->Name, src, sizeof(newtex->Name));
-	
+
 						int oldtex = TexMan.CheckForTexture(src, FTexture::TEX_Override);
 						if (oldtex>=0) TexMan.ReplaceTexture(oldtex, newtex, true);
 						else TexMan.AddTexture(newtex);
@@ -716,6 +719,9 @@ DWORD R_BlendForColormap (DWORD map)
 //
 void R_InitData ()
 {
+	// [BC] ZDoomGL thing.
+	FTexture::Init();
+
 	FTexture::InitGrayMap();
 	TexMan.AddGroup("S_START", "S_END", ns_sprites, FTexture::TEX_Sprite);
 	R_InitPatches ();
@@ -729,7 +735,9 @@ void R_InitData ()
 	V_InitFonts();
 
 	R_InitColormaps ();
-	C_InitConsole (SCREENWIDTH, SCREENHEIGHT, true);
+	// [BC] Server has no need for the console.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		C_InitConsole (SCREENWIDTH, SCREENHEIGHT, true);
 }
 
 void R_DeinitData ()
@@ -1001,7 +1009,37 @@ static void R_InitPatches ()
 		"VELLOGO",
 		"FINAL1",
 		"FINAL2",
-		"E2END"
+		"E2END",
+		// [BC] New Skulltag patches here.
+		"STCREDIT",
+		"STFLA1",
+		"STFLA2",
+		"STFLA3",
+		"WINERPIC",
+		"LOSERPIC",
+		"BOTSKIL0",
+		"BOTSKIL1",
+		"BOTSKIL2",
+		"BOTSKIL3",
+		"BOTSKIL4",
+		"M_MULTI",
+		"M_BRING",
+		"M_BSKILL",
+		"M_DMATCH",
+		"M_SKTAG",
+		"M_MORTAL",
+		"M_IMPEND",
+		"M_MOMMY",
+		"M_PAIN",
+		"M_THRIVE",
+		"M_SKULLT",
+		"STPTS",
+		"M_HOE",
+		"RDYTOGO",
+		"WISLASH",
+		"M_BNMARE",
+		"TERMINAT",
+		"HELLSTON",
 	};
 	static const char spinners[][9] =
 	{

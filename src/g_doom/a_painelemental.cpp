@@ -67,6 +67,7 @@ IMPLEMENT_ACTOR (APainElemental, Doom, 71, 115)
 	PROP_PainChance (128)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_FLOAT|MF_NOGRAVITY|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_PAIN_STND)
 	PROP_SeeState (S_PAIN_RUN)
@@ -110,6 +111,10 @@ void A_PainShootSkull (AActor *self, angle_t angle)
 	AActor *other;
 	angle_t an;
 	int prestep;
+
+	// [BC] Spawning of additional lost souls is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	const PClass *spawntype = NULL;
 
@@ -169,6 +174,9 @@ void A_PainShootSkull (AActor *self, angle_t angle)
 
 	other = Spawn (spawntype, x, y, z, ALLOW_REPLACE);
 
+	// [BC] If we're the server, tell clients to spawn the actor.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnThing( other );
 
 	// Check to see if the new Lost Soul's z value is above the
 	// ceiling of its new sector, or below the floor. If so, kill it.

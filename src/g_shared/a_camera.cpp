@@ -83,6 +83,8 @@ IMPLEMENT_STATELESS_ACTOR (ASecurityCamera, Any, 9025, 0)
 	PROP_Flags (MF_NOBLOCKMAP|MF_NOGRAVITY)
 	PROP_Flags3 (MF3_DONTSPLASH)
 	PROP_RenderStyle (STYLE_None)
+	// [BC]
+	PROP_FlagsNetwork( NETFL_UPDATEARGUMENTS )
 END_DEFAULTS
 
 void ASecurityCamera::Serialize (FArchive &arc)

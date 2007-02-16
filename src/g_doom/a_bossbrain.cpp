@@ -6,6 +6,8 @@
 #include "s_sound.h"
 #include "a_doomglobal.h"
 #include "statnums.h"
+#include "deathmatch.h"
+#include "team.h"
 
 void A_Fire (AActor *);		// from m_archvile.cpp
 
@@ -75,6 +77,7 @@ IMPLEMENT_ACTOR (ABossBrain, Doom, 88, 0)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE)
 	PROP_Flags4 (MF4_NOICEDEATH)
 	PROP_Flags5 (MF5_OLDRADIUSDMG)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_BRAIN)
 	PROP_PainState (S_BRAIN_PAIN)
@@ -218,7 +221,8 @@ void A_BrainExplode (AActor *self)
 void A_BrainDie (AActor *self)
 {
 	// [RH] If noexit, then don't end the level.
-	if ((deathmatch || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
+	// [BC] teamgame
+	if ((deathmatch || teamgame || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
 		return;
 
 	G_ExitLevel (0, false);
@@ -230,6 +234,10 @@ void A_BrainSpit (AActor *self)
 	DBrainState *state;
 	AActor *targ;
 	AActor *spit;
+
+	// [BC] Brain spitting is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	// shoot a cube at current target
 	if (NULL == (state = iterator.Next ()))
@@ -261,9 +269,17 @@ void A_BrainSpit (AActor *self)
 				spit->reactiontime = (targ->x - self->x) / spit->momx;
 			}
 			spit->reactiontime /= spit->state->GetTics();
+
+			// [BC] If we're the server, tell clients to spawn the actor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SpawnMissile( spit );
 		}
 
 		S_Sound (self, CHAN_WEAPON, "brain/spit", 1, ATTN_SURROUND);
+
+		// [BC] If we're the server, tell clients create the sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundPoint( self->x, self->y, CHAN_WEAPON, "brain/spit", 127, ATTN_SURROUND );
 	}
 }
 
@@ -275,6 +291,10 @@ void A_SpawnFly (AActor *self)
 	int r;
 	const char *type;
 		
+	// [BC] Brain spitting is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (--self->reactiontime)
 		return; // still flying
 		
@@ -283,6 +303,13 @@ void A_SpawnFly (AActor *self)
 	// First spawn teleport fire.
 	fog = Spawn<ASpawnFire> (targ->x, targ->y, targ->z, ALLOW_REPLACE);
 	S_Sound (fog, CHAN_BODY, "brain/spawn", 1, ATTN_NORM);
+
+	// [BC] If we're the server, spawn the fire, and tell clients to play the sound.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( fog ))
+	{
+		SERVERCOMMANDS_SpawnThing( fog );
+		SERVERCOMMANDS_SoundPoint( fog->x, fog->y, CHAN_BODY, "brain/spawn", 127, ATTN_NORM );
+	}
 
 	// Randomly select monster to spawn.
 	r = pr_spawnfly ();
@@ -318,8 +345,20 @@ void A_SpawnFly (AActor *self)
 		{
 			// telefrag anything in this spot
 			P_TeleportMove (newmobj, newmobj->x, newmobj->y, newmobj->z, true);
+
+			// [BC] If we're the server, tell clients to spawn the new monster.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_SpawnThing( newmobj );
+				if ( newmobj->state == newmobj->SeeState )
+					SERVERCOMMANDS_SetThingState( newmobj, STATE_SEE );
+			}
 		}
 	}
+
+	// [BC] Tell clients to destroy the cube.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_DestroyThing( self );
 
 	// remove self (i.e., cube).
 	self->Destroy ();

@@ -8,6 +8,7 @@
 #include "a_strifeglobal.h"
 #include "c_console.h"
 #include "gstrings.h"
+#include "network.h"
 
 static FRandom pr_spectrespawn ("AlienSpectreSpawn");
 static FRandom pr_212e4 ("212e4");
@@ -565,7 +566,7 @@ void A_AlienSpectreDeath (AActor *self)
 		ASigil *sigil;
 
 		player->GiveInventoryType (QuestItemClasses[25]);
-		if (!multiplayer)
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			player->GiveInventoryType (RUNTIME_CLASS(AUpgradeStamina));
 			player->GiveInventoryType (RUNTIME_CLASS(AUpgradeAccuracy));

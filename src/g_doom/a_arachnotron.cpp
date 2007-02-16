@@ -78,6 +78,7 @@ IMPLEMENT_ACTOR (AArachnotron, Doom, 68, 6)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags4 (MF4_BOSSDEATH)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_BSPI_STND)
 	PROP_SeeState (S_BSPI_SIGHT)
@@ -132,13 +133,19 @@ END_DEFAULTS
 
 void A_BspiAttack (AActor *self)
 {		
+	AActor	*pMissile;
+
 	if (!self->target)
 		return;
 
 	A_FaceTarget (self);
 
 	// launch a missile
-	P_SpawnMissile (self, self->target, RUNTIME_CLASS(AArachnotronPlasma));
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(AArachnotronPlasma));
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pMissile ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
 }
 
 void A_BabyMetal (AActor *self)

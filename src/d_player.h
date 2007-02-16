@@ -41,9 +41,11 @@
 #include "actor.h"
 
 #include "d_netinf.h"
+#include "r_defs.h"
 
-//Added by MC:
-#include "b_bot.h"
+#include "a_sharedglobal.h"
+#include "bots.h"
+#include "medal.h"
 
 enum
 {
@@ -55,6 +57,8 @@ enum
 };
 
 class player_s;
+class	CSkullBot;
+class	AFloatyIcon;
 
 class APlayerPawn : public AActor
 {
@@ -71,15 +75,25 @@ public:
 	virtual void PlayIdle ();
 	virtual void PlayRunning ();
 	virtual void ThrowPoisonBag ();
+
+	// This is called when a player is leaving the game, going to spectate, etc., but
+	// has special items of interest (terminator, flags, etc.). Those need to be dropped or else
+	// the game will become disrupted.
+	virtual void DropImportantItems( bool bLeavingGame );
+
 	virtual void GiveDefaultInventory ();
 	virtual void TweakSpeeds (int &forwardmove, int &sidemove);
 	virtual bool DoHealingRadius (APlayerPawn *other);
 	virtual void MorphPlayerThink ();
 	virtual void ActivateMorphWeapon ();
+	virtual int DoSpecialDamage (AActor *target, int damage);
+	virtual int TakeSpecialDamage (AActor *inflictor, AActor *source, int damage, int damagetype);
 	virtual AWeapon *PickNewWeapon (const PClass *ammotype);
 	virtual AWeapon *BestWeapon (const PClass *ammotype);
 	virtual void GiveDeathmatchInventory ();
 	virtual void FilterCoopRespawnInventory (APlayerPawn *oldplayer);
+	// [BC]
+	virtual void Destroy( );
 
 	void PlayAttacking ();
 	void PlayAttacking2 ();
@@ -128,9 +142,21 @@ typedef enum
 	PST_LIVE,	// Playing or camping.
 	PST_DEAD,	// Dead on the ground, view follows killer.
 	PST_REBORN,	// Ready to restart/respawn???
-	PST_ENTER	// [BC] Entered the game
+	PST_ENTER,	// [BC] Entered the game
+	PST_REBORNNOINVENTORY,	// [BC] Player should respawn, without triggering enter scripts, and without keeping his/her inventory.
+	PST_ENTERNOINVENTORY,	// [BC] Player should respawn and trigger enter scripts, without keeping his/her inventory.
 } playerstate_t;
 
+
+//*****************************************************************************
+//	Lead states.
+typedef enum
+{
+	LEADSTATE_NOTINTHELEAD,
+	LEADSTATE_TIEDFORTHELEAD,
+	LEADSTATE_INTHELEAD,
+
+} LEADSTATE_e;
 
 //
 // Player internal flags, for cheats and debug.
@@ -149,8 +175,14 @@ typedef enum
 	CF_FRIGHTENING		= 1024,	// [RH] Scare monsters away
 	CF_INSTANTWEAPSWITCH= 2048,	// [RH] Switch weapons instantly
 	CF_TOTALLYFROZEN	= 4096, // [RH] All players can do is press +use
-	CF_PREDICTING		= 8192,	// [RH] Player movement is being predicted
+	// [BC] We don't use CF_PREDICTING in ST.
+//	CF_PREDICTING		= 8192,	// [RH] Player movement is being predicted
 	CF_WEAPONREADY		= 16384,// [RH] Weapon is in the ready state, so bob it when walking
+
+	// [BC] Player can move freely while the game is in freeze mode.
+	CF_FREEZE			= 32768,
+
+
 } cheat_t;
 
 #define WPIECE1		1
@@ -159,17 +191,39 @@ typedef enum
 
 enum
 {
-	PW_INVULNERABILITY	= 1,
-	PW_INVISIBILITY		= 2,
-	PW_INFRARED			= 4,
+	// [BC] Changed values to hexidecimal format.
+	PW_INVULNERABILITY	= 0x00000001,
+	PW_INVISIBILITY		= 0x00000002,
+	PW_INFRARED			= 0x00000004,
 
 // Powerups added in Heretic
-	PW_WEAPONLEVEL2		= 8,
-	PW_FLIGHT			= 16,
+	PW_WEAPONLEVEL2		= 0x00000010,
+	PW_FLIGHT			= 0x00000020,
 
 // Powerups added in Hexen
-	PW_SPEED			= 32,
-	PW_MINOTAUR			= 64,
+	PW_SPEED			= 0x00000040,
+	PW_MINOTAUR			= 0x00000080,
+
+// [BC] Powerups added by Skulltag.
+	PW_QUADDAMAGE			= 0x00000100,
+	PW_QUARTERDAMAGE		= 0x00000200,
+	PW_POSSESSIONARTIFACT	= 0x00000400,
+	PW_TERMINATORARTIFACT	= 0x00000800,
+	PW_TIMEFREEZE			= 0x00001000,
+
+// [BC] Rune effects.
+	PW_DOUBLEDAMAGE			= 0x00002000,
+	PW_DOUBLEFIRINGSPEED	= 0x00004000,
+	PW_DRAIN				= 0x00008000,
+	PW_SPREAD				= 0x00010000,
+	PW_HALFDAMAGE			= 0x00020000,
+	PW_REGENERATION			= 0x00040000,
+	PW_PROSPERITY			= 0x00080000,
+	PW_REFLECTION			= 0x00100000,
+	PW_HIGHJUMP				= 0x00200000,
+	PW_SPEED25				= 0x00400000,
+	
+	PW_FIRERESISTANT		= 0x00800000,
 };
 
 #define WP_NOCHANGE ((AWeapon*)~0)
@@ -221,11 +275,7 @@ public:
 	int			pieces;					// Fourth Weapon pieces
 	bool		backpack;
 	
-	int			frags[MAXPLAYERS];		// kills of other players
 	int			fragcount;				// [RH] Cumulative frags for this player
-	int			lastkilltime;			// [RH] For multikills
-	BYTE		multicount;
-	BYTE		spreecount;				// [RH] Keep track of killing sprees
 
 	AWeapon	   *ReadyWeapon;
 	AWeapon	   *PendingWeapon;			// WP_NOCHANGE if not changing
@@ -233,7 +283,6 @@ public:
 	int			cheats;					// bit flags
 	BITFIELD	Powers;					// powers
 	short		refire;					// refired shots are less accurate
-	short		inconsistant;
 	int			killcount, itemcount, secretcount;		// for intermission
 	int			damagecount, bonuscount;// for screen flashing
 	int			hazardcount;			// for delayed Strife damage
@@ -255,46 +304,6 @@ public:
 
 	WORD		accuracy, stamina;		// [RH] Strife stats
 
-	//Added by MC:
-	angle_t		savedyaw;
-	int			savedpitch;
-
-	angle_t		angle;		// The wanted angle that the bot try to get every tic.
-							//  (used to get a smoth view movement)
-	AActor		*dest;		// Move Destination.
-	AActor		*prev;		// Previous move destination.
-
-
-	AActor		*enemy;		// The dead meat.
-	AActor		*missile;	// A threathing missile that got to be avoided.
-	AActor		*mate;		// Friend (used for grouping in templay or coop.
-	AActor		*last_mate;	// If bots mate dissapeared (not if died) that mate is
-							// pointed to by this. Allows bot to roam to it if
-							// necessary.
-
-	//Skills
-	struct botskill_t	skill;
-
-	//Tickers
-	int			t_active;	// Open door, lower lift stuff, door must open and
-							// lift must go down before bot does anything
-							// radical like try a stuckmove
-	int			t_respawn;
-	int			t_strafe;
-	int			t_react;
-	int			t_fight;
-	int			t_roam;
-	int			t_rocket;
-
-	//Misc booleans
-	bool		isbot;
-	bool		first_shot;	// Used for reaction skill.
-	bool		sleft;		// If false, strafe is right.
-	bool		allround;
-
-	fixed_t		oldx;
-	fixed_t		oldy;
-
 	float		BlendR;		// [RH] Final blending values
 	float		BlendG;
 	float		BlendB;
@@ -307,6 +316,115 @@ public:
 	fixed_t crouchfactor;
 	fixed_t crouchoffset;
 	fixed_t crouchviewdelta;
+
+	// [BC] Start of a lot of new stuff.
+	// This player is on a team for ST/CTF.
+	bool		bOnTeam;
+
+	// Team this player is on for ST/CTF.
+	ULONG		ulTeam;
+
+	// Amount of points this player has scored so far.
+	LONG		lPointCount;
+
+	// How many times has this player died?
+	ULONG		ulDeathCount;
+
+	// The last tick this player got a frag.
+	ULONG		ulLastFragTick;
+
+	// The last tick this player got an "Excellent!" medal.
+	ULONG		ulLastExcellentTick;
+
+	// The last tick this player killed someone with the BFG9000.
+	ULONG		ulLastBFGFragTick;
+
+	// Number of consecutive hits the player has made with his weapon without missing.
+	ULONG		ulConsecutiveHits;
+
+	// Number of consecutive hits the player has made with his railgun without missing.
+	ULONG		ulConsecutiveRailgunHits;
+
+	// Amount of frags this player has gotten without dying.
+	ULONG		ulFragsWithoutDeath;
+
+	// Amount of deaths this player has gotten without getting a frag.
+	ULONG		ulDeathsWithoutFrag;
+
+	// This player is chatting.
+	bool		bChatting;
+
+	// This player is currently spectating.
+	bool		bSpectating;
+
+	// This player is currently spectating after dying in LMS or survival co-op.
+	bool		bDeadSpectator;
+
+	// This player hit another player with his attack.
+	bool		bStruckPlayer;
+
+	// Number of times the railgun has been fired. Every 4 times, a reload is in order.
+	ULONG		ulRailgunShots;
+
+	// Number of medals the player currently has of each type.
+	ULONG		ulMedalCount[NUM_MEDALS];
+
+	// Icon currently above this player's head.
+	AFloatyIcon	*pIcon;
+
+	// Bonus to the maximum amount of health the player can have.
+	LONG		lMaxHealthBonus;
+
+	// Bonus to the maximum amount of health the player can have.
+	LONG		lMaxArmorBonus;
+
+	// Consecutive wins in duel mode.
+	ULONG		ulWins;
+
+	// Pointer to the bot information for this player.
+	CSkullBot	*pSkullBot;
+
+	// Is this player a bot?
+	bool		bIsBot;
+
+	// *** THE FOLLOWING ARE NETWORK VARIABLES ***
+	// True XYZ position as told to us by the server.
+	fixed_t		ServerXYZ[3];
+
+	// True XYZ momentum as told to us by the server.
+	fixed_t		ServerXYZMom[3];
+
+	// Ping of the player to the server he's playing on.
+	ULONG		ulPing;
+
+	// Last tick this player received a packet.
+//	ULONG		ulLastTick;
+
+	// Is this player ready for the next map? (intermission)
+	bool		bReadyToGoOn;
+
+	// Is it alright to respawn in the same spot we died? (same spawn spot dmflag)
+	bool		bSpawnOkay;
+
+	// Position/angle we died at. This is for the same spawn spot dmflag.
+	fixed_t		SpawnX;
+	fixed_t		SpawnY;
+	angle_t		SpawnAngle;
+
+	// Save the old pending weapon. If the current one differs, update some clients.
+	AWeapon		*OldPendingWeapon;
+
+	// Is this player lagging to the server?
+	bool		bLagging;
+
+	// If this player was telefragged at the beginning of a round, allow him to respawn normally
+	// in LMS games.
+	bool		bSpawnTelefragged;
+
+	// Amount of time this player has been on the server.
+	ULONG		ulTime;
+
+	// [BC] End of ST additions.
 
 	fixed_t GetDeltaViewHeight() const
 	{
@@ -334,6 +452,23 @@ inline FArchive &operator<< (FArchive &arc, player_s *&p)
 {
 	return arc.SerializePointer (players, (BYTE **)&p, sizeof(*players));
 }
+
+//*****************************************************************************
+//	PROTOTYPES
+
+void	PLAYER_SetFragcount( player_s *pPlayer, LONG lFragCount, bool bAnnounce, bool bUpdateTeamFrags );
+void	PLAYER_ResetAllPlayersFragcount( void );
+void	PLAYER_GivePossessionPoint( player_s *pPlayer );
+void	PLAYER_SetTeam( player_s *pPlayer, ULONG ulTeam, bool bNoBroadcast );
+void	PLAYER_SetSpectator( player_s *pPlayer, bool bBroadcast, bool bDeadSpectator );
+void	PLAYER_SetWins( player_s *pPlayer, ULONG ulWins );
+void	PLAYER_GetName( player_s *pPlayer, char *pszOutBuf );
+bool	PLAYER_IsTrueSpectator( player_s *pPlayer );
+void	PLAYER_StruckPlayer( player_s *pPlayer );
+bool	PLAYER_ShouldSpawnAsSpectator( player_s *pPlayer );
+bool	PLAYER_Taunt( player_s *pPlayer );
+
+EXTERN_CVAR( Bool, iwanttousecrouchingeventhoughitsretardedandunnecessaryanditsimplementationishorribleimeanverticallyshrinkingskinscomeonthatsinsanebutwhatevergoaheadandhaveyourcrouching );
 
 void P_CheckPlayerSprites();
 

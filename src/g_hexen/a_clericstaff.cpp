@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 static FRandom pr_staffcheck ("CStaffCheck");
 static FRandom pr_blink ("CStaffBlink");
@@ -91,7 +92,6 @@ IMPLEMENT_ACTOR (ACWeapStaff, Hexen, 10, 32)
 	PROP_Weapon_HoldAtkState (S_CSTAFFATK)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (10)
-	PROP_Weapon_MoveCombatDist (25000000)
 	PROP_Weapon_AmmoType1 ("Mana1")
 	PROP_Weapon_ProjectileType ("CStaffMissile")
 	PROP_Inventory_PickupMessage("$TXT_WEAPON_C2")
@@ -266,6 +266,11 @@ void A_CStaffAttack (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	mo = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(ACStaffMissile), actor->angle-(ANG45/15));
 	if (mo)
 	{

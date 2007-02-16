@@ -51,6 +51,25 @@
 #include "c_dispatch.h"
 #include "tarray.h"
 #include "thingdef.h"
+#include "a_doomglobal.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "g_game.h"
+#include "team.h"
+#include "network.h"
+#include "joinqueue.h"
+#include "m_menu.h"
+#include "d_gui.h"
+#include "lastmanstanding.h"
+#include "gl_main.h"
+#include "cooperative.h"
+#include "survival.h"
+#include "sv_main.h"
+#include "cl_main.h"
+#include "scoreboard.h"
+#include "p_acs.h"
+#include "possession.h"
+#include "cl_commands.h"
 
 static FRandom pr_healradius ("HealRadius");
 
@@ -222,15 +241,11 @@ player_s::player_s()
   pieces(0),
   backpack(0),
   fragcount(0),
-  lastkilltime(0),
-  multicount(0),
-  spreecount(0),
   ReadyWeapon(0),
   PendingWeapon(0),
   cheats(0),
   Powers(0),
   refire(0),
-  inconsistant(0),
   killcount(0),
   itemcount(0),
   secretcount(0),
@@ -250,28 +265,6 @@ player_s::player_s()
   air_finished(0),
   accuracy(0),
   stamina(0),
-  savedyaw(0),
-  savedpitch(0),
-  angle(0),
-  dest(0),
-  prev(0),
-  enemy(0),
-  missile(0),
-  mate(0),
-  last_mate(0),
-  t_active(0),
-  t_respawn(0),
-  t_strafe(0),
-  t_react(0),
-  t_fight(0),
-  t_roam(0),
-  t_rocket(0),
-  isbot(0),
-  first_shot(0),
-  sleft(0),
-  allround(0),
-  oldx(0),
-  oldy(0),
   BlendR(0),
   BlendG(0),
   BlendB(0),
@@ -281,13 +274,49 @@ player_s::player_s()
   crouchdir(0),
   crouchfactor(0),
   crouchoffset(0),
-  crouchviewdelta(0)
+  crouchviewdelta(0),
+  // [BC] Initialize ST's additional properties.
+  bOnTeam( 0 ),
+  ulTeam( 0 ),
+  lPointCount( 0 ),
+  ulDeathCount( 0 ),
+  ulLastFragTick( 0 ),
+  ulLastExcellentTick( 0 ),
+  ulLastBFGFragTick( 0 ),
+  ulConsecutiveHits( 0 ),
+  ulConsecutiveRailgunHits( 0 ),
+  ulFragsWithoutDeath( 0 ),
+  ulDeathsWithoutFrag( 0 ),
+  bChatting( 0 ),
+  bSpectating( 0 ),
+  bDeadSpectator( 0 ),
+  bStruckPlayer( 0 ),
+  ulRailgunShots( 0 ),
+  pIcon( 0 ),
+  lMaxHealthBonus( 0 ),
+  lMaxArmorBonus( 0 ),
+  ulWins( 0 ),
+  pSkullBot( 0 ),
+  bIsBot( 0 ),
+  ulPing( 0 ),
+  bReadyToGoOn( 0 ),
+  bSpawnOkay( 0 ),
+  SpawnX( 0 ),
+  SpawnY( 0 ),
+  SpawnAngle( 0 ),
+  OldPendingWeapon( 0 ),
+  bLagging( 0 ),
+  bSpawnTelefragged( 0 ),
+  ulTime( 0 )
 {
 	memset (&cmd, 0, sizeof(cmd));
 	memset (&userinfo, 0, sizeof(userinfo));
-	memset (frags, 0, sizeof(frags));
 	memset (psprites, 0, sizeof(psprites));
-	memset (&skill, 0, sizeof(skill));
+
+	// [BC] Initialize additonal ST properties.
+	memset( &ulMedalCount, 0, sizeof( ULONG ) * NUM_MEDALS );
+	memset( &ServerXYZ, 0, sizeof( fixed_t ) * 3 );
+	memset( &ServerXYZMom, 0, sizeof( fixed_t ) * 3 );
 }
 
 // This function supplements the pointer cleanup in dobject.cpp, because
@@ -306,12 +335,6 @@ void player_s::FixPointers (const DObject *old, DObject *rep)
 	if (poisoner == old)		poisoner = replacement;
 	if (attacker == old)		attacker = replacement;
 	if (camera == old)			camera = replacement;
-	if (dest == old)			dest = replacement;
-	if (prev == old)			prev = replacement;
-	if (enemy == old)			enemy = replacement;
-	if (missile == old)			missile = replacement;
-	if (mate == old)			mate = replacement;
-	if (last_mate == old)		last_mate = replacement;
 	if (ReadyWeapon == old)		ReadyWeapon = static_cast<AWeapon *>(rep);
 	if (PendingWeapon == old)	PendingWeapon = static_cast<AWeapon *>(rep);
 }
@@ -463,7 +486,11 @@ void APlayerPawn::Tick()
 {
 	if (player != NULL && player->mo == this && player->morphTics == 0 && player->playerstate != PST_DEAD)
 	{
-		height = FixedMul(GetDefault()->height, player->crouchfactor);
+		// [BC] Make the player flat, so he can travel under doors and such.
+		if ( player->bSpectating )
+			height = 0;
+		else
+			height = FixedMul(GetDefault()->height, player->crouchfactor);
 	}
 	else
 	{
@@ -537,13 +564,18 @@ void APlayerPawn::RemoveInventory (AInventory *item)
 		if (item == player->ReadyWeapon)
 		{
 			// If the current weapon is removed, clear the refire counter and pick a new one.
-			pickWeap = true;
+			// [BC] Don't pick a new weapon if the owner is dead.
+			if (( item->Owner ) && ( item->Owner->health <= 0 ))
+				pickWeap = false;
+			else
+				pickWeap = true;
 			player->ReadyWeapon = NULL;
 			player->refire = 0;
 		}
 	}
 	Super::RemoveInventory (item);
 	if (pickWeap && player->mo == this && player->PendingWeapon == WP_NOCHANGE)
+		
 	{
 		PickNewWeapon (NULL);
 	}
@@ -657,6 +689,10 @@ AWeapon *APlayerPawn::PickNewWeapon (const PClass *ammotype)
 		{
 			P_BringUpWeapon (player);
 		}
+
+		// [BC] In client mode, tell the server which weapon we're using.
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( player - players == consoleplayer ))
+			CLIENTCOMMANDS_WeaponSelect( (char *)best->GetClass( )->TypeName.GetChars( ));
 	}
 	return best;
 }
@@ -805,11 +841,18 @@ void APlayerPawn::FilterCoopRespawnInventory (APlayerPawn *oldplayer)
 
 const char *APlayerPawn::GetSoundClass ()
 {
-	if (player != NULL &&
-		(unsigned int)player->userinfo.skin >= PlayerClasses.Size () &&
-		(size_t)player->userinfo.skin < numskins)
+	// [BC] If this player's skin is disabled, just use the base sound class.
+	if (( cl_skins == 1 ) || (( cl_skins >= 2 ) &&
+		( player != NULL ) &&
+		( player->userinfo.skin < numskins ) &&
+		( skins[player->userinfo.skin].bCheat == false )))
 	{
-		return skins[player->userinfo.skin].name;
+		if (player != NULL &&
+			(unsigned int)player->userinfo.skin >= PlayerClasses.Size () &&
+			(size_t)player->userinfo.skin < numskins)
+		{
+			return skins[player->userinfo.skin].name;
+		}
 	}
 
 	// [GRB]
@@ -839,13 +882,25 @@ int APlayerPawn::GetMaxHealth() const
 void APlayerPawn::PlayIdle ()
 {
 	if (InStateSequence(state, SeeState))
+	{
 		SetState (SpawnState);
+
+		// [BC] If we're the server, tell clients to update this player's state.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerState( ULONG( player - players ), STATE_PLAYER_IDLE, ULONG( player - players ), SVCF_SKIPTHISCLIENT );
+	}
 }
 
 void APlayerPawn::PlayRunning ()
 {
 	if (InStateSequence(state, SpawnState) && SeeState != NULL)
+	{
 		SetState (SeeState);
+
+		// [BC] If we're the server, tell clients to update this player's state.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerState( ULONG( player - players ), STATE_PLAYER_SEE, ULONG( player - players ), SVCF_SKIPTHISCLIENT );
+	}
 }
 
 void APlayerPawn::PlayAttacking ()
@@ -872,6 +927,20 @@ void APlayerPawn::GiveDefaultInventory ()
 {
 	// [GRB] Give inventory specified in DECORATE
 	player->health = GetDefault ()->health;
+
+	// [BC] Initialize the max. health/armor bonuses.
+	player->lMaxHealthBonus = 0;
+	player->lMaxArmorBonus = 0;
+
+	// [BC] If the user has chosen to handicap himself, do that now.
+	if (( deathmatch || teamgame || alwaysapplydmflags ) && player->userinfo.lHandicap )
+	{
+		player->health -= player->userinfo.lHandicap;
+
+		// Don't allow player to be DOA.
+		if ( player->health <= 0 )
+			player->health = 1;
+	}
 
 	FDropItem *di = GetDropItems(this);
 
@@ -955,55 +1024,368 @@ void APlayerPawn::ActivateMorphWeapon ()
 
 void APlayerPawn::Die (AActor *source, AActor *inflictor)
 {
-	Super::Die (source, inflictor);
+	AActor			*pFlag;
+	AInventory		*pInventory;
+	bool			bCarryingTerminatorArtifact;
+	bool			bCarryingPossessionArtifact;
 
-	if (player != NULL && player->mo != this)
-	{ // Make the real player die, too
-		player->mo->Die (source, inflictor);
+	// [BC] Since powerups are destroyed when their owner dies, we need to check to see if
+	// the player is carrying certain powerups before we call the super function.
+	if ( player )
+	{
+		bCarryingTerminatorArtifact = !!( player->Powers & PW_TERMINATORARTIFACT );
+		bCarryingPossessionArtifact = !!( player->Powers & PW_POSSESSIONARTIFACT );
 	}
 	else
 	{
-		if (player != NULL && (dmflags2 & DF2_YES_WEAPONDROP))
-		{ // Voodoo dolls don't drop weapons
-			AWeapon *weap = player->ReadyWeapon;
-			if (weap != NULL)
-			{
-				AInventory *item;
+		bCarryingTerminatorArtifact = false;
+		bCarryingPossessionArtifact = false;
+	}
 
-				if (weap->SpawnState != NULL &&
-					weap->SpawnState != &AActor::States[AActor::S_NULL])
+	Super::Die (source, inflictor);
+
+	// [BC] Nothing for the client to do here.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	if (player != NULL && player->mo != this)
+	{ // Make the real player die, too
+		player->mo->Die ( source, inflictor );
+		return;
+	}
+	// [BC] There was an "else" here that was completely unnecessary.
+
+	if (player != NULL && (dmflags2 & DF2_YES_WEAPONDROP))
+	{ // Voodoo dolls don't drop weapons
+		AWeapon *weap = player->ReadyWeapon;
+		if (weap != NULL)
+		{
+			AInventory *item;
+
+			if (weap->SpawnState != NULL &&
+				weap->SpawnState != &AActor::States[AActor::S_NULL])
+			{
+				item = P_DropItem (this, weap->GetClass(), -1, 256);
+				if (item != NULL)
 				{
-					item = P_DropItem (this, weap->GetClass(), -1, 256);
-					if (item != NULL)
+					if (weap->AmmoGive1 && weap->Ammo1)
 					{
-						if (weap->AmmoGive1 && weap->Ammo1)
-						{
-							static_cast<AWeapon *>(item)->AmmoGive1 = weap->Ammo1->Amount;
-						}
-						if (weap->AmmoGive2 && weap->Ammo2)
-						{
-							static_cast<AWeapon *>(item)->AmmoGive2 = weap->Ammo2->Amount;
-						}
+						static_cast<AWeapon *>(item)->AmmoGive1 = weap->Ammo1->Amount;
+					}
+					if (weap->AmmoGive2 && weap->Ammo2)
+					{
+						static_cast<AWeapon *>(item)->AmmoGive2 = weap->Ammo2->Amount;
+					}
+
+					// [BC] If we're the server, tell clients that the thing is dropped.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetWeaponAmmoGive( item );
+				}
+			}
+			else
+			{
+				item = P_DropItem (this, weap->AmmoType1, -1, 256);
+				if (item != NULL)
+				{
+					item->Amount = weap->Ammo1->Amount;
+				}
+				item = P_DropItem (this, weap->AmmoType2, -1, 256);
+				if (item != NULL)
+				{
+					item->Amount = weap->Ammo2->Amount;
+				}
+			}
+		}
+	}
+
+	// [BC] The following require player to be non-NULL.
+	if (( player == NULL ) || ( player->mo == NULL ))
+		return;
+
+	// [BC] If this is a terminator game and the player was carrying the terminator artifact,
+	// drop it.
+	if ( bCarryingTerminatorArtifact )
+	{
+		P_DropItem( this, PClass::FindClass( "Terminator" ), -1, 256 );
+
+		// Tell the clients that this player no longer possesses the terminator orb.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_TakeInventory( player - players, "PowerTerminatorArtifact", 0 );
+		else
+			SCOREBOARD_RefreshHUD( );
+	}
+
+	// [BC] If this is a possession/team possession game and the player was carrying the possession
+	// artifact, drop it.
+	if ( bCarryingPossessionArtifact )
+	{
+		P_DropItem( this, PClass::FindClass( "PossessionStone" ), -1, 256 );
+
+		// Tell the clients that this player no longer possesses the stone.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_TakeInventory( player - players, "PowerPossessionArtifact", 0 );
+		else
+			SCOREBOARD_RefreshHUD( );
+
+		// Tell the possession module that the artifact has been dropped.
+		if ( possession || teampossession )
+			POSSESSION_ArtifactDropped( );
+	}
+
+	// If this is a teamgame and the player is carrying the opponents "flag", drop it.
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && teamgame && player->bOnTeam )
+	{
+		pInventory = this->FindInventory( TEAM_GetFlagItem( !player->ulTeam ));
+		if ( pInventory )
+		{
+			this->RemoveInventory( pInventory );
+
+			// Tell the clients that this player no longer possesses a flag.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TakeInventory( player - players, (char *)TEAM_GetFlagItem( !player->ulTeam )->TypeName.GetChars( ), 0 );
+			else
+				SCOREBOARD_RefreshHUD( );
+
+			pFlag = Spawn( TEAM_GetFlagItem( !player->ulTeam ), x, y, z, NO_REPLACE );
+			if ( pFlag )
+			{
+				pFlag->flags |= MF_DROPPED;
+
+				// Tag blue flags/skulls with TID 666; red 667.
+				if ( player->ulTeam == TEAM_RED )
+					pFlag->tid = 666;
+				else
+					pFlag->tid = 667;
+				pFlag->AddToHash( );
+
+				// If the flag spawned in an instant return zone, the return routine
+				// has already been executed. No need to do anything!
+				if ( pFlag->Sector && (( pFlag->Sector->MoreFlags & SECF_RETURNZONE ) == false ))
+				{
+					if ( dmflags2 & DF2_INSTANT_RETURN )
+						TEAM_ExecuteReturnRoutine( !player->ulTeam, inflictor );
+					else
+					{
+						TEAM_SetReturnTicks( !player->ulTeam, sv_flagreturntime * TICRATE );
+
+						// Print "Blue flag dropped!", etc. messages and do announcer stuff.
+						TEAM_FlagDropped( player );
+
+						// If we're the server, spawn the item to clients.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( pFlag );
 					}
 				}
-				else
+			}
+
+			// Cancel out the potential for an assist.
+			TEAM_SetAssistPlayer( player->ulTeam, MAXPLAYERS );
+
+			// Award a "Defense!" medal to the player who fragged this flag carrier.
+			if (( source ) && ( source->player ) && ( source->IsTeammate( this ) == false ))
+			{
+				MEDAL_GiveMedal( source->player - players, MEDAL_DEFENSE );
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_DEFENSE );
+			}
+		}
+
+		// If the player is carrying the white flag in OFCTF, drop it.
+		pInventory = this->FindInventory( PClass::FindClass( "WhiteFlag" ));
+		if (( oneflagctf ) && ( pInventory ))
+		{
+			this->RemoveInventory( pInventory );
+
+			// Tell the clients that this player no longer possesses the flag.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TakeInventory( player - players, "WhiteFlag", 0 );
+			else
+				SCOREBOARD_RefreshHUD( );
+
+			pFlag = Spawn( PClass::FindClass( "WhiteFlag" ), x, y, z, NO_REPLACE );
+			if ( pFlag )
+			{
+				pFlag->flags |= MF_DROPPED;
+
+				pFlag->tid = 668;
+				pFlag->AddToHash( );
+
+				// If the flag spawned in an instant return zone, the return routine
+				// has already been executed. No need to do anything!
+				if ( pFlag->Sector && (( pFlag->Sector->MoreFlags & SECF_RETURNZONE ) == false ))
 				{
-					item = P_DropItem (this, weap->AmmoType1, -1, 256);
-					if (item != NULL)
+					if ( dmflags2 & DF2_INSTANT_RETURN )
+						TEAM_ExecuteReturnRoutine( NUM_TEAMS, NULL );
+					else
 					{
-						item->Amount = weap->Ammo1->Amount;
+						TEAM_SetReturnTicks( NUM_TEAMS, sv_flagreturntime * TICRATE );
+
+						// If we're the server, spawn the item to clients.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( pFlag );
 					}
-					item = P_DropItem (this, weap->AmmoType2, -1, 256);
-					if (item != NULL)
+				}
+
+//				if ( dmflags2 & DF2_INSTANT_RETURN )
+//					FBehavior::StaticStartTypedScripts( SCRIPT_WhiteReturn, this );
+			}
+
+			// Award a "Defense!" medal to the player who fragged this flag carrier.
+			if ( source && source->player && ( source->IsTeammate( this ) == false ))
+			{
+				MEDAL_GiveMedal( source->player - players, MEDAL_DEFENSE );
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_DEFENSE );
+			}
+		}
+	}
+/*
+	// If this is cooperative mode, drop a backpack full of the player's stuff.
+	if (( deathmatch == false ) && ( teamgame == false ) &&
+		(( i_compatflags & COMPATF_DISABLECOOPERATIVEBACKPACKS ) == false ) &&
+		( NETWORK_GetState( ) != NETSTATE_SINGLE ))
+	{
+		AActor	*pBackpack;
+
+		// Spawn the backpack.
+		pBackpack = Spawn( RUNTIME_CLASS( ACooperativeBackpack ), x, y, z, NO_REPLACE );
+
+		// If we're the server, tell clients to spawn the backpack.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnThing( pBackpack );
+
+		// Finally, fill the backpack with the player's inventory items.
+		if ( pBackpack )
+			static_cast<ACooperativeBackpack *>( pBackpack )->FillBackpack( player );
+	}
+*/
+	if (( NETWORK_GetState( ) == NETSTATE_SINGLE ) && (level.flags & LEVEL_DEATHSLIDESHOW))
+	{
+		F_StartSlideshow ();
+	}
+}
+
+void APlayerPawn::DropImportantItems( bool bLeavingGame )
+{
+	AActor		*pFlag;
+	AInventory	*pInventory;
+
+	if ( player == NULL )
+		return;
+
+	// If we're in a teamgame, don't allow him to "take" flags or skulls with him. If
+	// he was carrying any, spawn what he was carrying on the ground when he leaves.
+	if (( teamgame ) && ( player->bOnTeam ))
+	{
+		// Check if he's carrying the opponents' flag.
+		pInventory = this->FindInventory( TEAM_GetFlagItem( !player->ulTeam ));
+		if ( pInventory )
+		{
+			this->RemoveInventory( pInventory );
+			if (( bLeavingGame == false ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+				SERVERCOMMANDS_TakeInventory( player - players, (char *)TEAM_GetFlagItem( !player->ulTeam )->TypeName.GetChars( ), 0 );
+
+			// Spawn a new flag.
+			pFlag = Spawn( TEAM_GetFlagItem( !player->ulTeam ), player->mo->x, player->mo->y, ONFLOORZ, NO_REPLACE );
+			if ( pFlag )
+			{
+				pFlag->flags |= MF_DROPPED;
+
+				// Tag blue flags/skulls with TID 666; red 667.
+				if ( player->ulTeam == TEAM_RED )
+					pFlag->tid = 666;
+				else
+					pFlag->tid = 667;
+				pFlag->AddToHash( );
+
+				// If the flag spawned in an instant return zone, the return routine
+				// has already been executed. No need to do anything!
+				if (( pFlag->Sector->MoreFlags & SECF_RETURNZONE ) == false )
+				{
+					if ( dmflags2 & DF2_INSTANT_RETURN )
+						TEAM_ExecuteReturnRoutine( !player->ulTeam, NULL );
+					else
 					{
-						item->Amount = weap->Ammo2->Amount;
+						TEAM_SetReturnTicks( !player->ulTeam, sv_flagreturntime * TICRATE );
+
+						// Print "Blue flag dropped!", etc. messages and do announcer stuff.
+						TEAM_FlagDropped( player );
+
+						// If we're the server, spawn the item to clients.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( pFlag );
 					}
 				}
 			}
 		}
-		if (!multiplayer && (level.flags & LEVEL_DEATHSLIDESHOW))
+
+		// Check if the player is carrying the white flag.
+		pInventory = this->FindInventory( PClass::FindClass( "WhiteFlag" ));
+		if (( oneflagctf ) && ( pInventory ))
 		{
-			F_StartSlideshow ();
+			this->RemoveInventory( pInventory );
+			if (( bLeavingGame == false ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+				SERVERCOMMANDS_TakeInventory( player - players, "WhiteFlag", 0 );
+
+			// Spawn a new flag.
+			pFlag = Spawn( PClass::FindClass( "WhiteFlag" ), player->mo->x, player->mo->y, ONFLOORZ, NO_REPLACE );
+			if ( pFlag )
+			{
+				pFlag->flags |= MF_DROPPED;
+
+				pFlag->tid = 668;
+				pFlag->AddToHash( );
+
+				// If the flag spawned in an instant return zone, the return routine
+				// has already been executed. No need to do anything!
+				if (( pFlag->Sector->MoreFlags & SECF_RETURNZONE ) == false )
+				{
+					if ( dmflags2 & DF2_INSTANT_RETURN )
+						FBehavior::StaticStartTypedScripts( SCRIPT_WhiteReturn, player->mo, true );
+					else
+						TEAM_SetReturnTicks( NUM_TEAMS, sv_flagreturntime * TICRATE );
+
+						// If we're the server, spawn the item to clients.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( pFlag );
+				}
+			}
+		}
+	}
+
+	// If we're in a terminator game, don't allow the player to "take" the terminator
+	// artifact with him.
+	if ( terminator )
+	{
+		if ( player->Powers & PW_TERMINATORARTIFACT )
+		{
+			P_DropItem( this, PClass::FindClass( "Terminator" ), -1, 256 );
+
+			// Tell the clients that this player no longer possesses the terminator orb.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TakeInventory( player - players, "PowerTerminatorArtifact", 0 );
+			else
+				SCOREBOARD_RefreshHUD( );
+		}
+	}
+
+	// If we're in a possession game, don't allow the player to "take" the possession
+	// artifact with him.
+	if ( possession || teampossession )
+	{
+		if ( player->Powers & PW_POSSESSIONARTIFACT )
+		{
+			P_DropItem( this, PClass::FindClass( "PossessionStone" ), -1, 256 );
+
+			// Tell the clients that this player no longer possesses the stone.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TakeInventory( player - players, "PowerPossessionArtifact", 0 );
+			else
+				SCOREBOARD_RefreshHUD( );
+
+			// Tell the possession module that the artifact has been dropped.
+			if ( possession || teampossession )
+				POSSESSION_ArtifactDropped( );
 		}
 	}
 }
@@ -1034,10 +1416,18 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 		side = FixedMul (side, SideMove2);
 	}
 
+	// [BC] This comes out to 50%, so we can use this for the turbosphere.
 	if ((player->Powers & PW_SPEED) && !player->morphTics)
 	{ // Adjust for a player with a speed artifact
 		forward = (3*forward)>>1;
 		side = (3*side)>>1;
+	}
+
+	// [BC] Apply the 25% speed increase power.
+	if ( player->Powers & PW_SPEED25 )
+	{
+		forward = (LONG)( forward * 1.25 );
+		side = (LONG)( side * 1.25 );
 	}
 }
 
@@ -1057,6 +1447,58 @@ void APlayerPawn::SpecialInvulnerabilityHandling (EInvulState setting, fixed_t *
 	if (setting == INVUL_GetAlpha && pAlpha!=NULL) *pAlpha=FIXED_MAX;	// indicates no change
 }
 
+int APlayerPawn::DoSpecialDamage( AActor *target, int damage )
+{
+	if ( player == NULL )
+		return ( damage );
+
+	// Apply quad damage.
+	if ( player->Powers & PW_QUADDAMAGE )
+		damage *= 4;
+
+	// Apply double damage.
+	if ( player->Powers & PW_DOUBLEDAMAGE )
+		damage *= 2;
+
+	return ( damage );
+}
+
+int APlayerPawn::TakeSpecialDamage (AActor *inflictor, AActor *source, int damage, int damagetype)
+{
+	if ( player == NULL )
+		return ( damage );
+
+	// [BC] Apply 1/4 damage.
+	if ( player->Powers & PW_QUARTERDAMAGE )
+		damage /= 4;
+
+	// [BC] Apply 1/2 damage.
+	if ( player->Powers & PW_HALFDAMAGE )
+		damage /= 2;
+
+	return ( damage );
+}
+
+//===========================================================================
+//
+// [BC] APlayerPawn :: Destroy
+//
+// All this function does is set the actor's health to 0, and then call the
+// super function. This is done to prevent the player from cycling through
+// weapons when it dies.
+//
+//===========================================================================
+
+void APlayerPawn::Destroy( void )
+{
+	// Set the actor's health to 0, so that when the player's inventory
+	// is destroyed, a new weapon isn't chosen for the player as his
+	// ready weapon isn't deleted, preventing the playing of upsounds.
+	this->health = 0;
+
+	// That's it. Now proceed as normal.
+	Super::Destroy( );
+}
 
 
 //===========================================================================
@@ -1202,6 +1644,19 @@ void P_CalcHeight (player_t *player)
 	fixed_t 	bob;
 	bool		still = false;
 
+	// If we're a spectator, don't calculate viewheight for other players.
+	// We'll receive that from the server.
+	// Don't calculate height for other players.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( players[consoleplayer].bSpectating ) &&
+		(( player - players ) != consoleplayer ))
+	{
+		return;
+	}
+
+	// If we're predicting, nothing to do here.
+	if ( CLIENT_PREDICT_IsPredicting( ))
+		return;
+
 	// Regular movement bobbing
 	// (needs to be calculated for gun swing even if not on ground)
 	// OPTIMIZE: tablify angle
@@ -1225,7 +1680,10 @@ void P_CalcHeight (player_t *player)
 		}
 		else
 		{
-			player->bob = FixedMul (player->bob, player->userinfo.MoveBob);
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				player->bob = FixedMul( player->bob, 16384 );
+			else
+				player->bob = FixedMul (player->bob, player->userinfo.MoveBob);
 
 			if (player->bob > MAXBOB)
 				player->bob = MAXBOB;
@@ -1321,9 +1779,8 @@ CUSTOM_CVAR (Float, sv_aircontrol, 0.00390625f, CVAR_SERVERINFO|CVAR_NOSAVE)
 	G_AirControlChanged ();
 }
 
-void P_MovePlayer (player_t *player)
+void P_MovePlayer (player_t *player, ticcmd_t *cmd)
 {
-	ticcmd_t *cmd = &player->cmd;
 	APlayerPawn *mo = player->mo;
 
 	// [RH] 180-degree turn overrides all other yaws
@@ -1336,6 +1793,9 @@ void P_MovePlayer (player_t *player)
 	{
 		mo->angle += cmd->ucmd.yaw << 16;
 	}
+
+	if ( GAME_GetEndLevelDelay( ))
+		memset( cmd, 0, sizeof( ticcmd_t ));
 
 	onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ);
 
@@ -1358,8 +1818,17 @@ void P_MovePlayer (player_t *player)
 		if (!onground && !(player->mo->flags & MF_NOGRAVITY) && !player->mo->waterlevel)
 		{
 			// [RH] allow very limited movement if not on ground.
-			movefactor = FixedMul (movefactor, level.aircontrol);
-			bobfactor = FixedMul (bobfactor, level.aircontrol);
+			if ( i_compatflags & COMPATF_LIMITED_AIRMOVEMENT )
+			{
+				movefactor = FixedMul (movefactor, level.aircontrol);
+				bobfactor = FixedMul (bobfactor, level.aircontrol);
+			}
+			else
+			{
+				// Skulltag needs increased air movement for jump pads, etc.
+				movefactor /= 4;
+				bobfactor /= 4;
+			}
 		}
 
 		fm = cmd->ucmd.forwardmove;
@@ -1389,7 +1858,7 @@ void P_MovePlayer (player_t *player)
 			P_Bob (player, mo->angle-ANG90, (cmd->ucmd.sidemove * bobfactor) >> 8);
 			P_SideThrust (player, mo->angle, sidemove);
 		}
-
+/*
 		if (debugfile)
 		{
 			fprintf (debugfile, "move player for pl %d%c: (%d,%d,%d) (%d,%d) %d %d w%d [", player-players,
@@ -1403,8 +1872,8 @@ void P_MovePlayer (player_t *player)
 			}
 			fprintf (debugfile, "]\n");
 		}
-
-		if (!(player->cheats & CF_PREDICTING))
+*/
+//		if (!(player->cheats & CF_PREDICTING))
 		{
 			player->mo->PlayRunning ();
 		}
@@ -1413,6 +1882,52 @@ void P_MovePlayer (player_t *player)
 		{
 			player->cheats &= ~CF_REVERTPLEASE;
 			player->camera = player->mo;
+		}
+	}
+
+	// [RH] check for jump
+	if ( cmd->ucmd.buttons & BT_JUMP && ( player->bSpectating == false ))
+	{
+		if (player->mo->waterlevel >= 2)
+		{
+			player->mo->momz = 4*FRACUNIT;
+		}
+		else if (player->mo->flags2 & MF2_FLY)
+		{
+			player->mo->momz = 3*FRACUNIT;
+		}
+		else if (!(dmflags & DF_NO_JUMP) && onground && !player->jumpTics )
+		{
+			fixed_t	JumpMomz;
+			ULONG	ulJumpTicks;
+
+			// Set base jump velocity.
+			JumpMomz = player->mo->JumpZ * 35 / TICRATE;
+
+			// [BC] If the player has the high jump power, double his jump velocity.
+			if ( player->Powers & PW_HIGHJUMP )
+				JumpMomz *= 2;
+
+			// [BC] If the player is standing on a spring pad, halve his jump velocity.
+			if ( player->mo->floorsector->FloorFlags & SECF_SPRINGPAD )
+				JumpMomz /= 2;
+
+			// Set base jump ticks.
+			ulJumpTicks = 18 * TICRATE / 35;
+
+			S_Sound (player->mo, CHAN_BODY, "*jump", 1, ATTN_NORM);
+			player->mo->flags2 &= ~MF2_ONMOBJ;
+
+			// [BC] Increase jump delay if the player has the high jump power.
+			if ( player->Powers & PW_HIGHJUMP )
+				ulJumpTicks *= 2;
+
+			// [BC] Remove jump delay if the player is on a spring pad.
+			if ( player->mo->floorsector->FloorFlags & SECF_SPRINGPAD )
+				ulJumpTicks = 0;
+
+			player->mo->momz += JumpMomz;
+			player->jumpTics = ulJumpTicks;
 		}
 	}
 }		
@@ -1603,6 +2118,65 @@ void P_DeathThink (player_t *player)
 		}
 	}		
 
+	// [BC] Respawning is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	// [BC] If this is LMS or survival, put him in spectator mode.
+	if ((( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS )) ||
+		(( survival ) && ( SURVIVAL_GetState( ) == SURVS_INPROGRESS )))
+	{
+		if ( level.time >= player->respawn_time )
+		{
+			// If a player got telefragged at the beginning of a LMS or survival round, don't
+			// penalize them for it.
+			if ( player->bSpawnTelefragged )
+			{
+				player->bSpawnTelefragged = false;
+
+				player->cls = NULL;		// Force a new class if the player is using a random class
+				player->playerstate = ( NETWORK_GetState( ) != NETSTATE_SINGLE ) ? PST_REBORN : PST_ENTER;
+				if (player->mo->special1 > 2)
+				{
+					player->mo->special1 = 0;
+				}
+
+				return;
+			}
+			else
+			{
+				PLAYER_SetSpectator( player, false, true );
+
+				// Tell the other players to mark this player as a spectator.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayerIsSpectator( player - players );
+			}
+		}
+
+		return;
+	}
+
+	if (( level.time >= player->respawn_time ) &&
+		(( lastmanstanding || teamlms ) && (( LASTMANSTANDING_GetState( ) != LMSS_WAITINGFORPLAYERS ) &&
+		( LASTMANSTANDING_GetState( ) != LMSS_COUNTDOWN ))) == false )
+	{
+		if ((( player->cmd.ucmd.buttons & BT_USE ) || (( player->cmd.ucmd.buttons & BT_ATTACK ) && (( player->oldbuttons & BT_ATTACK ) == false ))) || 
+			(( deathmatch || teamgame || alwaysapplydmflags ) &&
+			( dmflags & DF_FORCE_RESPAWN )))
+		{
+			player->cls = NULL;		// Force a new class if the player is using a random class
+			player->playerstate = ( NETWORK_GetState( ) != NETSTATE_SINGLE ) ? PST_REBORN : PST_ENTER;
+			if (player->mo->special1 > 2)
+			{
+				player->mo->special1 = 0;
+			}
+		}
+//		else if ( player->pSkullBot )
+//		{
+//			Printf( "WARNING! Bot %s dead and not hitting repawn in state %s!\n", player->userinfo.netname, player->pSkullBot->m_ScriptData.szStateName[player->pSkullBot->m_ScriptData.lCurrentStateIdx] );
+//		}
+	}
+/*
 	if (player->cmd.ucmd.buttons & BT_USE ||
 		((deathmatch || alwaysapplydmflags) && (dmflags & DF_FORCE_RESPAWN)))
 	{
@@ -1616,6 +2190,85 @@ void P_DeathThink (player_t *player)
 			}
 		}
 	}
+*/
+}
+
+//*****************************************************************************
+//
+void PLAYER_JoinGameFromSpectators( int iChar )
+{
+	if ( iChar != 'y' )
+		return;
+
+	// Inform the server that we wish to join the current game.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		UCVarValue	Val;
+
+		Val = cl_joinpassword.GetGenericRep( CVAR_String );
+
+		CLIENTCOMMANDS_RequestJoin( Val.String );
+		return;
+	}
+
+	// If there's two people currently dueling, just put the person in line.
+	if (( duel && DUEL_CountActiveDuelers( ) >= 2 ) ||
+		(( lastmanstanding || teamlms ) && (( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ) || ( LASTMANSTANDING_GetState( ) == LMSS_WINSEQUENCE ))))
+	{
+		ULONG		ulResult;
+		JOINSLOT_t	JoinSlot;
+
+		JoinSlot.ulPlayer = consoleplayer;
+		JoinSlot.ulTeam = NUM_TEAMS;
+		ulResult = JOINQUEUE_AddPlayer( JoinSlot );
+		if ( ulResult == MAXPLAYERS )
+			Printf( "Join queue full!\n" );
+		else
+			Printf( "Your position in line is: %d\n", ulResult + 1 );
+		return;
+	}
+
+	players[consoleplayer].playerstate = PST_REBORNNOINVENTORY;
+	players[consoleplayer].bSpectating = false;
+	players[consoleplayer].bDeadSpectator = false;
+	players[consoleplayer].camera = players[consoleplayer].mo;
+	Printf( "%s \\c-joined the game.\n", players[consoleplayer].userinfo.netname );
+}
+
+void M_StartMessage (const char *string, void(*routine)(int), bool input);
+
+//*****************************************************************************
+//
+bool PLAYER_Responder( event_t *pEvent )
+{
+	// Nothing to handle if they're not spectating.
+	if ( players[consoleplayer].bSpectating == false )
+		return ( false );
+
+	if ( pEvent->type == EV_GUI_KeyDown )
+	{
+		// If the player hits the spacebar, ask them if they'd like to join the current game.
+ 		if ( pEvent->data2 == ' ' )
+		{
+			if (( lastmanstanding || teamlms || survival ) && players[consoleplayer].bDeadSpectator )
+			{
+				Printf( "You cannot rejoin the game until the round is over!\n" );
+				return ( true );
+			}
+
+			if (( teamplay || ( teamgame && TemporaryTeamStarts.Size( ) == 0 ) || teamlms || teampossession ) && (( dmflags2 & DF2_NO_TEAM_SELECT ) == false ))
+			{
+				M_StartControlPanel( true );
+				M_StartJoinTeamMenu( );
+			}
+			else
+				M_StartMessage( "Join current game?\n\npress y or n.", PLAYER_JoinGameFromSpectators, true );
+
+			return ( true );
+		}
+	}
+
+	return ( false );
 }
 
 //----------------------------------------------------------------------------
@@ -1658,15 +2311,47 @@ void P_CrouchMove(player_t * player, int direction)
 //
 //----------------------------------------------------------------------------
 
-void P_PlayerThink (player_t *player)
+CVAR( Bool, cl_disallowfullpitch, false, CVAR_ARCHIVE );
+CVAR( Bool, iwanttousecrouchingeventhoughitsretardedandunnecessaryanditsimplementationishorribleimeanverticallyshrinkingskinscomeonthatsinsanebutwhatevergoaheadandhaveyourcrouching, false, 0 );
+
+void P_PlayerThink (player_t *player, ticcmd_t *pCmd)
 {
 	ticcmd_t *cmd;
 
 	if (player->mo == NULL)
 	{
-		I_Error ("No player %d start\n", player - players + 1);
+		// Just print an error if a bot tried to spawn.
+		if ( player->pSkullBot )
+		{
+			Printf( "%s \\c-left: No player %d start\n", player->userinfo.netname, player - players + 1 );
+			BOTS_RemoveBot( player - players, false );
+			return;
+		}
+		else
+		{
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+//				// Don't really bitch here, because this tends to happen if people use the "map"
+//				// rcon command.
+				Printf( "No player %d start\n", player - players + 1 );
+				SERVER_DisconnectClient( player - players, true, true );
+				return;
+			}
+			else
+			{
+				if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+					(( player - players ) != consoleplayer ))
+				{
+					Printf( "P_PlayerThink: No body for player %d!\n", player - players + 1 );
+					return;
+				}
+				else
+					I_Error ("No player %d start\n", player - players + 1);
+			}
+		}
 	}
 
+/*
 	if (debugfile && !(player->cheats & CF_PREDICTING))
 	{
 		fprintf (debugfile, "tic %d for pl %d: (%d, %d, %d, %u) b:%02x p:%d y:%d f:%d s:%d u:%d\n",
@@ -1675,133 +2360,46 @@ void P_PlayerThink (player_t *player)
 			player->cmd.ucmd.pitch, player->cmd.ucmd.yaw, player->cmd.ucmd.forwardmove,
 			player->cmd.ucmd.sidemove, player->cmd.ucmd.upmove);
 	}
-
-	// [RH] Zoom the player's FOV
-	if (player->FOV != player->DesiredFOV)
+*/
+	if ( CLIENT_PREDICT_IsPredicting( ) == false )
 	{
-		if (fabsf (player->FOV - player->DesiredFOV) < 7.f)
+		// [RH] Zoom the player's FOV
+		if (player->FOV != player->DesiredFOV)
 		{
-			player->FOV = player->DesiredFOV;
-		}
-		else
-		{
-			float zoom = MAX(7.f, fabsf (player->FOV - player->DesiredFOV) * 0.025f);
-			if (player->FOV > player->DesiredFOV)
+			if (fabsf (player->FOV - player->DesiredFOV) < 7.f)
 			{
-				player->FOV = player->FOV - zoom;
+				player->FOV = player->DesiredFOV;
 			}
 			else
 			{
-				player->FOV = player->FOV + zoom;
+				float zoom = MAX(7.f, fabsf (player->FOV - player->DesiredFOV) * 0.025f);
+				if (player->FOV > player->DesiredFOV)
+				{
+					player->FOV = player->FOV - zoom;
+				}
+				else
+				{
+					player->FOV = player->FOV + zoom;
+				}
 			}
 		}
 	}
-	if (player->inventorytics)
-	{
-		player->inventorytics--;
-	}
-	// No-clip cheat
-	if (player->cheats & CF_NOCLIP)
-	{
-		player->mo->flags |= MF_NOCLIP;
-	}
-	else
-	{
-		player->mo->flags &= ~MF_NOCLIP;
-	}
-	cmd = &player->cmd;
-	if (player->mo->flags & MF_JUSTATTACKED)
-	{ // Chainsaw/Gauntlets attack auto forward motion
-		cmd->ucmd.yaw = 0;
-		cmd->ucmd.forwardmove = 0xc800/2;
-		cmd->ucmd.sidemove = 0;
-		player->mo->flags &= ~MF_JUSTATTACKED;
-	}
 
-	// [RH] Being totally frozen zeros out most input parameters.
-	if (player->cheats & CF_TOTALLYFROZEN || gamestate == GS_TITLELEVEL)
+	// Allow the spectator to do a few things, then break out.
+	if ( player->bSpectating )
 	{
-		if (gamestate == GS_TITLELEVEL)
-		{
-			cmd->ucmd.buttons = 0;
-		}
-		else
-		{
-			cmd->ucmd.buttons &= BT_USE;
-		}
-		cmd->ucmd.pitch = 0;
-		cmd->ucmd.yaw = 0;
-		cmd->ucmd.roll = 0;
-		cmd->ucmd.forwardmove = 0;
-		cmd->ucmd.sidemove = 0;
-		cmd->ucmd.upmove = 0;
-		player->turnticks = 0;
-	}
-	else if (player->cheats & CF_FROZEN)
-	{
-		cmd->ucmd.forwardmove = 0;
-		cmd->ucmd.sidemove = 0;
-		cmd->ucmd.upmove = 0;
-	}
+		int	look;
 
-	// Handle crouching
-	if (player->cmd.ucmd.buttons & BT_JUMP) player->cmd.ucmd.buttons &= ~BT_DUCK;
-	if (player->morphTics == 0 && player->health > 0 && !(dmflags & DF_NO_CROUCH))
-	{
-		if (!(player->cheats & CF_TOTALLYFROZEN))
-		{
-			int crouchdir = player->crouching;
-		
-			if (crouchdir==0)
-			{
-				crouchdir = (player->cmd.ucmd.buttons & BT_DUCK)? -1 : 1;
-			}
-			else if (player->cmd.ucmd.buttons & BT_DUCK)
-			{
-				player->crouching=0;
-			}
-			if (crouchdir == 1 && player->crouchfactor < FRACUNIT &&
-				player->mo->z + player->mo->height < player->mo->ceilingz)
-			{
-				P_CrouchMove(player, 1);
-			}
-			else if (crouchdir == -1 && player->crouchfactor > FRACUNIT/2)
-			{
-				P_CrouchMove(player, -1);
-			}
-		}
-	}
-	else
-	{
-		player->Uncrouch();
-	}
+		// Lower the weapon completely.
+		P_SetPsprite( player, ps_weapon, NULL );
 
-	player->crouchoffset = -FixedMul(player->mo->ViewHeight, (FRACUNIT - player->crouchfactor));
+		// [RH] Look up/down stuff
+		cmd = &player->cmd;
+		look = cmd->ucmd.pitch << 16;
 
-
-	if (player->playerstate == PST_DEAD)
-	{
-		player->Uncrouch();
-		P_DeathThink (player);
-		return;
-	}
-	if (player->jumpTics)
-	{
-		player->jumpTics--;
-	}
-	if (player->morphTics && !(player->cheats & CF_PREDICTING))
-	{
-		player->mo->MorphPlayerThink ();
-	}
-
-	// [RH] Look up/down stuff
-	if (dmflags & DF_NO_FREELOOK)
-	{
-		player->mo->pitch = 0;
-	}
-	else
-	{
-		int look = cmd->ucmd.pitch << 16;
+		// Allow the player to fly around when a spectator.
+		player->mo->flags |= MF_NOGRAVITY;
+		player->mo->flags2 |= MF2_FLY;
 
 		// The player's view pitch is clamped between -32 and +56 degrees,
 		// which translates to about half a screen height up and (more than)
@@ -1817,14 +2415,245 @@ void P_PlayerThink (player_t *player)
 			{
 				player->mo->pitch -= look;
 				if (look > 0)
-				{ // look up
-					if (player->mo->pitch < -ANGLE_1*MAX_UP_ANGLE)
-						player->mo->pitch = -ANGLE_1*MAX_UP_ANGLE;
+				{ 
+					// look up
+					if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( cl_disallowfullpitch == false ))
+					{
+						if (player->mo->pitch < -ANGLE_1*90)
+							player->mo->pitch = -ANGLE_1*90;
+					}
+					else
+					{
+					   if (player->mo->pitch < -ANGLE_1*32)
+						   player->mo->pitch = -ANGLE_1*32;
+					}
 				}
 				else
-				{ // look down
-					if (player->mo->pitch > ANGLE_1*MAX_DN_ANGLE)
-						player->mo->pitch = ANGLE_1*MAX_DN_ANGLE;
+				{ 
+					// look down
+					if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( cl_disallowfullpitch == false ))
+					{
+						if (player->mo->pitch > ANGLE_1*90)
+							player->mo->pitch = ANGLE_1*90;
+					}
+					else
+					{
+						if (player->mo->pitch > ANGLE_1*56)
+							player->mo->pitch = ANGLE_1*56;
+					}
+				}
+			}
+		}
+
+		// Update player's velocity by input.
+		P_MovePlayer( player, &player->cmd );
+
+		// [RH] check for jump
+		if ( cmd->ucmd.buttons & BT_JUMP )
+			player->mo->momz = 3*FRACUNIT;
+
+		if ( cmd->ucmd.upmove == -32768 )
+		{ // Only land if in the air
+			if ((player->mo->flags2 & MF2_FLY) && player->mo->waterlevel < 2)
+			{
+				player->mo->flags2 &= ~MF2_FLY;
+				player->mo->flags &= ~MF_NOGRAVITY;
+			}
+		}
+		else if ( cmd->ucmd.upmove != 0 )
+			player->mo->momz = cmd->ucmd.upmove << 9;
+
+		// Calculate player's viewheight.
+		P_CalcHeight( player );
+
+		// If this is a bot, run its logic.
+		if ( player->pSkullBot )
+			player->pSkullBot->Tick( );
+
+		// Done with spectator specific logic.
+		return;
+	}
+
+	if ( CLIENT_PREDICT_IsPredicting( ) == false )
+	{
+		if (player->inventorytics)
+		{
+			player->inventorytics--;
+		}
+	}
+	// No-clip cheat
+	if (player->cheats & CF_NOCLIP)
+	{
+		player->mo->flags |= MF_NOCLIP;
+	}
+	else
+	{
+		player->mo->flags &= ~MF_NOCLIP;
+	}
+
+	// If we're predicting, use the ticcmd we pass in.
+	if ( CLIENT_PREDICT_IsPredicting( ))
+		cmd = pCmd;
+	else
+		cmd = &player->cmd;
+	if ( GAME_GetEndLevelDelay( ))
+		memset( cmd, 0, sizeof( ticcmd_t ));
+
+	if (player->mo->flags & MF_JUSTATTACKED && NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{ // Chainsaw/Gauntlets attack auto forward motion
+		cmd->ucmd.yaw = 0;
+		cmd->ucmd.forwardmove = 0xc800/2;
+		cmd->ucmd.sidemove = 0;
+		player->mo->flags &= ~MF_JUSTATTACKED;
+	}
+
+	if ( CLIENT_PREDICT_IsPredicting( ) == false )
+	{
+		// [RH] Being totally frozen zeros out most input parameters.
+		if (player->cheats & CF_TOTALLYFROZEN || gamestate == GS_TITLELEVEL)
+		{
+			if (gamestate == GS_TITLELEVEL)
+			{
+				cmd->ucmd.buttons = 0;
+			}
+			else
+			{
+				cmd->ucmd.buttons &= BT_USE;
+			}
+			cmd->ucmd.pitch = 0;
+			cmd->ucmd.yaw = 0;
+			cmd->ucmd.roll = 0;
+			cmd->ucmd.forwardmove = 0;
+			cmd->ucmd.sidemove = 0;
+			cmd->ucmd.upmove = 0;
+			player->turnticks = 0;
+		}
+		else if (player->cheats & CF_FROZEN)
+		{
+			cmd->ucmd.forwardmove = 0;
+			cmd->ucmd.sidemove = 0;
+			cmd->ucmd.upmove = 0;
+		}
+	}
+
+	// If this is a bot, run its logic.
+	if ( player->pSkullBot )
+		player->pSkullBot->Tick( );
+
+	// Handle crouching
+	if (player->cmd.ucmd.buttons & BT_JUMP) player->cmd.ucmd.buttons &= ~BT_DUCK;
+	// [BC] Added a variable to allow people to use crouching if they REALLY want it, no
+	// matter how gay and retarded it is.
+	// [BC] Also, don't do this for clients other than ourself in client mode.
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) || (( player - players ) == consoleplayer ))
+	{
+		if (player->morphTics == 0 && player->health > 0 && !(dmflags & DF_NO_CROUCH)
+			&& ( iwanttousecrouchingeventhoughitsretardedandunnecessaryanditsimplementationishorribleimeanverticallyshrinkingskinscomeonthatsinsanebutwhatevergoaheadandhaveyourcrouching ))
+		{
+			if (!(player->cheats & CF_TOTALLYFROZEN))
+			{
+				int crouchdir = player->crouching;
+			
+				if (crouchdir==0)
+				{
+					crouchdir = (player->cmd.ucmd.buttons & BT_DUCK)? -1 : 1;
+				}
+				else if (player->cmd.ucmd.buttons & BT_DUCK)
+				{
+					player->crouching=0;
+				}
+				if (crouchdir == 1 && player->crouchfactor < FRACUNIT &&
+					player->mo->z + player->mo->height < player->mo->ceilingz)
+				{
+					P_CrouchMove(player, 1);
+				}
+				else if (crouchdir == -1 && player->crouchfactor > FRACUNIT/2)
+				{
+					P_CrouchMove(player, -1);
+				}
+			}
+		}
+		else
+		{
+			player->Uncrouch();
+		}
+	}
+
+	player->crouchoffset = -FixedMul(player->mo->ViewHeight, (FRACUNIT - player->crouchfactor));
+
+
+	if (player->playerstate == PST_DEAD)
+	{
+		player->Uncrouch();
+		P_DeathThink (player);
+
+		// [BC] Update oldbuttons.
+		player->oldbuttons = player->cmd.ucmd.buttons;
+		return;
+	}
+
+	if (player->jumpTics)
+	{
+		player->jumpTics--;
+	}
+	if (player->morphTics)// && !(player->cheats & CF_PREDICTING))
+	{
+		player->mo->MorphPlayerThink ();
+	}
+
+	// [RH] Look up/down stuff
+	if ( dmflags & DF_NO_FREELOOK )
+	{
+		player->mo->pitch = 0;
+	}
+	else
+	{
+		// Servers read in the pitch value. It is not calculated.
+		if (( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( player->pSkullBot != NULL ))
+		{
+			int look = cmd->ucmd.pitch << 16;
+
+			// The player's view pitch is clamped between -32 and +56 degrees,
+			// which translates to about half a screen height up and (more than)
+			// one full screen height down from straight ahead when view panning
+			// is used.
+			if (look)
+			{
+				if (look == -32768 << 16)
+				{ // center view
+					player->mo->pitch = 0;
+				}
+				else
+				{
+					player->mo->pitch -= look;
+					if (look > 0)
+					{
+						// look up
+						if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( cl_disallowfullpitch == false ))
+						{
+							if (player->mo->pitch < -ANGLE_1*90)
+								player->mo->pitch = -ANGLE_1*90;
+						}
+						else
+						{
+						   if (player->mo->pitch < -ANGLE_1*32)
+							   player->mo->pitch = -ANGLE_1*32;
+						}
+					}
+					else
+					{
+						// look down
+						if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( cl_disallowfullpitch == false ))
+						{
+							if (player->mo->pitch > ANGLE_1*90)
+								player->mo->pitch = ANGLE_1*90;
+						}
+						else
+						{
+							if (player->mo->pitch > ANGLE_1*56)
+								player->mo->pitch = ANGLE_1*56;
+						}
+					}
 				}
 			}
 		}
@@ -1839,37 +2668,11 @@ void P_PlayerThink (player_t *player)
 	// Handle movement
 	if (player->mo->reactiontime)
 	{ // Player is frozen
-		player->mo->reactiontime--;
+			player->mo->reactiontime--;
 	}
 	else
 	{
-		P_MovePlayer (player);
-
-		// [RH] check for jump
-		if (cmd->ucmd.buttons & BT_JUMP)
-		{
-			if (player->crouchoffset!=0)
-			{
-				// Jumping while crouching will force an un-crouch but not jump
-				player->crouching = 1;
-			}
-			else
-			if (player->mo->waterlevel >= 2)
-			{
-				player->mo->momz = 4*FRACUNIT;
-			}
-			else if (player->mo->flags & MF_NOGRAVITY)
-			{
-				player->mo->momz = 3*FRACUNIT;
-			}
-			else if (!(dmflags & DF_NO_JUMP) && onground && !player->jumpTics)
-			{
-				player->mo->momz += player->mo->JumpZ * 35 / TICRATE;
-				S_Sound (player->mo, CHAN_BODY, "*jump", 1, ATTN_NORM);
-				player->mo->flags2 &= ~MF2_ONMOBJ;
-				player->jumpTics = 18*TICRATE/35;
-			}
-		}
+		P_MovePlayer (player, cmd);
 
 		if (cmd->ucmd.upmove == -32768)
 		{ // Only land if in the air
@@ -1900,7 +2703,7 @@ void P_PlayerThink (player_t *player)
 					}
 				}
 			}
-			else if (cmd->ucmd.upmove > 0 && !(player->cheats & CF_PREDICTING))
+			else if (cmd->ucmd.upmove > 0)// && !(player->cheats & CF_PREDICTING))
 			{
 				AInventory *fly = player->mo->FindInventory (PClass::FindClass (NAME_ArtiFly));
 				if (fly != NULL)
@@ -1913,7 +2716,7 @@ void P_PlayerThink (player_t *player)
 
 	P_CalcHeight (player);
 
-	if (!(player->cheats & CF_PREDICTING))
+	if ( CLIENT_PREDICT_IsPredicting( ) == false )
 	{
 		if (player->mo->Sector->special || player->mo->Sector->damage)
 		{
@@ -1934,6 +2737,7 @@ void P_PlayerThink (player_t *player)
 		if ((cmd->ucmd.buttons & BT_USE) && !(player->oldbuttons & BT_USE))
 		{
 			P_UseLines (player);
+			P_UseItems (player);
 		}
 		// Morph counter
 		if (player->morphTics)
@@ -1974,6 +2778,41 @@ void P_PlayerThink (player_t *player)
 			P_PoisonDamage (player, player->poisoner, 1, true);
 		}
 
+		// [BC] Don't do the following block in client mode.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		{
+			// [BC] Apply degeneration flag.
+			if ( dmflags2 & DF2_YES_DEGENERATION )
+			{
+				if ((( level.time & 127 ) == 0 ) && ( player->health > ( deh.StartHealth + player->lMaxHealthBonus )))
+				{
+					player->health--;
+					player->mo->health--;
+
+					// [BC] If we're the server, send out the health change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetPlayerHealth( player - players );
+				}
+			}
+
+			// [BC] Apply regeneration.
+			if (( level.time & 31 ) == 0 && ( player->Powers & PW_REGENERATION ) && ( player->health ))
+			{
+				if ( P_GiveBody( player->mo, 5 ))
+				{
+					S_Sound( player->mo, CHAN_ITEM, "misc/i_pkup", 1, ATTN_NORM );
+
+					// [BC] If we're the server, send out the health change, and play the
+					// health sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					{
+						SERVERCOMMANDS_SetPlayerHealth( player - players );
+						SERVERCOMMANDS_SoundActor( player->mo, CHAN_ITEM, "misc/i_pkup", 127, ATTN_NORM );
+					}
+				}
+			}
+		}
+
 		// Handle air supply
 		if (level.airsupply>0)
 		{
@@ -1994,6 +2833,7 @@ void P_PlayerThink (player_t *player)
 	player->oldbuttons = cmd->ucmd.buttons;
 }
 
+/*
 void P_PredictPlayer (player_t *player)
 {
 	int maxtic;
@@ -2005,7 +2845,7 @@ void P_PredictPlayer (player_t *player)
 		player != &players[consoleplayer] ||
 		player->playerstate != PST_LIVE ||
 		!netgame ||
-		/*player->morphTics ||*/
+		/*player->morphTics ||*
 		(player->cheats & CF_PREDICTING))
 	{
 		return;
@@ -2053,6 +2893,7 @@ void P_PredictPlayer (player_t *player)
 	}
 	act->BlockNode = NULL;
 
+
 	for (int i = gametic; i < maxtic; ++i)
 	{
 		player->cmd = localcmds[i % LOCALCMDTICS];
@@ -2060,9 +2901,11 @@ void P_PredictPlayer (player_t *player)
 		player->mo->Tick ();
 	}
 }
+*/
 
 extern msecnode_t *P_AddSecnode (sector_t *s, AActor *thing, msecnode_t *nextnode);
 
+/*
 void P_UnPredictPlayer ()
 {
 	player_t *player = &players[consoleplayer];
@@ -2105,6 +2948,7 @@ void P_UnPredictPlayer ()
 		}
 	}
 }
+*/
 
 void player_s::Serialize (FArchive &arc)
 {
@@ -2129,13 +2973,9 @@ void player_s::Serialize (FArchive &arc)
 		<< pieces
 		<< backpack
 		<< fragcount
-		<< spreecount
-		<< multicount
-		<< lastkilltime
 		<< ReadyWeapon << PendingWeapon
 		<< cheats
 		<< refire
-		<< inconsistant
 		<< killcount
 		<< itemcount
 		<< secretcount
@@ -2155,16 +2995,15 @@ void player_s::Serialize (FArchive &arc)
 		<< air_finished
 		<< turnticks
 		<< oldbuttons
-		<< isbot
 		<< BlendR
 		<< BlendG
 		<< BlendB
 		<< BlendA
 		<< accuracy << stamina
+		<< (DWORD &)ulRailgunShots
+		<< (DWORD &)lMaxHealthBonus
+		<< (DWORD &)lMaxArmorBonus
 		<< LogText;
-		
-	for (i = 0; i < MAXPLAYERS; i++)
-		arc << frags[i];
 	for (i = 0; i < NUMPSPRITES; i++)
 		arc << psprites[i];
 
@@ -2175,33 +3014,6 @@ void player_s::Serialize (FArchive &arc)
 		<< crouchdir
 		<< crouchviewdelta;
 
-	if (isbot)
-	{
-		arc	<< angle
-			<< dest
-			<< prev
-			<< enemy
-			<< missile
-			<< mate
-			<< last_mate
-			<< skill
-			<< t_active
-			<< t_respawn
-			<< t_strafe
-			<< t_react
-			<< t_fight
-			<< t_roam
-			<< t_rocket
-			<< first_shot
-			<< sleft
-			<< allround
-			<< oldx
-			<< oldy;
-	}
-	else
-	{
-		dest = prev = enemy = missile = mate = last_mate = NULL;
-	}
 	if (arc.IsLoading ())
 	{
 		// If the player reloaded because they pressed +use after dying, we
@@ -2209,4 +3021,3 @@ void player_s::Serialize (FArchive &arc)
 		oldbuttons = ~0;
 	}
 }
-

@@ -49,6 +49,9 @@
 #include "r_state.h"
 #include "i_system.h"
 #include "p_local.h"
+#include "cl_commands.h"
+#include "cl_main.h"
+#include "network.h"
 
 extern void LoadDecorations (void (*process)(FState *, int));
 
@@ -470,6 +473,12 @@ CCMD (summon)
 
 	if (argv.argc() > 1)
 	{
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		{
+			CLIENTCOMMANDS_SummonCheat( argv[1] );
+			return;
+		}
+
 		const PClass *type = PClass::FindClass (argv[1]);
 		if (type == NULL)
 		{

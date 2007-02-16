@@ -62,7 +62,6 @@
 #include "d_protocol.h"
 #include "v_text.h"
 #include "s_sndseq.h"
-#include "b_bot.h"
 #include "sc_man.h"
 #include "sbar.h"
 #include "a_lightning.h"
@@ -71,6 +70,22 @@
 #include "version.h"
 #include "m_menu.h"
 #include "statnums.h"
+#include "cl_main.h"
+#include "deathmatch.h"
+#include "network.h"
+#include "sv_commands.h"
+#include "team.h"
+#include "maprotation.h"
+#include "campaign.h"
+#include "duel.h"
+#include "lastmanstanding.h"
+#include "scoreboard.h"
+#include "campaign.h"
+#include "joinqueue.h"
+#include "sv_save.h"
+#include "cooperative.h"
+#include "invasion.h"
+#include "possession.h"
 
 #include "gi.h"
 
@@ -102,6 +117,7 @@ static void ClearLevelInfoStrings (level_info_t *linfo);
 static void ClearClusterInfoStrings (cluster_info_t *cinfo);
 
 static FRandom pr_classchoice ("RandomPlayerClassChoice");
+static	FRandom		g_RandomMapSeed( "MapSeed" );
 
 TArray<EndSequence> EndSequences;
 
@@ -260,6 +276,7 @@ static const char *MapInfoMapLevel[] =
 	"compat_trace",		
 	"compat_dropoff",
 	"compat_boomscroll",
+	"nobotnodes",	// [BC] Allow the prevention of spawning bot nodes (helpful for very large maps).
 
 	NULL
 };
@@ -390,6 +407,7 @@ MapHandlers[] =
 	{ MITYPE_COMPATFLAG, COMPATF_TRACE},
 	{ MITYPE_COMPATFLAG, COMPATF_DROPOFF},
 	{ MITYPE_COMPATFLAG, COMPATF_BOOMSCROLL},
+	{ MITYPE_SETFLAG,	LEVEL_NOBOTNODES, 0 },	// [BC]
 };
 
 static const char *MapInfoClusterLevel[] =
@@ -814,19 +832,40 @@ static void ParseMapInfoLower (MapInfoHandler *handlers,
 			}
 			if (strnicmp (sc_String, "EndGame", 7) == 0)
 			{
-				int type;
-				switch (sc_String[7])
+				// If we're in a multiplayer game, don't do the finale, just go back to the
+				// beginning.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-				case '1':	type = END_Pic1;		break;
-				case '2':	type = END_Pic2;		break;
-				case '3':	type = END_Bunny;		break;
-				case 'C':	type = END_Cast;		break;
-				case 'W':	type = END_Underwater;	break;
-				case 'S':	type = END_Strife;		break;
-				default:	type = END_Pic3;		break;
+					switch (sc_String[7])
+					{
+					case '1':	sprintf (sc_String, "E1M1");	break;
+					case '2':	sprintf (sc_String, "E2M1");	break;
+					case '3':	sprintf (sc_String, "E3M1");	break;
+					case '4':	sprintf (sc_String, "E4M1");	break;
+					case 'C':	sprintf (sc_String, "MAP01");	break;
+//					case 'W':	type = END_Underwater;	break;
+//					case 'S':	type = END_Strife;		break;
+					default:	sprintf (sc_String, "MAP01");	break;
+					}
+
+					strncpy ((char *)(info + handler->data1), sc_String, 8);
 				}
-				newSeq.EndType = type;
-				useseq = true;
+				else
+				{
+					int type;
+					switch (sc_String[7])
+					{
+					case '1':	type = END_Pic1;		break;
+					case '2':	type = END_Pic2;		break;
+					case '3':	type = END_Bunny;		break;
+					case 'C':	type = END_Cast;		break;
+					case 'W':	type = END_Underwater;	break;
+					case 'S':	type = END_Strife;		break;
+					default:	type = END_Pic3;		break;
+					}
+					newSeq.EndType = type;
+					useseq = true;
+				}
 			}
 			else if (SC_Compare ("endpic"))
 			{
@@ -1029,6 +1068,9 @@ static void ParseMapInfoLower (MapInfoHandler *handlers,
 // key "Shortcut key for the menu"
 // noskillmenu
 // remove
+// botepisode
+// botskillname "Title at botskill menu"
+// botskillpicname "Picture to display as botskill menu title"
 
 static void ParseEpisodeInfo ()
 {
@@ -1040,6 +1082,9 @@ static void ParseEpisodeInfo ()
 	char key = 0;
 	bool addedgfx = false;
 	bool noskill = false;
+	bool	bBotEpisode = false;
+	char	szBotSkillTitle[64];
+	bool	bBotSkillPicIsGFX = false;
 
 	// Get map name
 	SC_MustGetString ();
@@ -1082,6 +1127,22 @@ static void ParseEpisodeInfo ()
 		else if (SC_Compare("noskillmenu"))
 		{
 			noskill = true;
+		}
+		else if ( SC_Compare( "botepisode" ))
+		{
+			bBotEpisode = true;
+		}
+		else if ( SC_Compare( "botskillname" ))
+		{
+			SC_MustGetString( );
+			sprintf( szBotSkillTitle, sc_String );
+			bBotSkillPicIsGFX = false;
+		}
+		else if ( SC_Compare( "botskillpicname" ))
+		{
+			SC_MustGetString( );
+			sprintf( szBotSkillTitle, sc_String );
+			bBotSkillPicIsGFX = true;
 		}
 		else
 		{
@@ -1144,7 +1205,11 @@ static void ParseEpisodeInfo ()
 		EpisodeMenu[i].alphaKey = tolower(key);
 		EpisodeMenu[i].fulltext = !picisgfx;
 		EpisodeNoSkill[i] = noskill;
+		EpisodeMenu[i].bBotSkill = bBotEpisode;
+		EpisodeMenu[i].bBotSkillFullText = !bBotSkillPicIsGFX;
 		strncpy (EpisodeMaps[i], map, 8);
+		if ( bBotEpisode )
+			sprintf( EpisodeSkillHeaders[i], szBotSkillTitle );
 
 		if (picisgfx)
 		{
@@ -1153,6 +1218,12 @@ static void ParseEpisodeInfo ()
 				TexMan.AddPatch (pic);
 				addedgfx = true;
 			}
+		}
+
+		if ( bBotSkillPicIsGFX )
+		{
+			if ( TexMan.CheckForTexture( szBotSkillTitle, FTexture::TEX_MiscPatch, 0 ) == -1 )
+				TexMan.AddPatch( szBotSkillTitle );
 		}
 	}
 }
@@ -1306,12 +1377,6 @@ void G_DeferedInitNew (char *mapname)
 
 CCMD (map)
 {
-	if (netgame)
-	{
-		Printf ("Use "TEXTCOLOR_BOLD"changemap"TEXTCOLOR_NORMAL" instead. "TEXTCOLOR_BOLD"Map"
-				TEXTCOLOR_NORMAL" is for single-player only.\n");
-		return;
-	}
 	if (argv.argc() > 1)
 	{
 		MapData * map = P_OpenMapData(argv[1]);
@@ -1319,6 +1384,33 @@ CCMD (map)
 			Printf ("No map %s\n", argv[1]);
 		else
 		{
+			if ( sv_maprotation )
+				MAPROTATION_SetPositionToMap( argv[1] );
+
+			// Tell the clients about the mapchange.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVER_ReconnectNewLevel( argv[1] );
+
+			// Tell the server we're leaving the game.
+			if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+				CLIENT_QuitNetworkGame( );
+
+			// Turn campaign mode back on.
+			CAMPAIGN_EnableCampaign( );
+
+			// Clear out the botspawn table.
+			BOTSPAWN_ClearTable( );
+
+			// Reset the duel and LMS modules.
+			if ( duel )
+				DUEL_SetState( DS_WAITINGFORPLAYERS );
+			if ( lastmanstanding || teamlms )
+				LASTMANSTANDING_SetState( LMSS_WAITINGFORPLAYERS );
+			if ( possession || teampossession )
+				POSSESSION_SetState( PSNS_WAITINGFORPLAYERS );
+			if ( invasion )
+				INVASION_SetState( IS_WAITINGFORPLAYERS );
+
 			delete map;
 			G_DeferedInitNew (argv[1]);
 		}
@@ -1331,7 +1423,8 @@ CCMD (map)
 
 CCMD (open)
 {
-	if (netgame)
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) ||
+		( NETWORK_GetState( ) == NETSTATE_SERVER ))
 	{
 		Printf ("You cannot use open in multiplayer games.\n");
 		return;
@@ -1360,10 +1453,10 @@ void G_NewInit ()
 	int i;
 
 	G_ClearSnapshots ();
-	SB_state = screen->GetPageCount ();
-	netgame = false;
+	// [BC] Server doesn't have a screen.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		SB_state = screen->GetPageCount ();
 	netdemo = false;
-	multiplayer = false;
 	if (demoplayback)
 	{
 		C_RestoreCVars ();
@@ -1384,17 +1477,26 @@ void G_NewInit ()
 	}
 	BackupSaveName = "";
 	consoleplayer = 0;
+
+	// [BC] Potentially need to reset userinfo if we left a server.
+	D_SetupUserInfo( );
+
 	NextSkill = -1;
 }
 
 void G_DoNewGame (void)
 {
 	G_NewInit ();
-	playeringame[consoleplayer] = 1;
+
+	// [BC] Don't do this for the server.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		playeringame[consoleplayer] = 1;
+
 	G_InitNew (d_mapname, false);
 	gameaction = ga_nothing;
 }
 
+void SERVERCONSOLE_SetupColumns( void );
 void G_InitNew (char *mapname, bool bTitleLevel)
 {
 	EGameSpeed oldSpeed;
@@ -1411,14 +1513,16 @@ void G_InitNew (char *mapname, bool bTitleLevel)
 			wadlevelinfos[i].flags = wadlevelinfos[i].flags & ~LEVEL_VISITED;
 	}
 
-	UnlatchCVars ();
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		UnlatchCVars ();
 
 	if (gameskill > sk_nightmare)
 		gameskill = sk_nightmare;
 	else if (gameskill < sk_baby)
 		gameskill = sk_baby;
 
-	UnlatchCVars ();
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		UnlatchCVars ();
 
 	if (paused)
 	{
@@ -1426,36 +1530,43 @@ void G_InitNew (char *mapname, bool bTitleLevel)
 		S_ResumeSound ();
 	}
 
+	// Reset the end level delay.
+	GAME_SetEndLevelDelay( 0 );
+
 	if (StatusBar != NULL)
 	{
 		delete StatusBar;
 	}
-	if (bTitleLevel)
+	// Server has no status bar.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
-		StatusBar = new FBaseStatusBar (0);
+		if (bTitleLevel)
+		{
+			StatusBar = new FBaseStatusBar (0);
+		}
+		else if (gameinfo.gametype == GAME_Doom)
+		{
+			StatusBar = CreateDoomStatusBar ();
+		}
+		else if (gameinfo.gametype == GAME_Heretic)
+		{
+			StatusBar = CreateHereticStatusBar ();
+		}
+		else if (gameinfo.gametype == GAME_Hexen)
+		{
+			StatusBar = CreateHexenStatusBar ();
+		}
+		else if (gameinfo.gametype == GAME_Strife)
+		{
+			StatusBar = CreateStrifeStatusBar ();
+		}
+		else
+		{
+			StatusBar = new FBaseStatusBar (0);
+		}
+		StatusBar->AttachToPlayer (&players[consoleplayer]);
+		StatusBar->NewGame ();
 	}
-	else if (gameinfo.gametype == GAME_Doom)
-	{
-		StatusBar = CreateDoomStatusBar ();
-	}
-	else if (gameinfo.gametype == GAME_Heretic)
-	{
-		StatusBar = CreateHereticStatusBar ();
-	}
-	else if (gameinfo.gametype == GAME_Hexen)
-	{
-		StatusBar = CreateHexenStatusBar ();
-	}
-	else if (gameinfo.gametype == GAME_Strife)
-	{
-		StatusBar = CreateStrifeStatusBar ();
-	}
-	else
-	{
-		StatusBar = new FBaseStatusBar (0);
-	}
-	StatusBar->AttachToPlayer (&players[consoleplayer]);
-	StatusBar->NewGame ();
 	setsizeneeded = true;
 
 	// Set the initial quest log text for Strife.
@@ -1498,11 +1609,14 @@ void G_InitNew (char *mapname, bool bTitleLevel)
 
 	if (!savegamerestore)
 	{
-		if (!netgame)
-		{ // [RH] Change the random seed for each new single player game
-			rngseed = rngseed*3/2;
+		if (!demoplayback)
+		{
+			if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+			{ // [RH] Change the random seed for each new single player game
+				rngseed = rngseed*3/2;
+			}
+			FRandom::StaticClearRandom ();
 		}
-		FRandom::StaticClearRandom ();
 		memset (ACS_WorldVars, 0, sizeof(ACS_WorldVars));
 		memset (ACS_GlobalVars, 0, sizeof(ACS_GlobalVars));
 		for (i = 0; i < NUM_WORLDVARS; ++i)
@@ -1517,28 +1631,33 @@ void G_InitNew (char *mapname, bool bTitleLevel)
 		level.maptime = 0;
 		level.totaltime = 0;
 
-		if (!multiplayer || !deathmatch)
+		// [BC] Changed multiplayer, added teamgame.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE || !( deathmatch || teamgame ))
 		{
 			InitPlayerClasses ();
 		}
+
+		// Reset timer for "Welcome" messages.
+		GAME_SetLevelIntroTicks( 0 );
 
 		// force players to be initialized upon first level load
 		for (i = 0; i < MAXPLAYERS; i++)
 			players[i].playerstate = PST_ENTER;	// [BC]
 	}
 
-	usergame = !bTitleLevel;		// will be set false if a demo
+	usergame = !bTitleLevel;				// will be set false if a demo
 	paused = 0;
 	demoplayback = false;
 	automapactive = false;
-	viewactive = true;
-	BorderNeedRefresh = screen->GetPageCount ();
 
-	//Added by MC: Initialize bots.
-	if (!deathmatch)
-	{
-		bglobal.Init ();
-	}
+	// [BC] If we're a client receiving a snapshot, don't make the view active just yet.
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) || ( CLIENT_GetConnectionState( ) != CTS_RECEIVINGSNAPSHOT ))
+		viewactive = true;
+	else
+		viewactive = false;
+
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		BorderNeedRefresh = screen->GetPageCount ();
 
 	strcpy (level.mapname, mapname);
 	if (bTitleLevel)
@@ -1550,6 +1669,9 @@ void G_InitNew (char *mapname, bool bTitleLevel)
 		gamestate = GS_LEVEL;
 	}
 	G_DoLoadLevel (0, false);
+
+//	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+//		SERVERCONSOLE_SetupColumns( );
 }
 
 //
@@ -1565,7 +1687,7 @@ static bool		resetinventory;	// Reset the inventory to the player's default for 
 //		match the first parameter of the single player start spots
 //		that should appear in the next map.
 
-static void goOn (int position, bool keepFacing, bool secret, bool resetinv)
+/*static*/ void goOn (int position, bool keepFacing, bool secret, bool resetinv)
 {
 	static bool unloading;
 
@@ -1584,12 +1706,14 @@ static void goOn (int position, bool keepFacing, bool secret, bool resetinv)
 	secretexit = secret;
 	resetinventory = resetinv;
 
-	bglobal.End();	//Added by MC:
-
 	// [RH] Give scripts a chance to do something
 	unloading = true;
 	FBehavior::StaticStartTypedScripts (SCRIPT_Unloading, NULL, false, 0, true);
 	unloading = false;
+
+	// [BC] If we're the server, tell clients that the map has finished.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_MapExit( position );
 
 	if (thiscluster && (thiscluster->flags & CLUSTER_HUB))
 	{
@@ -1661,12 +1785,31 @@ void G_DoCompleted (void)
 	strncpy (wminfo.lname0, level.info->pname, 8);
 	strncpy (wminfo.current, level.mapname, 8);
 
-	if (deathmatch &&
+	// [BC] SORRY! YOU LOSE!
+	if ((( CAMPAIGN_InCampaign( )) && ( invasion == false )) && ( CAMPAIGN_DidPlayerBeatMap( ) == false ) && (( level.flags & LEVEL_CHANGEMAPCHEAT ) == false ))
+	{
+		strncpy (wminfo.next, level.mapname, 8);
+		strncpy (wminfo.lname1, level.info->pname, 8);
+	}
+	// [BC] || teamgame.
+	else if (( deathmatch || teamgame ) &&
 		(dmflags & DF_SAME_LEVEL) &&
 		!(level.flags & LEVEL_CHANGEMAPCHEAT))
 	{
 		strncpy (wminfo.next, level.mapname, 8);
 		strncpy (wminfo.lname1, level.info->pname, 8);
+	}
+	// [BC] Check to see if we want to rotate to a new map.
+	else if (( sv_maprotation ) &&
+			 ( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
+			 ( MAPROTATION_GetNumEntries( ) != 0 ) &&
+			 (( level.flags & LEVEL_CHANGEMAPCHEAT ) == false ))
+	{
+		// Move on to the next map.
+		MAPROTATION_AdvanceMap( );
+
+		strncpy( wminfo.next, MAPROTATION_GetCurrentMapName( ), 8 );
+		strncpy( wminfo.lname1, FindLevelInfo( MAPROTATION_GetCurrentMapName( ))->pname, 8 );
 	}
 	else
 	{
@@ -1720,8 +1863,6 @@ void G_DoCompleted (void)
 		wminfo.plyr[i].sitems = players[i].itemcount;
 		wminfo.plyr[i].ssecret = players[i].secretcount;
 		wminfo.plyr[i].stime = level.time;
-		memcpy (wminfo.plyr[i].frags, players[i].frags
-				, sizeof(wminfo.plyr[i].frags));
 		wminfo.plyr[i].fragcount = players[i].fragcount;
 	}
 
@@ -1795,6 +1936,9 @@ void G_DoCompleted (void)
 		return;
 	}
 
+	// Clear out the in level notify text.
+	CONSOLE_ClearNotifyText( );
+
 	gamestate = GS_INTERMISSION;
 	viewactive = false;
 	automapactive = false;
@@ -1826,11 +1970,223 @@ void DAutosaver::Tick ()
 //
 extern gamestate_t 	wipegamestate; 
  
+void SERVERCONSOLE_SetCurrentMapname( char *pszString );
+void SERVERCONSOLE_UpdateScoreboard( void );
+void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
 void G_DoLoadLevel (int position, bool autosave)
-{ 
+{
 	static int lastposition = 0;
 	gamestate_t oldgs = gamestate;
 	int i;
+	// [BC]
+	char				szString[256];
+	CAMPAIGNINFO_t		*pInfo;
+	UCVarValue			Val;
+
+	// Loop through the teams, and reset the scores.
+	for ( i = 0; i < NUM_TEAMS; i++ )
+	{
+		TEAM_SetFragCount( i, 0, false );
+		TEAM_SetDeathCount( i, 0 );
+		TEAM_SetWinCount( i, 0, false );
+		TEAM_SetScore( i, 0, false );
+
+		// Also, reset the return ticks.
+		TEAM_SetReturnTicks( i, 0 );
+	}
+
+	// Clear everyone's team.
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		players[i].ulTeam = NUM_TEAMS;
+		players[i].bOnTeam = false;
+	}
+
+	if ( dmflags2 & DF2_NO_TEAM_SELECT )
+	{
+		LONG	lNumNeedingTeam;
+		LONG	lRand;
+		
+		do
+		{
+			lNumNeedingTeam = 0;
+			for ( i = 0; i < MAXPLAYERS; i++ )
+			{
+				if ( playeringame[i] == false )
+					continue;
+
+				if (( players[i].bOnTeam == false ) && ( players[i].ulTeam == NUM_TEAMS ))
+					lNumNeedingTeam++;
+			}
+
+			if ( lNumNeedingTeam > 0 )
+			{
+				do
+				{
+					lRand = ( M_Random( ) % MAXPLAYERS );
+				} while (( playeringame[lRand] == false ) || ( players[lRand].bOnTeam ) || ( players[lRand].ulTeam != NUM_TEAMS ));
+
+				PLAYER_SetTeam( &players[lRand], TEAM_ChooseBestTeamForPlayer( ), true );
+			}
+
+		} while ( lNumNeedingTeam != 0 );
+	}
+	// Reset their team.
+	else
+	{
+		for (i = 0; i < MAXPLAYERS; i++)
+			PLAYER_SetTeam( &players[i], NUM_TEAMS, true );
+	}
+
+	// If a campaign is allowed, see if there is one for this map.
+	if ( CAMPAIGN_AllowCampaign( ) && ( savegamerestore == false ))
+	{
+		pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+		if ( pInfo )
+		{
+			// First, clear out the botspawn table.
+			BOTSPAWN_ClearTable( );
+
+			Val.Int = pInfo->lFragLimit;
+			fraglimit.ForceSet( Val, CVAR_Int );
+			Val.Float = pInfo->fTimeLimit;
+			timelimit.ForceSet( Val, CVAR_Float );
+			Val.Int = pInfo->lPointLimit;
+			pointlimit.ForceSet( Val, CVAR_Int );
+			Val.Int = pInfo->lDuelLimit;
+			duellimit.ForceSet( Val, CVAR_Int );
+			Val.Int = pInfo->lWinLimit;
+			winlimit.ForceSet( Val, CVAR_Int );
+			Val.Int = pInfo->lWaveLimit;
+			wavelimit.ForceSet( Val, CVAR_Int );
+			if ( pInfo->lDMFlags != -1 )
+			{
+				Val.Int = pInfo->lDMFlags;
+				dmflags.ForceSet( Val, CVAR_Int );
+			}
+			if ( pInfo->lDMFlags2 != -1 )
+			{
+				Val.Int = pInfo->lDMFlags2;
+				dmflags2.ForceSet( Val, CVAR_Int );
+			}
+			if ( pInfo->lCompatFlags != -1 )
+			{
+				Val.Int = pInfo->lCompatFlags;
+				compatflags.ForceSet( Val, CVAR_Int );
+			}
+
+			Val.Bool = false;
+			deathmatch.ForceSet( Val, CVAR_Bool );
+			teamgame.ForceSet( Val, CVAR_Bool );
+
+			Val.Bool = true;
+			switch ( pInfo->lGameMode )
+			{
+			case GAMETYPE_COOPERATIVE:
+
+				cooperative.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_SURVIVAL:
+
+				survival.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_INVASION:
+
+				invasion.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_DEATHMATCH:
+
+				deathmatch.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_TEAMPLAY:
+
+				teamplay.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_DUEL:
+
+				duel.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_TERMINATOR:
+
+				terminator.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_LASTMANSTANDING:
+
+				lastmanstanding.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_TEAMLMS:
+
+				teamlms.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_POSSESSION:
+
+				possession.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_TEAMPOSSESSION:
+
+				teampossession.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_TEAMGAME:
+
+				teamgame.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_CTF:
+
+				ctf.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_ONEFLAGCTF:
+
+				oneflagctf.ForceSet( Val, CVAR_Bool );
+				break;
+			case GAMETYPE_SKULLTAG:
+
+				skulltag.ForceSet( Val, CVAR_Bool );
+				break;
+			default:
+
+				I_Error( "G_DoLoadLevel: Invalid campaign game type, %d!", pInfo->lGameMode );
+				break;
+			}
+
+			for ( i = 0; i < MAXPLAYERS; i++ )
+			{
+				if ( pInfo->BotSpawn[i].szBotName[0] )
+					BOTSPAWN_AddToTable( pInfo->BotSpawn[i].szBotName, pInfo->BotSpawn[i].szBotTeam );
+			}
+
+			// Also, clear out existing bots.
+			BOTS_RemoveAllBots( false );
+
+			// We're now in a campaign.
+			CAMPAIGN_SetInCampaign( true );
+
+			if (( teamgame || teamplay || teamlms || teampossession ) && ( pInfo->szPlayerTeam[0] != 0 ))
+			{
+				if ( stricmp( pInfo->szPlayerTeam, "red" ) == 0 )
+				{
+					players[consoleplayer].ulTeam = TEAM_RED;
+					players[consoleplayer].bOnTeam = true;
+				}
+				else if ( stricmp( pInfo->szPlayerTeam, "blue" ) == 0 )
+				{
+					players[consoleplayer].ulTeam = TEAM_BLUE;
+					players[consoleplayer].bOnTeam = true;
+				}
+				else
+					I_Error( "G_DoLoadLevel: Invalid player team, \"%s\"!", pInfo->szPlayerTeam );
+			}
+		}
+		else
+		{
+			// We're now NOT in a campaign.
+			CAMPAIGN_SetInCampaign( false );
+		}
+	}
+	else
+	{
+			// We're now NOT in a campaign.
+			CAMPAIGN_SetInCampaign( false );
+	}
 
 	if (NextSkill >= 0)
 	{
@@ -1846,15 +2202,25 @@ void G_DoLoadLevel (int position, bool autosave)
 		lastposition = position;
 
 	G_InitLevelLocals ();
-	StatusBar->DetachAllMessages ();
+	// [BC] The server doesn't have a status bar.
+	if ( StatusBar )
+		StatusBar->DetachAllMessages ();
 
-	Printf (
-			"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
-			"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
-			TEXTCOLOR_BOLD "%s - %s\n\n",
-			level.mapname, level.level_name);
+	// [BC] In server mode, display the level name slightly differently.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		Printf( "\n*** %s: %s ***\n\n", level.mapname, level.level_name );
+	}
+	else
+	{
+		Printf (
+				"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
+				"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
+				TEXTCOLOR_BOLD "%s - %s\n\n",
+				level.mapname, level.level_name);
+	}
 
-	if (wipegamestate == GS_LEVEL)
+	if (wipegamestate == GS_LEVEL) 
 		wipegamestate = GS_FORCEWIPE;
 
 	if (gamestate != GS_TITLELEVEL)
@@ -1880,16 +2246,66 @@ void G_DoLoadLevel (int position, bool autosave)
 
 	for (i = 0; i < MAXPLAYERS; i++)
 	{ 
-		if (playeringame[i] && (deathmatch || players[i].playerstate == PST_DEAD))
+		// [BC] Added teamgame, invasion.
+		if (playeringame[i] && ((deathmatch || teamgame || invasion) || players[i].playerstate == PST_DEAD))
 			players[i].playerstate = PST_ENTER;	// [BC]
-		memset (players[i].frags,0,sizeof(players[i].frags)); 
+
 		players[i].fragcount = 0;
+
+		// Reset the number of medals each player has.
+		memset( players[i].ulMedalCount, 0, sizeof( players[i].ulMedalCount ));
+		MEDAL_ClearMedalQueue( i );
+
+		// Reset "ready to go on" flag.
+		players[i].bReadyToGoOn = false;
+
+		// Reset a bunch of other stuff too.
+		players[i].ulDeathCount = 0;
+		players[i].ulWins = 0;
+		players[i].ulConsecutiveHits = 0;
+		players[i].ulConsecutiveRailgunHits = 0;
+		players[i].ulDeathsWithoutFrag = 0;
+		players[i].ulFragsWithoutDeath = 0;
+		players[i].ulLastExcellentTick = 0;
+		players[i].ulLastFragTick = 0;
+		players[i].ulLastBFGFragTick = 0;
+		players[i].lPointCount = 0;
+		players[i].ulRailgunShots = 0;
+		players[i].ulTime = 0;
+//		players[i].bDeadSpectator = false;
+
+		// If we're the server, update the console.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCONSOLE_UpdatePlayerInfo( i, UDF_FRAGS|UDF_PING|UDF_TIME );
+
+//		if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && ( PLAYER_ShouldSpawnAsSpectator( &players[i] )))
+//			players[i].bSpectating = true;
 	}
+
+	// Refresh the HUD.
+	SCOREBOARD_RefreshHUD( );
+
+	// Set number of duels to 0.
+	DUEL_SetNumDuels( 0 );
+
+	// Erase any saved player information.
+	SERVER_SAVE_ClearList( );
+
+	// Clear out the join queue.
+//	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+//		JOINQUEUE_ClearList( );
+
+	// Make sure the game isn't frozen.
+	GAME_SetFreezeMode( false );
+
+	// Initialize/clear the free network ID list.
+	ACTOR_ClearNetIDList( );
 
 	P_SetupLevel (level.mapname, position);
 
 	// [RH] Start lightning, if MAPINFO tells us to
-	if (level.flags & LEVEL_STARTLIGHTNING)
+	// [BC] Don't do this in client mode.
+	if ((level.flags & LEVEL_STARTLIGHTNING) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
 	{
 		P_StartLightning ();
 	}
@@ -1906,12 +2322,6 @@ void G_DoLoadLevel (int position, bool autosave)
 	LocalViewAngle = 0;
 	LocalViewPitch = 0;
 	paused = 0;
-
-	//Added by MC: Initialize bots.
-	if (deathmatch)
-	{
-		bglobal.Init ();
-	}
 
 	if (timingdemo)
 	{
@@ -1933,7 +2343,8 @@ void G_DoLoadLevel (int position, bool autosave)
 	{ // If we are viewing through a player, make sure it is us.
         players[consoleplayer].camera = players[consoleplayer].mo;
 	}
-	StatusBar->AttachToPlayer (&players[consoleplayer]);
+	if ( StatusBar )
+		StatusBar->AttachToPlayer (&players[consoleplayer]);
 	P_DoDeferedScripts ();	// [RH] Do script actions that were triggered on another map.
 	
 	if (demoplayback || oldgs == GS_STARTUP || oldgs == GS_TITLELEVEL)
@@ -1941,10 +2352,66 @@ void G_DoLoadLevel (int position, bool autosave)
 
 	C_FlushDisplay ();
 
+	// [BC] Spawn various necessary game objects at the start of the map.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		// Spawn the terminator artifact in terminator mode.
+		if ( terminator )
+			GAME_SpawnTerminatorArtifact( );
+
+		// Spawn the possession artifact in possession/team possession mode.
+		if ( possession || teampossession )
+			GAME_SpawnPossessionArtifact( );
+	}
+
+	// [BC] If we're the server, potentially check if we should use some campaign settings
+	// for this map.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		if (( invasion ) &&
+			( sv_usemapsettingswavelimit ))
+		{
+			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			if ( pInfo )
+			{
+				Val.Int = pInfo->lWaveLimit;
+				wavelimit.ForceSet( Val, CVAR_Int );
+			}
+		}
+
+		if (( possession || teampossession ) &&
+			( sv_usemapsettingspossessionholdtime ))
+		{
+			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			if (( pInfo ) && ( pInfo->lPossessionHoldTime > 0 ))
+			{
+				Val.Int = pInfo->lPossessionHoldTime;
+				sv_possessionholdtime.ForceSet( Val, CVAR_Int );
+			}
+		}
+	}
+
 	// [RH] Always save the game when entering a new level.
-	if (autosave && !savegamerestore && disableautosave < 1)
+	// [BC] No need to autosave during deathmatch/teamgame mode.
+	if (autosave && !savegamerestore && disableautosave < 1 && ( deathmatch == false ) && ( teamgame == false ))
 	{
 		DAutosaver GCCNOWARN *dummy = new DAutosaver;
+	}
+
+	// [BC] If we're server, update the map name and scoreboard on the server console.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		// Now that we're in a new level, update the mapname/scoreboard.
+		sprintf( szString, "%s: %s", level.mapname, level.level_name );
+		SERVERCONSOLE_SetCurrentMapname( szString );
+		SERVERCONSOLE_UpdateScoreboard( );
+
+		// Reset the columns.
+		SERVERCONSOLE_SetupColumns( );
+
+		// Also, update the level for all clients.
+		SERVER_LoadNewLevel( level.mapname );
+
 	}
 }
 
@@ -1958,7 +2425,9 @@ void G_WorldDone (void)
 	cluster_info_t *thiscluster;
 	char *nextmap;
 
-	gameaction = ga_worlddone; 
+	// [BC] Clients don't need to do this, otherwise they'll try to load the map on their end.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		gameaction = ga_worlddone; 
 
 	if (level.flags & LEVEL_CHANGEMAPCHEAT)
 		return;
@@ -1979,10 +2448,10 @@ void G_WorldDone (void)
 	{
 		nextcluster = FindClusterInfo (CheckLevelRedirect (FindLevelInfo (nextmap))->cluster);
 
-		if (nextcluster->cluster != level.cluster && !deathmatch)
+		if (nextcluster->cluster != level.cluster && NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			// Only start the finale if the next level's cluster is different
-			// than the current one and we're not in deathmatch.
+			// than the current one and we're not in deathmatch. [BC] And we're not in multiplayer
 			if (nextcluster->entertext)
 			{
 				F_StartFinale (nextcluster->messagemusic, nextcluster->musicorder,
@@ -2006,7 +2475,9 @@ void G_WorldDone (void)
 } 
  
 void G_DoWorldDone (void) 
-{		 
+{
+	ULONG	ulIdx;
+
 	gamestate = GS_LEVEL;
 	if (wminfo.next[0] == 0)
 	{
@@ -2021,9 +2492,28 @@ void G_DoWorldDone (void)
 	G_DoLoadLevel (startpos, true);
 	startpos = 0;
 	gameaction = ga_nothing;
-	viewactive = true; 
-}
+	viewactive = true;
 
+	// Tell the bots that we're now on the new map.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playeringame[ulIdx] == false )
+			continue;
+
+		if ( players[ulIdx].pSkullBot )
+		{
+			players[ulIdx].pSkullBot->PostEvent( BOTEVENT_NEWMAP );
+
+			// Also, clear out their goals.
+			players[ulIdx].pSkullBot->m_ulPathType = BOTPATHTYPE_NONE;
+			players[ulIdx].pSkullBot->m_PathGoalPos.x = 0;
+			players[ulIdx].pSkullBot->m_PathGoalPos.y = 0;
+			players[ulIdx].pSkullBot->m_pGoalActor = NULL;
+//			ASTAR_ClearPath( ulIdx );
+		}
+	}
+} 
+ 
 //==========================================================================
 //
 // G_StartTravel
@@ -2036,7 +2526,8 @@ void G_DoWorldDone (void)
 
 void G_StartTravel ()
 {
-	if (deathmatch)
+	// [BC] Changed this to a function.
+	if ( G_AllowTravel( ) == false )
 		return;
 
 	for (int i = 0; i < MAXPLAYERS; ++i)
@@ -2047,7 +2538,8 @@ void G_StartTravel ()
 			AInventory *inv;
 
 			// Only living players travel. Dead ones get a new body on the new level.
-			if (players[i].health > 0)
+			// [BC] Same goes for spectators.
+			if ((players[i].health > 0) && ( players[i].bSpectating == false ))
 			{
 				pawn->UnlinkFromWorld ();
 				P_DelSector_List ();
@@ -2076,11 +2568,15 @@ void G_StartTravel ()
 //
 //==========================================================================
 
+// [BC]
+bool	P_AdjustFloorCeil (AActor *thing);
 void G_FinishTravel ()
 {
 	TThinkerIterator<APlayerPawn> it (STAT_TRAVELLING);
 	APlayerPawn *pawn, *pawndup, *oldpawn, *next;
 	AInventory *inv;
+	// [BC]
+	LONG	lSavedNetID;
 
 	next = it.Next ();
 	while ( (pawn = next) != NULL)
@@ -2100,7 +2596,10 @@ void G_FinishTravel ()
 
 			// The player being spawned here is a short lived dummy and
 			// must not start any ENTER script or big problems will happen.
-			P_SpawnPlayer (&playerstarts[pawn->player - players], true);
+			P_SpawnPlayer (&playerstarts[pawn->player - players], false, pawn->player, true);
+
+			// [BC]
+			lSavedNetID = pawndup->lNetID;
 
 			pawndup = pawn->player->mo;
 			if (!startkeepfacing)
@@ -2134,18 +2633,47 @@ void G_FinishTravel ()
 			pawn->AddToHash ();
 			pawn->SetState(pawn->SpawnState);
 
+			// [BC]
+			pawn->lNetID = lSavedNetID;
+			g_NetIDList[pawn->lNetID].bFree = false;
+			g_NetIDList[pawn->lNetID].pActor = pawn;
+
 			for (inv = pawn->Inventory; inv != NULL; inv = inv->Inventory)
 			{
 				inv->ChangeStatNum (STAT_INVENTORY);
 				inv->LinkToWorld ();
 				inv->Travelled ();
+				
+				// [BC] This is necessary, otherwise all the sector links for the inventory
+				// end up being off. This is a problem if the object tries to move or
+				// something, which is the case with bobbing objects.
+				P_AdjustFloorCeil( inv );
 			}
 		}
 	}
 }
  
+//==========================================================================
+//
+// [BC] G_AllowTravel
+//
+// Returns whether or not travelling should be allowed.
+//
+//==========================================================================
+
+bool G_AllowTravel( void )
+{
+	if ( deathmatch || teamgame || invasion || ( NETWORK_GetState( ) == NETSTATE_CLIENT ))
+		return ( false );
+
+	return ( true );
+}
+
 void G_InitLevelLocals ()
 {
+	ULONG		ulDMFlags;
+	UCVarValue	Val;
+
 	level_info_t *info;
 
 	BaseBlendA = 0.0f;		// Remove underwater blend effect, if any
@@ -2249,9 +2777,18 @@ void G_InitLevelLocals ()
 	if (level.flags & LEVEL_FREELOOK_NO)
 		set |= DF_NO_FREELOOK;
 
-	dmflags = (dmflags & ~clear) | set;
+//	dmflags = (dmflags & ~clear) | set;
+	// We need to force setting the dmflags because of campaign mode.
+	ulDMFlags = dmflags;
+	ulDMFlags = ( ulDMFlags & ~clear ) | set;
 
-	compatflags.Callback();
+	Val.Int = ulDMFlags;
+	if ( dmflags != Val.Int )
+		dmflags.ForceSet( Val, CVAR_Int );
+
+	// [BC] Why do we need to do this? For now, just don't do it in server mode.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		compatflags.Callback();
 
 	NormalLight.ChangeFade (level.fadeto);
 }
@@ -2262,7 +2799,25 @@ char *CalcMapName (int episode, int level)
 
 	if (gameinfo.flags & GI_MAPxx)
 	{
-		sprintf (lumpname, "MAP%02d", level);
+		switch ( episode )
+		{
+		case 0:
+		case 1:
+
+			sprintf( lumpname, "MAP%02d", level );
+//			dmflags &= ~DF_NO_MONSTERS;
+//			teamgame.Set( 0.0f );
+//			deathmatch.Set( 0.0f );
+			break;
+		case 2:
+
+			sprintf( lumpname, "D2DM%d", level );
+			break;
+		case 3:
+
+			sprintf( lumpname, "D2ST%d", level );
+			break;
+		}
 	}
 	else
 	{
@@ -2429,15 +2984,37 @@ void G_MakeEpisodes ()
 				// warptrans 1.
 				strcpy (EpisodeMaps[0], "&wt@01");
 				EpisodeMenu[0].name = copystring ("Hexen");
+				EpisodeMenu[0].alphaKey = 'h';
+				EpisodeMenu[0].fulltext = true;
+				EpiDef.numitems = 1;
 			}
 			else
 			{
 				strcpy (EpisodeMaps[0], "MAP01");
-				EpisodeMenu[0].name = copystring ("Hell on Earth");
+				EpisodeMenu[0].name = copystring ("M_HOE");
+				EpisodeMenu[0].fulltext = false;
+				EpisodeMenu[0].alphaKey = 'h';
+				EpisodeMenu[0].bBotSkill = false;
+				EpisodeMenu[0].bBotSkillFullText = false;
+
+				strcpy (EpisodeMaps[1], "D2DM1");
+				EpisodeMenu[1].name = copystring ("M_MORTAL");
+				EpisodeMenu[1].fulltext = false;
+				EpisodeMenu[1].alphaKey = 't';
+				EpisodeMenu[1].bBotSkill = true;
+				EpisodeMenu[1].bBotSkillFullText = false;
+				sprintf( EpisodeSkillHeaders[1], "M_DMATCH" );
+				
+				strcpy (EpisodeMaps[2], "D2INV1");
+				EpisodeMenu[2].name = copystring ("M_IMPEND");
+				EpisodeMenu[2].fulltext = false;
+				EpisodeMenu[2].alphaKey = 'i';
+				EpisodeMenu[2].bBotSkill = false;
+				EpisodeMenu[2].bBotSkillFullText = false;
+				sprintf( EpisodeSkillHeaders[2], "M_SKTAG" );
+
+				EpiDef.numitems = 3;
 			}
-			EpisodeMenu[0].alphaKey = 'h';
-			EpisodeMenu[0].fulltext = true;
-			EpiDef.numitems = 1;
 		}
 		else if (gameinfo.gametype == GAME_Doom)
 		{
@@ -2447,6 +3024,8 @@ void G_MakeEpisodes ()
 				EpisodeMenu[i].name = copystring (depinames[i]);
 				EpisodeMenu[i].fulltext = false;
 				EpisodeMenu[i].alphaKey = depikeys[i];
+				EpisodeMenu[i].bBotSkill = false;
+				EpisodeMenu[i].bBotSkillFullText = false;
 			}
 			if (gameinfo.flags & GI_MENUHACK_RETAIL)
 			{
@@ -2465,6 +3044,8 @@ void G_MakeEpisodes ()
 				EpisodeMenu[i].name = copystring (hepinames[i]);
 				EpisodeMenu[i].fulltext = true;
 				EpisodeMenu[i].alphaKey = hepikeys[i];
+				EpisodeMenu[i].bBotSkill = false;
+				EpisodeMenu[i].bBotSkillFullText = false;
 			}
 			if (gameinfo.flags & GI_MENUHACK_EXTENDED)
 			{
@@ -2735,7 +3316,7 @@ void G_WriteSnapshots (FILE *file)
 	}
 
 	// Store player classes to be used when spawning a random class
-	if (multiplayer)
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
 		FPNGChunkArchive arc2 (file, RCLS_ID);
 		for (i = 0; i < MAXPLAYERS; ++i)

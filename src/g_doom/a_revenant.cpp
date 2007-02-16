@@ -85,6 +85,7 @@ IMPLEMENT_ACTOR (ARevenant, Doom, 66, 20)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags4 (MF4_LONGMELEERANGE|MF4_MISSILEMORE)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_SKEL_STND)
 	PROP_SeeState (S_SKEL_RUN)
@@ -178,6 +179,10 @@ void A_SkelMissile (AActor *self)
 		missile->x += missile->momx;
 		missile->y += missile->momy;
 		missile->tracer = self->target;
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
 	}
 }
 
@@ -214,6 +219,10 @@ void A_Tracer (AActor *self)
 	if (smoke->tics < 1)
 		smoke->tics = 1;
 	
+	// [BC] Server takes care of movement.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	// adjust direction
 	dest = self->tracer;
 		

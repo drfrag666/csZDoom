@@ -7,6 +7,7 @@
 #include "gi.h"
 #include "a_sharedglobal.h"
 #include "a_strifeglobal.h"
+#include "deathmatch.h"
 
 static FRandom pr_shootgun ("ShootGun");
 

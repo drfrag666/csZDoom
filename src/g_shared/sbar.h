@@ -244,7 +244,7 @@ public:
 private:
 	bool RepositionCoords (int &x, int &y, int xo, int yo, const int w, const int h) const;
 	void DrawMessages (int bottom) const;
-	void DrawConsistancy () const;
+	void DrawTargetName( );
 
 	static BYTE DamageToAlpha[114];
 

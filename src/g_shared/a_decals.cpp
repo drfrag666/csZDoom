@@ -700,12 +700,15 @@ CCMD (spray)
 	Net_WriteString (argv[1]);
 }
 
+// [BC] Moved this to a_sharedglobal.h so the OpenGL renderer can use it.
+/*
 class ADecal : public AActor
 {
 	DECLARE_STATELESS_ACTOR (ADecal, AActor);
 public:
 	void BeginPlay ();
 };
+*/
 
 IMPLEMENT_STATELESS_ACTOR (ADecal, Any, 9200, 0)
 END_DEFAULTS

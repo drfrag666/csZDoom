@@ -66,7 +66,6 @@ dehsupp.lmp	                dehsupp.lmp
 doomx.lmp	                xlat/doom.x
 hereticx.lmp                xlat/heretic.x
 strifex.lmp	                xlat/strife.x
-sectorx.txt					sectorx.txt
 
 animated.lmp                animated.lmp
 spaldoom.lmp                spaldoom.lmp
@@ -135,7 +134,6 @@ sprites/iceca0.png		    iceca0.png
 sprites/icecb0.png		    icecb0.png
 sprites/icecc0.png		    icecc0.png
 sprites/icecd0.png		    icecd0.png
-sprites/amrka0.png			amrka0.png
 
 # crouching DoomPlayer
 sprites/plyca1.lmp  		crouch/plyca1.lmp
@@ -233,15 +231,11 @@ acs/strfhelp.o				strfhelp.o
 
 
 ========
-# Font color ranges
-textcolors.txt				textcolors.txt
-
 ========
 # Decorate stuff
 
 decorate.txt				decorate/decorate.txt
 
-actors/shared/blood.txt						decorate/shared/blood.txt
 actors/shared/debris.txt					decorate/shared/debris.txt
 actors/shared/splashes.txt					decorate/shared/splashes.txt
 
@@ -254,7 +248,6 @@ actors/doom/doomkeys.txt					decorate/doom/doomkeys.txt
 actors/doom/doomdecorations.txt				decorate/doom/doomdecorations.txt
 actors/doom/stealthmonsters.txt				decorate/doom/stealthmonsters.txt
 
-actors/raven/artiegg.txt					decorate/raven/artiegg.txt
 actors/raven/ravenartifacts.txt				decorate/raven/ravenartifacts.txt
 actors/raven/ravenhealth.txt				decorate/raven/ravenhealth.txt
 

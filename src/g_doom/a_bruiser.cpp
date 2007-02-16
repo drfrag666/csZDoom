@@ -7,10 +7,13 @@
 #include "doomstat.h"
 #include "gstrings.h"
 #include "a_action.h"
+#include "sv_commands.h"
+#include "network.h"
 
 static FRandom pr_bruisattack ("BruisAttack");
 
 void A_BruisAttack (AActor *);
+void A_BelphegorAttack (AActor *);
 
 class ABaronOfHell : public AActor
 {
@@ -71,6 +74,7 @@ IMPLEMENT_ACTOR (ABaronOfHell, Doom, 3003, 3)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags4 (MF4_BOSSDEATH)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_BOSS_STND)
 	PROP_SeeState (S_BOSS_RUN)
@@ -84,8 +88,8 @@ IMPLEMENT_ACTOR (ABaronOfHell, Doom, 3003, 3)
 	PROP_PainSound ("baron/pain")
 	PROP_DeathSound ("baron/death")
 	PROP_ActiveSound ("baron/active")
-	PROP_Obituary("$OB_BARON")
-	PROP_HitObituary("$OB_BARONHIT")
+	PROP_Obituary ("$OB_BARON")
+	PROP_HitObituary ("$OB_BARONHIT")
 
 END_DEFAULTS
 
@@ -127,6 +131,15 @@ AT_SPEED_SET (BaronBall, speed)
 {
 	SimpleSpeedSetter (ABaronBall, 15*FRACUNIT, 20*FRACUNIT, speed);
 }
+
+class ABelphegorBall : public ABaronBall
+{
+	DECLARE_STATELESS_ACTOR (ABelphegorBall, ABaronBall)
+};
+
+IMPLEMENT_STATELESS_ACTOR (ABelphegorBall, Doom, -1, 154)
+	PROP_SpeedFixed (20)
+END_DEFAULTS
 
 class AHellKnight : public ABaronOfHell
 {
@@ -187,6 +200,7 @@ IMPLEMENT_ACTOR (AHellKnight, Doom, 69, 113)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags4Clear (MF4_BOSSDEATH)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_BOS2_STND)
 	PROP_SeeState (S_BOS2_RUN)
@@ -200,12 +214,91 @@ IMPLEMENT_ACTOR (AHellKnight, Doom, 69, 113)
 	PROP_PainSound ("knight/pain")
 	PROP_DeathSound ("knight/death")
 	PROP_ActiveSound ("knight/active")
-	PROP_Obituary("$OB_KNIGHT")
-	PROP_HitObituary("$OB_KNIGHTHIT")
+	PROP_Obituary ("$OB_KNIGHT")
+	PROP_HitObituary ("$OB_KNIGHTHIT")
+
+END_DEFAULTS
+
+class ABelphegor : public AHellKnight
+{
+	DECLARE_ACTOR (ABelphegor, AHellKnight)
+};
+
+FState ABelphegor::States[] =
+{
+#define S_BELPHEGOR_STND 0
+	S_NORMAL (BOS3, 'A',   10, A_Look						, &States[S_BELPHEGOR_STND+1]),
+	S_NORMAL (BOS3, 'B',   10, A_Look						, &States[S_BELPHEGOR_STND]),
+
+#define S_BELPHEGOR_RUN (S_BELPHEGOR_STND+2)
+	S_NORMAL (BOS3, 'A',	3, A_Chase						, &States[S_BELPHEGOR_RUN+1]),
+	S_NORMAL (BOS3, 'A',	3, A_Chase						, &States[S_BELPHEGOR_RUN+2]),
+	S_NORMAL (BOS3, 'B',	3, A_Chase						, &States[S_BELPHEGOR_RUN+3]),
+	S_NORMAL (BOS3, 'B',	3, A_Chase						, &States[S_BELPHEGOR_RUN+4]),
+	S_NORMAL (BOS3, 'C',	3, A_Chase						, &States[S_BELPHEGOR_RUN+5]),
+	S_NORMAL (BOS3, 'C',	3, A_Chase						, &States[S_BELPHEGOR_RUN+6]),
+	S_NORMAL (BOS3, 'D',	3, A_Chase						, &States[S_BELPHEGOR_RUN+7]),
+	S_NORMAL (BOS3, 'D',	3, A_Chase						, &States[S_BELPHEGOR_RUN+0]),
+
+#define S_BELPHEGOR_ATK (S_BELPHEGOR_RUN+8)
+	S_NORMAL (BOS3, 'E',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+1]),
+	S_NORMAL (BOS3, 'F',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+2]),
+	S_NORMAL (BOS3, 'G',	6, A_BelphegorAttack			, &States[S_BELPHEGOR_ATK+3]),
+	S_NORMAL (BOS3, 'E',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+4]),
+	S_NORMAL (BOS3, 'F',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+5]),
+	S_NORMAL (BOS3, 'G',	6, A_BelphegorAttack			, &States[S_BELPHEGOR_ATK+6]),
+	S_NORMAL (BOS3, 'E',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+7]),
+	S_NORMAL (BOS3, 'F',	6, A_FaceTarget 				, &States[S_BELPHEGOR_ATK+8]),
+	S_NORMAL (BOS3, 'G',	6, A_BelphegorAttack			, &States[S_BELPHEGOR_RUN+0]),
+
+#define S_BELPHEGOR_PAIN (S_BELPHEGOR_ATK+9)
+	S_NORMAL (BOS3, 'H',	2, NULL 						, &States[S_BELPHEGOR_PAIN+1]),
+	S_NORMAL (BOS3, 'H',	2, A_Pain						, &States[S_BELPHEGOR_RUN+0]),
+
+#define S_BELPHEGOR_DIE (S_BELPHEGOR_PAIN+2)
+	S_NORMAL (BOS3, 'I',	8, NULL 						, &States[S_BELPHEGOR_DIE+1]),
+	S_NORMAL (BOS3, 'J',	8, A_Scream 					, &States[S_BELPHEGOR_DIE+2]),
+	S_NORMAL (BOS3, 'K',	8, NULL 						, &States[S_BELPHEGOR_DIE+3]),
+	S_NORMAL (BOS3, 'L',	8, A_NoBlocking					, &States[S_BELPHEGOR_DIE+4]),
+	S_NORMAL (BOS3, 'M',	8, NULL 						, &States[S_BELPHEGOR_DIE+5]),
+	S_NORMAL (BOS3, 'N',	8, NULL 						, &States[S_BELPHEGOR_DIE+6]),
+	S_NORMAL (BOS3, 'O',   -1, A_BossDeath					, NULL),
+
+#define S_BELPHEGOR_RAISE (S_BELPHEGOR_DIE+7)
+	S_NORMAL (BOS3, 'O',	8, NULL 						, &States[S_BELPHEGOR_RAISE+1]),
+	S_NORMAL (BOS3, 'N',	8, NULL 						, &States[S_BELPHEGOR_RAISE+2]),
+	S_NORMAL (BOS3, 'M',	8, NULL 						, &States[S_BELPHEGOR_RAISE+3]),
+	S_NORMAL (BOS3, 'L',	8, NULL 						, &States[S_BELPHEGOR_RAISE+4]),
+	S_NORMAL (BOS3, 'K',	8, NULL 						, &States[S_BELPHEGOR_RAISE+5]),
+	S_NORMAL (BOS3, 'J',	8, NULL 						, &States[S_BELPHEGOR_RAISE+6]),
+	S_NORMAL (BOS3, 'I',	8, NULL 						, &States[S_BELPHEGOR_RUN+0])
+};
+
+IMPLEMENT_ACTOR (ABelphegor, Doom, 5008, 215)
+	PROP_SpawnHealth (1500)
+	PROP_PainChance (25)
+
+	PROP_SpawnState (S_BELPHEGOR_STND)
+	PROP_SeeState (S_BELPHEGOR_RUN)
+	PROP_PainState (S_BELPHEGOR_PAIN)
+	PROP_MeleeState (S_BELPHEGOR_ATK)
+	PROP_MissileState (S_BELPHEGOR_ATK)
+	PROP_DeathState (S_BELPHEGOR_DIE)
+	PROP_RaiseState (S_BELPHEGOR_RAISE)
+
+	PROP_SeeSound ("baron/sight")
+	PROP_PainSound ("baron/pain")
+	PROP_DeathSound ("baron/death")
+	PROP_ActiveSound ("baron/active")
+	PROP_Obituary ("$OB_BELPHEGOR")
+	PROP_HitObituary ("$OB_BELPHEGOR_MELEE")
+
 END_DEFAULTS
 
 void A_BruisAttack (AActor *self)
 {
+	AActor	*pMissile;
+
 	if (!self->target)
 		return;
 				
@@ -213,11 +306,49 @@ void A_BruisAttack (AActor *self)
 	{
 		int damage = (pr_bruisattack()%8+1)*10;
 		S_Sound (self, CHAN_WEAPON, "baron/melee", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "baron/melee", 127, ATTN_NORM );
+
 		P_DamageMobj (self->target, self, self, damage, MOD_HIT);
 		P_TraceBleed (damage, self->target, self);
 		return;
 	}
 	
 	// launch a missile
-	P_SpawnMissile (self, self->target, RUNTIME_CLASS(ABaronBall));
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(ABaronBall));
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pMissile ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
+}
+
+void A_BelphegorAttack (AActor *self)
+{
+	AActor	*pMissile;
+
+	if (!self->target)
+		return;
+				
+	if (self->CheckMeleeRange ())
+	{
+		int damage = (pr_bruisattack()%8+1)*10;
+		S_Sound (self, CHAN_WEAPON, "baron/melee", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "baron/melee", 127, ATTN_NORM );
+
+		P_DamageMobj (self->target, self, self, damage, MOD_HIT);
+		P_TraceBleed (damage, self->target, self);
+		return;
+	}
+	
+	// launch a missile
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(ABelphegorBall));
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pMissile ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
 }

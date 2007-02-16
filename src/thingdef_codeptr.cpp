@@ -65,6 +65,7 @@
 #include "a_doomglobal.h"
 #include "thingdef.h"
 #include "v_video.h"
+#include "deathmatch.h"
 
 
 static FRandom pr_camissile ("CustomActorfire");
@@ -212,7 +213,15 @@ static void DoAttack (AActor *self, bool domelee, bool domissile)
 	if (domelee && MeleeDamage>0 && self->CheckMeleeRange ())
 	{
 		int damage = pr_camelee.HitDice(MeleeDamage);
-		if (MeleeSound) S_SoundID (self, CHAN_WEAPON, MeleeSound, 1, ATTN_NORM);
+		if (MeleeSound)
+		{
+			S_SoundID (self, CHAN_WEAPON, MeleeSound, 1, ATTN_NORM);
+
+			// [BC] If we're the server, make the sound on the client end.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SoundIDActor( self, CHAN_WEAPON, MeleeSound, 127, ATTN_NORM );
+		}
+
 		P_DamageMobj (self->target, self, self, damage, MOD_HIT);
 		P_TraceBleed (damage, self->target, self);
 	}
@@ -239,6 +248,10 @@ static void DoAttack (AActor *self, bool domelee, bool domissile)
 				{
 					missile->health=-2;
 				}
+
+				// [BC] If we're the server, tell clients to spawn the missile.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SpawnMissile( missile );
 			}
 		}
 	}
@@ -273,6 +286,10 @@ static void DoPlaySound(AActor * self, int channel)
 
 	int soundid = StateParameters[index];
 	S_SoundID (self, channel, soundid, 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play the sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundIDActor( self, channel, soundid, 127, ATTN_NORM );
 }
 
 void A_PlaySound(AActor * self)
@@ -364,6 +381,11 @@ void A_BulletAttack (AActor *self)
 	slope = P_AimLineAttack (self, bangle, MISSILERANGE);
 
 	S_SoundID (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play the sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundIDActor( self, CHAN_WEAPON, self->AttackSound, 127, ATTN_NORM );
+
 	for (i = self->GetMissileDamage (0, 1); i > 0; --i)
     {
 		int angle = bangle + (pr_cabullet.Random2() << 20);
@@ -587,6 +609,14 @@ void A_CallSpecial(AActor * self)
 	int index=CheckIndex(6);
 	if (index<0) return;
 
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		if (pStateCall != NULL)
+			pStateCall->Result = false;
+		return;
+	}
+
 	bool res = !!LineSpecials[StateParameters[index]](NULL, self, false,
 		EvalExpressionI (StateParameters[index+1], self),
 		EvalExpressionI (StateParameters[index+2], self),
@@ -716,6 +746,10 @@ void A_CustomMissile(AActor * self)
 				{
 					missile->health=-2;
 				}
+
+				// [BC] If we're the server, tell clients to spawn the missile.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SpawnMissile( missile );
 			}
 		}
 	}
@@ -855,6 +889,10 @@ void A_FireBullets (AActor *self)
 
 	static_cast<APlayerPawn *>(self)->PlayAttacking2 ();
 
+	// [BC] If we're the server, tell clients to update this player's state.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( player ))
+		SERVERCOMMANDS_SetPlayerState( ULONG( player - players ), STATE_PLAYER_ATTACK2, ULONG( player - players ), SVCF_SKIPTHISCLIENT );
+
 	P_BulletSlope(self);
 	bangle = self->angle;
 	bslope = bulletpitch;
@@ -862,7 +900,15 @@ void A_FireBullets (AActor *self)
 	PuffType = PClass::FindClass(PuffTypeName);
 	if (!PuffType) PuffType=RUNTIME_CLASS(ABulletPuff);
 
+	// [BC] If we're the server, tell clients that a weapon is being fired.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundIDActor( self, CHAN_WEAPON, weapon->AttackSound, 127, ATTN_NORM, player ? ULONG( player - players ) : MAXPLAYERS, SVCF_SKIPTHISCLIENT );
+
 	S_SoundID (self, CHAN_WEAPON, weapon->AttackSound, 1, ATTN_NORM);
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	if ((NumberOfBullets==1 && !player->refire) || NumberOfBullets==0)
 	{
@@ -908,6 +954,10 @@ void A_FireCustomMissile (AActor * self)
 		if (!weapon->DepleteAmmo(weapon->bAltFire, true)) return;	// out of ammo
 	}
 
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	const PClass * ti=PClass::FindClass(MissileName);
 	if (ti) 
 	{
@@ -936,6 +986,10 @@ void A_FireCustomMissile (AActor * self)
 				misl->momy = FixedMul (missilespeed, finesine[an]);
 			}
 			if (misl->flags4&MF4_SPECTRAL) misl->health=-1;
+
+			// [BC] If we're the server, tell clients to spawn this missile.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SpawnMissile( misl );
 		}
 	}
 }
@@ -1284,6 +1338,10 @@ void A_SpawnItem(AActor * self)
 			// If this is a missile or something else set the target to the originator
 			mo->target=originator? originator : self;
 		}
+
+		// [BC] If we're the server, tell clients to spawn the item.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnThing( mo );
 	}
 }
 

@@ -6,6 +6,8 @@
 #include "p_enemy.h"
 #include "s_sound.h"
 #include "c_console.h"
+#include "deathmatch.h"
+#include "network.h"
 
 IMPLEMENT_STATELESS_ACTOR (APuzzleItem, Any, -1, 0)
 	PROP_Flags (MF_SPECIAL|MF_NOGRAVITY)
@@ -24,7 +26,7 @@ void APuzzleItem::Serialize (FArchive &arc)
 bool APuzzleItem::HandlePickup (AInventory *item)
 {
 	// Can't carry more than 1 of each puzzle item in coop netplay
-	if (multiplayer && !deathmatch && item->GetClass() == GetClass())
+	if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && item->GetClass() == GetClass())
 	{
 		return true;
 	}
@@ -48,6 +50,6 @@ bool APuzzleItem::Use (bool pickup)
 
 bool APuzzleItem::ShouldStay ()
 {
-	return !!multiplayer;
+	return ( NETWORK_GetState( ) != NETSTATE_SINGLE );
 }
 

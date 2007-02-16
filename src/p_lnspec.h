@@ -167,9 +167,6 @@ typedef enum {
 	Thing_RevertGravity = 124,
 #endif
 	Thing_Move = 125,
-#if 0 // Skull Tag special I doubt I will add
-	Thing_SetSprite = 126,
-#endif
 	Thing_SetSpecial = 127,
 	ThrustThingZ = 128,
 
@@ -189,6 +186,16 @@ typedef enum {
 	Thing_SpawnFacing = 139,
 
 	Sector_ChangeSound = 140,
+
+	// [BC]
+	Player_SetTeam = 145,
+
+	// [BC]
+	Team_Score = 152,
+	Team_GivePoints = 153,
+
+	// [BC]
+	Teleport_NoStop = 154,
 
 	// GZDoom/Vavoom specials (put here so that they don't get accidentally redefined)
 	Sector_SetPlaneReflection = 159,

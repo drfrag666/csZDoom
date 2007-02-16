@@ -66,9 +66,21 @@
 #include "p_local.h"
 #include "r_sky.h"
 #include "p_setup.h"
+// [BC] New #includes.
+#include "deathmatch.h"
+#include "cl_main.h"
+#include "network.h"
+#include "p_local.h"
+#include "p_acs.h"
+#include "team.h"
+#include "maprotation.h"
+#include "cl_commands.h"
 
 extern FILE *Logfile;
 extern bool insave;
+
+// [BC] Store the name of the file we're currently logging to.
+extern char g_szLogFilename[256];
 
 CVAR (Bool, sv_cheats, false, CVAR_SERVERINFO | CVAR_LATCH)
 
@@ -79,7 +91,7 @@ CCMD (toggleconsole)
 
 bool CheckCheatmode ()
 {
-	if (((gameskill == sk_nightmare) || netgame || deathmatch) && (!sv_cheats))
+	if ((( gameskill == sk_nightmare ) || ( NETWORK_GetState( ) == NETSTATE_CLIENT ) || ( NETWORK_GetState( ) == NETSTATE_SERVER )) && ( sv_cheats == false ))
 	{
 		Printf ("sv_cheats must be true to enable this command.\n");
 		return true;
@@ -92,11 +104,19 @@ bool CheckCheatmode ()
 
 CCMD (quit)
 {
+	// [BC] This function may not be used by ConsoleCommand.
+	if ( ACS_IsCalledFromConsoleCommand( ))
+		return;
+
 	if (!insave) exit (0);
 }
 
 CCMD (exit)
 {
+	// [BC] This function may not be used by ConsoleCommand.
+	if ( ACS_IsCalledFromConsoleCommand( ))
+		return;
+
 	if (!insave) exit (0);
 }
 
@@ -114,8 +134,13 @@ CCMD (god)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_GOD);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_GOD );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_GOD);
+	}
 }
 
 CCMD (iddqd)
@@ -123,8 +148,58 @@ CCMD (iddqd)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_IDDQD);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_IDDQD );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_IDDQD);
+	}
+}
+
+// [BC] Allow users to execute the "idfa" cheat from the console.
+CCMD( idfa )
+{
+	if ( CheckCheatmode( ))
+		return;
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_IDFA );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_IDFA);
+	}
+}
+
+// [BC] Allow users to execute the "idkfa" cheat from the console.
+CCMD( idkfa )
+{
+	if ( CheckCheatmode( ))
+		return;
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_IDKFA );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_IDKFA);
+	}
+}
+
+// [BC] Allow users to execute the "idchoppers" cheat from the console.
+CCMD( idchoppers )
+{
+	if ( CheckCheatmode( ))
+		return;
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_CHAINSAW );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_CHAINSAW);
+	}
 }
 
 CCMD (notarget)
@@ -132,8 +207,13 @@ CCMD (notarget)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_NOTARGET);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_NOTARGET );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_NOTARGET);
+	}
 }
 
 CCMD (fly)
@@ -141,8 +221,13 @@ CCMD (fly)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_FLY);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_FLY );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_FLY);
+	}
 }
 
 /*
@@ -157,8 +242,13 @@ CCMD (noclip)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_NOCLIP);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_NOCLIP );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_NOCLIP);
+	}
 }
 
 CCMD (powerup)
@@ -166,8 +256,13 @@ CCMD (powerup)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_POWER);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_POWER );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_POWER);
+	}
 }
 
 CCMD (morphme)
@@ -175,15 +270,20 @@ CCMD (morphme)
 	if (CheckCheatmode ())
 		return;
 
-	if (argv.argc() == 1)
-	{
-		Net_WriteByte (DEM_GENERICCHEAT);
-		Net_WriteByte (CHT_MORPH);
-	}
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_MORPH );
 	else
 	{
-		Net_WriteByte (DEM_MORPHEX);
-		Net_WriteString (argv[1]);
+		if (argv.argc() == 1)
+		{
+			Net_WriteByte (DEM_GENERICCHEAT);
+			Net_WriteByte (CHT_MORPH);
+		}
+		else
+		{
+			Net_WriteByte (DEM_MORPHEX);
+			Net_WriteString (argv[1]);
+		}
 	}
 }
 
@@ -192,11 +292,18 @@ CCMD (anubis)
 	if (CheckCheatmode ())
 		return;
 
-	Net_WriteByte (DEM_GENERICCHEAT);
-	Net_WriteByte (CHT_ANUBIS);
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_ANUBIS );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_ANUBIS);
+	}
 }
 
 // [GRB]
+// [BC] I don't think so.
+/*
 CCMD (resurrect)
 {
 	if (CheckCheatmode ())
@@ -205,7 +312,7 @@ CCMD (resurrect)
 	Net_WriteByte (DEM_GENERICCHEAT);
 	Net_WriteByte (CHT_RESSURECT);
 }
-
+*/
 EXTERN_CVAR (Bool, chasedemo)
 
 CCMD (chase)
@@ -230,17 +337,23 @@ CCMD (chase)
 	}
 	else
 	{
-		if (deathmatch && CheckCheatmode ())
+		// [BC] Disallow chasecam by default in teamgame as well.
+		if ((deathmatch || teamgame) && CheckCheatmode ())
 			return;
 
-		Net_WriteByte (DEM_GENERICCHEAT);
-		Net_WriteByte (CHT_CHASECAM);
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			CLIENTCOMMANDS_GenericCheat( CHT_CHASECAM );
+		else
+		{
+			Net_WriteByte (DEM_GENERICCHEAT);
+			Net_WriteByte (CHT_CHASECAM);
+		}
 	}
 }
 
 CCMD (idclev)
 {
-	if (CheckCheatmode () || netgame)
+	if ((CheckCheatmode ()) || ( NETWORK_GetState( ) == NETSTATE_CLIENT ))
 		return;
 
 	if ((argv.argc() > 1) && (*(argv[1] + 2) == 0) && *(argv[1] + 1) && *argv[1])
@@ -309,15 +422,9 @@ CCMD (hxvisit)
 
 CCMD (changemap)
 {
-	if (who == NULL)
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 	{
-		Printf ("Use the map command when not in a game.\n");
-		return;
-	}
-
-	if (who->player - players != Net_Arbitrator && multiplayer)
-	{
-		Printf ("Only player %d can change the map.\n", Net_Arbitrator+1);
+		Printf( "Only the server can change the map.\n" );
 		return;
 	}
 
@@ -331,16 +438,31 @@ CCMD (changemap)
 		else
 		{
 			delete map;
-			if (argv.argc() > 2)
+			// Fuck that DEM shit!
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				Net_WriteByte (DEM_CHANGEMAP2);
-				Net_WriteByte (atoi(argv[2]));
+				strncpy( level.nextmap, argv[1], 8 );
+
+				level.flags |= LEVEL_CHANGEMAPCHEAT;
+
+				if ( sv_maprotation )
+					MAPROTATION_SetPositionToMap( argv[1] );
+
+				G_ExitLevel( 0, false );
 			}
 			else
 			{
-				Net_WriteByte (DEM_CHANGEMAP);
+				if (argv.argc() > 2)
+				{
+					Net_WriteByte (DEM_CHANGEMAP2);
+					Net_WriteByte (atoi(argv[2]));
+				}
+				else
+				{
+					Net_WriteByte (DEM_CHANGEMAP);
+				}
+				Net_WriteString (argv[1]);
 			}
-			Net_WriteString (argv[1]);
 		}
 	}
 	else
@@ -349,17 +471,60 @@ CCMD (changemap)
 	}
 }
 
+CCMD( nextmap )
+{
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		Printf( "Only the server can change the map.\n" );
+		return;
+	}
+
+	// Fuck that DEM shit!
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+//		level.flags |= LEVEL_CHANGEMAPCHEAT;
+
+		if ( sv_maprotation )
+			MAPROTATION_SetPositionToMap( level.mapname );
+
+		G_ExitLevel( 0, false );
+	}
+	else
+	{
+		if (argv.argc() > 1)
+		{
+			Net_WriteByte (DEM_CHANGEMAP2);
+			Net_WriteByte (atoi(argv[1]));
+		}
+		else
+		{
+			Net_WriteByte (DEM_CHANGEMAP);
+		}
+		Net_WriteString( level.nextmap );
+	}
+}
+
 CCMD (give)
 {
 	if (CheckCheatmode () || argv.argc() < 2)
 		return;
 
-	Net_WriteByte (DEM_GIVECHEAT);
-	Net_WriteString (argv[1]);
-	if (argv.argc() > 2)
-		Net_WriteWord (clamp (atoi (argv[2]), 1, 32767));
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		if ( argv.argc( ) > 2 )
+			CLIENTCOMMANDS_GiveCheat( argv[1], clamp( atoi( argv[2]), 1, 255 ));
+		else
+			CLIENTCOMMANDS_GiveCheat( argv[1], 0 );
+	}
 	else
-		Net_WriteWord (0);
+	{
+		Net_WriteByte (DEM_GIVECHEAT);
+		Net_WriteString (argv[1]);
+		if (argv.argc() > 2)
+			Net_WriteWord (clamp (atoi (argv[2]), 1, 32767));
+		else
+			Net_WriteWord (0);
+	}
 }
 
 CCMD (gameversion)
@@ -405,6 +570,10 @@ CCMD (logfile)
 {
 	char *timestr = myasctime ();
 
+	// This function may not be used by ConsoleCommand.
+	if ( ACS_IsCalledFromConsoleCommand( ))
+		return;
+
 	if (Logfile)
 	{
 		Printf ("Log stopped: %s\n", timestr);
@@ -416,6 +585,7 @@ CCMD (logfile)
 	{
 		if ( (Logfile = fopen (argv[1], "w")) )
 		{
+			sprintf( g_szLogFilename, argv[1] );
 			Printf ("Log started: %s\n", timestr);
 		}
 		else
@@ -428,6 +598,9 @@ CCMD (logfile)
 CCMD (puke)
 {
 	int argc = argv.argc();
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	if (argc < 2 || argc > 5)
 	{
@@ -582,6 +755,10 @@ CCMD (fov)
 	}
 	else
 	{
+		// Just do this here in client games.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			player->DesiredFOV = clamp (atoi (argv[1]), 5, 179);
+
 		Net_WriteByte (DEM_MYFOV);
 	}
 	Net_WriteByte (clamp (atoi (argv[1]), 5, 179));
@@ -603,7 +780,7 @@ CCMD (r_visibility)
 	{
 		Printf ("Visibility is %g\n", R_GetVisibility());
 	}
-	else if (!netgame)
+	else if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 	{
 		R_SetVisibility (atof (argv[1]));
 	}
@@ -628,7 +805,7 @@ CCMD (warp)
 		Printf ("You can only warp inside a level.\n");
 		return;
 	}
-	if (netgame)
+	else if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
 		Printf ("You cannot warp in a net game!\n");
 		return;
@@ -639,9 +816,7 @@ CCMD (warp)
 	}
 	else
 	{
-		Net_WriteByte (DEM_WARPCHEAT);
-		Net_WriteWord (atoi (argv[1]));
-		Net_WriteWord (atoi (argv[2]));
+		P_TeleportMove (players[consoleplayer].mo, fixed_t(atof(argv[1])*65536.0), fixed_t(atof(argv[2])*65536.0), ONFLOORZ, true);
 	}
 }
 
@@ -660,7 +835,7 @@ CCMD (load)
         Printf ("usage: load <filename>\n");
         return;
     }
-	if (netgame)
+	if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && ( NETWORK_GetState( ) != NETSTATE_SINGLE_MULTIPLAYER ))
 	{
 		Printf ("cannot load during a network game\n");
 		return;
@@ -695,7 +870,7 @@ CCMD (save)
         Printf ("not in a level\n");
         return;
     }
-    if(players[consoleplayer].health <= 0 && !multiplayer)
+    if(players[consoleplayer].health <= 0 && ( NETWORK_GetState( ) == NETSTATE_SINGLE ))
     {
         Printf ("player is dead in a single-player game\n");
         return;
@@ -809,7 +984,7 @@ CCMD(changesky)
 {
 	const char *sky1name;
 
-	if (netgame || argv.argc()<2) return;
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) || ( NETWORK_GetState( ) == NETSTATE_SERVER ) || argv.argc()<2) return;
 
 	sky1name = argv[1];
 	if (sky1name[0] != 0)
@@ -832,4 +1007,24 @@ CCMD(thaw)
 
 	Net_WriteByte (DEM_GENERICCHEAT);
 	Net_WriteByte (CHT_CLEARFROZENPROPS);
+}
+
+//*****************************************************************************
+//	Some console commands to emulate a multiplayer game while in single player mode.
+CCMD( netgame )
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+		Printf( "Multiplayer already enabled/emulated.\n" );
+	else
+	{
+		NETWORK_SetState( NETSTATE_SINGLE_MULTIPLAYER );
+		Printf( "Multiplayer emulation enabled.\n" );
+	}
+}
+
+//*****************************************************************************
+//
+CCMD( multiplayer )
+{
+	C_DoCommand( "netgame", 0 );
 }

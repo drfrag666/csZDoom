@@ -71,6 +71,11 @@ struct FBrokenLines
 #define TEXTCOLOR_NORMAL		"\034-"
 #define TEXTCOLOR_BOLD			"\034+"
 
+// [BC] New text functions.
+void	V_ColorizeString( char *pszString );
+void	V_UnColorizeString( char *pszString, ULONG ulMaxStringLength );
+void	V_RemoveColorCodes( char *pszString );
+
 FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const BYTE *str);
 void V_FreeBrokenLines (FBrokenLines *lines);
 inline FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const char *str)

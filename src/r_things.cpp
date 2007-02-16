@@ -43,6 +43,10 @@
 #include "s_sound.h"
 #include "sbar.h"
 #include "gi.h"
+#include "w_wad.h"
+#include "deathmatch.h"
+#include "lastmanstanding.h"
+#include "network.h"
 
 extern FTexture *CrosshairImage;
 extern fixed_t globaluclip, globaldclip;
@@ -54,6 +58,72 @@ extern fixed_t globaluclip, globaldclip;
 EXTERN_CVAR (Bool, st_scale)
 CVAR (Bool, r_drawfuzz, true, CVAR_ARCHIVE)
 
+// [BC] Allow clients to decide whether or not they want skins enabled.
+CUSTOM_CVAR( Int, cl_skins, 1, CVAR_ARCHIVE )
+{
+	LONG	lSkin;
+	ULONG	ulIdx;
+
+	// Loop through all the players and set their sprite according to the value of cl_skins.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] == false ) || ( players[ulIdx].mo == NULL ))
+			continue;
+
+		// If cl_skins == 0, then the user wishes to disable all skins.
+		if ( self <= 0 )
+		{
+			lSkin = R_FindSkin( "base", players[ulIdx].CurrentPlayerClass );
+
+			// Make sure the player doesn't change sprites when his state changes.
+			players[ulIdx].mo->flags4 |= MF4_NOSKIN;
+		}
+		// If cl_skins >= 2, then the user wants to disable cheat skins, but allow all others.
+		else if ( self >= 2 )
+		{
+			if ( skins[players[ulIdx].userinfo.skin].bCheat )
+			{
+				lSkin = R_FindSkin( "base", players[ulIdx].CurrentPlayerClass );
+
+				// Make sure the player doesn't change sprites when his state changes.
+				players[ulIdx].mo->flags4 |= MF4_NOSKIN;
+			}
+			else
+			{
+				lSkin = players[ulIdx].userinfo.skin;
+
+				if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
+					players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
+			}
+		}
+		// If cl_skins == 1, allow all skins to be used.
+		else
+		{
+			lSkin = players[ulIdx].userinfo.skin;
+
+			if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
+				players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
+		}
+
+		// If the skin is valid, set the player's sprite to the skin's sprite, and adjust
+		// the player's scale accordingly.
+		if (( lSkin >= 0 ) && ( lSkin < numskins ))
+		{
+			players[ulIdx].mo->sprite = skins[lSkin].sprite;
+			players[ulIdx].mo->xscale = players[ulIdx].mo->yscale = skins[lSkin].scale;
+/*
+			// Make sure the player doesn't change sprites when his state changes.
+			if ( lSkin == R_FindSkin( "base", players[ulIdx].CurrentPlayerClass ))
+				players[ulIdx].mo->flags4 |= MF4_NOSKIN;
+			else
+			{
+				if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
+					players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
+			}
+*/
+		}
+	}
+}
 
 //
 // Sprite rotation 0 is facing the viewer,
@@ -379,7 +449,7 @@ void R_InitSpriteDefs ()
 // Reads in everything applicable to a skin. The skins should have already
 // been counted and had their identifiers assigned to namespaces.
 //
-#define NUMSKINSOUNDS 17
+#define NUMSKINSOUNDS 18
 static const char *skinsoundnames[NUMSKINSOUNDS][2] =
 { // The *painXXX sounds must be the first four
 	{ "dsplpain",	"*pain100" },
@@ -404,7 +474,8 @@ static const char *skinsoundnames[NUMSKINSOUNDS][2] =
 	{ "dsslop",		"*splat" },
 
 	{ "dspunch",	"*fist" },
-	{ "dsjump",		"*jump" }
+	{ "dsjump",		"*jump" },
+	{ "dstaunt",	"*taunt" },
 };
 
 static int STACK_ARGS skinsorter (const void *a, const void *b)
@@ -754,6 +825,409 @@ void R_InitSkins (void)
 		}
 	}
 
+	// [BC] Now parse SKININFO lumps.
+	{
+		LONG		lCurLump;
+		LONG		lLastLump = 0;
+		char		szKey[128];
+		char		szValue[128];
+		char		szSpriteName[4];
+		ULONG		ulIdx;
+
+		// Search through all loaded wads for a lump called "SKININFO".
+		while (( lCurLump = Wads.FindLump( "SKININFO", (int *)&lLastLump )) != -1 )
+		{
+			// Load the found SKININFO lump.
+			SC_OpenLumpNum( lCurLump, "SKININFO" );
+
+			// Begin parsing the lump.
+			while ( SC_GetString( ))
+			{
+				// Parse until we find a starting bracket.
+				while ( sc_String[0] != '{' )
+					SC_GetString( );
+
+				// Move onto the next skin.
+				i++;
+
+				szSpriteName[0] = 0;
+				crouchname = 0;
+
+				remove = false;
+				basetype = NULL;
+				transtype = NULL;
+
+				// Initialize the sound lumps.
+				for ( ulIdx = 0; ulIdx < NUMSKINSOUNDS; ulIdx++ )
+					sndlumps[ulIdx] = -1;
+
+				// We've encountered a starting bracket. Now continue to parse until we hit an end bracket.
+				while ( sc_String[0] != '}' )
+				{
+					// The current token should be our key. (key = value) If it's an end bracket, break.
+					SC_GetString( );
+					sprintf( szKey, sc_String );
+					if ( sc_String[0] == '}' )
+						break;
+
+					// The following key must be an = sign. If not, the user made an error!
+					SC_GetString( );
+					if ( stricmp( sc_String, "=" ) != 0 )
+						I_Error( "R_InitSkins: Missing \"=\" in SKININFO lump for field \"%s\".\n", szKey );
+
+					// The last token should be our value.
+					SC_GetString( );
+					sprintf( szValue, sc_String );
+
+					// Now try to match our key with a valid bot info field.
+					if ( stricmp( szKey, "name" ) == 0 )
+						sprintf( skins[i].name, szValue );
+					else if ( stricmp( szKey, "sprite" ) == 0 )
+					{
+						for ( ulIdx = 0; ulIdx < 4; ulIdx++ )
+							szValue[ulIdx] = toupper( szValue[ulIdx] );
+		
+						sprintf( szSpriteName, szValue );
+					}
+					else if ( stricmp( szKey, "face" ) == 0 )
+					{
+						for ( ulIdx = 0; ulIdx < 3; ulIdx++ )
+							skins[i].face[ulIdx] = toupper( szValue[ulIdx] );
+					}
+					else if (( stricmp( szKey, "gender" ) == 0 ) || ( stricmp( szKey, "sex" ) == 0 ))
+					{
+						if (( stricmp( szValue, "male" ) == 0 ) || ( stricmp( szValue, "man" ) == 0 ))
+							skins[i].gender = GENDER_MALE;
+						else if (( stricmp( szValue, "female" ) == 0 ) || ( stricmp( szValue, "woman" ) == 0 ))
+							skins[i].gender = GENDER_FEMALE;
+						else if (( stricmp( szValue, "cyborg" ) == 0 ) || ( stricmp( szValue, "neuter" ) == 0 ))
+							skins[i].gender = GENDER_NEUTER;
+					}
+					else if ( stricmp( szKey, "hidden" ) == 0 )
+					{
+						if (( stricmp( szValue, "true" ) == 0 ) || ( stricmp( szValue, "yes" ) == 0 ))
+							skins[i].bRevealed = false;
+						else if (( stricmp( szValue, "false" ) == 0 ) || ( stricmp( szValue, "no" ) == 0 ))
+							skins[i].bRevealed = true;
+
+						skins[i].bRevealedByDefault = skins[i].bRevealed;
+					}
+					else if ( stricmp( szKey, "cheat" ) == 0 )
+					{
+						if (( stricmp( szValue, "true" ) == 0 ) || ( stricmp( szValue, "yes" ) == 0 ))
+							skins[i].bCheat = true;
+						else if (( stricmp( szValue, "false" ) == 0 ) || ( stricmp( szValue, "no" ) == 0 ))
+							skins[i].bCheat = false;
+					}
+					else if ( stricmp( szKey, "color" ) == 0 )
+						sprintf( skins[i].szColor, szValue );
+					else if ( stricmp( szKey, "scale" ) == 0 )
+						skins[i].scale = clamp ((int)(atof( szValue ) * 64), 1, 256) - 1;
+					else if ( stricmp( szKey, "game" ) == 0 )
+					{
+						// If the user is specifying another game, then select a different
+						// basetype for the skin.
+						if ( gameinfo.gametype == GAME_Heretic )
+							basetype = PClass::FindClass( NAME_HereticPlayer );
+						else if ( gameinfo.gametype == GAME_Strife )
+							basetype = PClass::FindClass( NAME_StrifePlayer );
+						else
+							basetype = PClass::FindClass( NAME_DoomPlayer );
+
+						// NOTE TO SELF: What is transtype?
+						transtype = basetype;
+
+						if ( stricmp( sc_String, "heretic" ) == 0 )
+						{
+							// I guess you can use heretic skins in Doom?
+							if ( gameinfo.gametype == GAME_Doom )
+							{
+								transtype = PClass::FindClass( NAME_HereticPlayer );
+								skins[i].othergame = true;
+							}
+							else if ( gameinfo.gametype != GAME_Heretic )
+								remove = true;
+						}
+						else if ( stricmp ( sc_String, "strife" ) == 0 )
+						{
+							// Only allow the use of Strife skins in Strife.
+							if ( gameinfo.gametype != GAME_Strife )
+								remove = true;
+						}
+						else
+						{
+							// Hmm... what about Hexen skins?
+							if ( gameinfo.gametype == GAME_Heretic )
+							{
+								transtype = PClass::FindClass( NAME_DoomPlayer );
+								skins[i].othergame = true;
+							}
+							else if ( gameinfo.gametype != GAME_Doom )
+								remove = true;
+						}
+
+						if ( remove )
+							break;
+					}
+					// [GRB] Define the skin for a specific player class.
+					else if ( stricmp( key, "class" ) == 0 )
+					{
+						LONG	lClass;
+
+						lClass = D_PlayerClassToInt( sc_String );
+
+						// If the class this skin is for doesn't exist, remove the skin.
+						if ( lClass < 0 )
+						{
+							remove = true;
+							break;
+						}
+
+						basetype = transtype = PlayerClasses[lClass].Type;
+					}
+					// Player sound replacment (ZDoom extension)
+					else if ( szKey[0] == '*' )
+					{
+						LONG	lIdx;
+						LONG	lLump = Wads.CheckNumForName( sc_String, skins[i].namespc );
+
+						if ( lLump == -1 )
+							lLump = Wads.CheckNumForName( sc_String );
+
+						if ( lLump != -1 )
+						{
+							// Replace all pain sounds in one go
+							if ( stricmp( szKey, "*pain" ) == 0 )
+							{
+								aliasid = S_AddPlayerSound( skins[i].name, skins[i].gender,
+									playersoundrefs[0], lLump, true );
+
+								for ( lIdx = 3; lIdx > 0; --lIdx )
+								{
+									S_AddPlayerSoundExisting( skins[i].name, skins[i].gender,
+										playersoundrefs[lIdx], aliasid, true );
+								}
+							}
+							else
+							{
+								LONG	lSoundRef;
+
+								lSoundRef = S_FindSoundNoHash( szKey );
+								if ( lSoundRef != 0 )
+									S_AddPlayerSound( skins[i].name, skins[i].gender, lSoundRef, lLump, true );
+							}
+						}
+					}
+					else
+					{
+						for ( ulIdx = 0; ulIdx < NUMSKINSOUNDS; ulIdx++ )
+						{
+							if ( stricmp( szKey, skinsoundnames[ulIdx][0] ) == 0 )
+							{
+								sndlumps[ulIdx] = Wads.CheckNumForName( szValue, skins[i].namespc );
+							
+								// Replacement not found, try finding it in the global namespace.
+								if ( sndlumps[ulIdx] == -1 )
+									sndlumps[ulIdx] = Wads.CheckNumForName( szValue );
+							}
+						}
+					}
+				}
+
+				// [GRB] Assume Doom skin by default.
+				if (( remove == false ) && ( basetype == NULL ))
+				{
+					if ( gameinfo.gametype == GAME_Doom )
+						basetype = transtype = PClass::FindClass( NAME_DoomPlayer );
+					else if ( gameinfo.gametype == GAME_Heretic )
+					{
+						basetype = PClass::FindClass( NAME_HereticPlayer );
+						transtype = PClass::FindClass( NAME_DoomPlayer );
+						skins[i].othergame = true;
+					}
+					else
+						remove = true;
+				}
+
+				if ( remove == false )
+				{
+					skins[i].range0start = transtype->Meta.GetMetaInt( APMETA_ColorRange ) & 0xff;
+					skins[i].range0end = transtype->Meta.GetMetaInt( APMETA_ColorRange ) >> 8;
+
+					// Check which class this skin belongs to, and add it.
+					remove = true;
+					for ( ulIdx = 0; ulIdx < (ULONG)PlayerClasses.Size( ); ulIdx++ )
+					{
+						const PClass	*pType = PlayerClasses[ulIdx].Type;
+
+						if (( pType->IsDescendantOf( basetype )) &&
+							( GetDefaultByType( pType )->SpawnState->sprite.index == GetDefaultByType( basetype )->SpawnState->sprite.index ) &&
+							( pType->Meta.GetMetaInt( APMETA_ColorRange ) == basetype->Meta.GetMetaInt( APMETA_ColorRange )))
+						{
+							PlayerClasses[ulIdx].Skins.Push( i );
+							remove = false;
+						}
+					}
+				}
+
+				if ( remove == false )
+				{
+					// User didn't specify a name for this skin.
+					if ( skins[i].name[0] == 0 )
+						sprintf( skins[i].name, "UNNAMED SKIN %d", i );
+
+					// Attempt to install a new sprite.
+					if ( szSpriteName[0] != '\0' )
+					{
+						char	szTempLumpName[9];
+						LONG	lSpriteNum;
+
+						// Create an integer representation of the sprite name (is this faster?).
+						intname = *(DWORD *)szSpriteName;
+
+						int basens = Wads.GetLumpNamespace(base);
+
+						for(int spr = 0; spr<2; spr++)
+						{
+							memset (sprtemp, 0xFFFF, sizeof(sprtemp));
+							for (k = 0; k < MAX_SPRITE_FRAMES; ++k)
+							{
+								sprtemp[k].Flip = 0;
+							}
+							maxframe = -1;
+
+							if (spr == 1)
+							{
+								if (crouchname !=0 && crouchname != intname)
+								{
+									intname = crouchname;
+								}
+								else
+								{
+									skins[i].crouchsprite = -1;
+									break;
+								}
+							}
+
+							// Loop through all the lumps searching for frames for this skin.
+							for ( ulIdx = 0; ulIdx < Wads.GetNumLumps( ); ulIdx++ )
+							{
+								// Only process skin entries from the wad the SKININFO lump is in.
+								// NOTE: If this isn't done, Skulltag doesn't work with hr.wad.
+								if ( Wads.GetLumpFile( lCurLump ) != Wads.GetLumpFile( ulIdx ))
+									continue;
+
+								Wads.GetLumpName( szTempLumpName, ulIdx );
+								if ( *(DWORD *)szTempLumpName == intname )
+								{
+									LONG	lPicNum = TexMan.CreateTexture( ulIdx, FTexture::TEX_SkinSprite );
+
+									R_InstallSpriteLump( lPicNum, 
+														 szTempLumpName[4] - 'A',
+														 szTempLumpName[5],
+														 false );
+
+									// This lump represents two frames (A3A7, etc.), so install it twice.
+									if ( szTempLumpName[6] )
+										R_InstallSpriteLump( lPicNum,
+														 szTempLumpName[6] - 'A',
+														 szTempLumpName[7],
+														 true );
+								}
+							}
+
+							if (spr == 0 && maxframe <= 0)
+							{
+								Printf (PRINT_BOLD, "Skin %s (#%d) has no frames. Removing.\n", skins[i].name, i);
+								remove = true;
+								break;
+							}
+
+							strncpy( temp.name, szSpriteName, 4 );
+							temp.name[4] = 0;
+							lSpriteNum = (int)sprites.Push( temp );
+							if ( spr == 0 )
+								skins[i].sprite = lSpriteNum;
+							else
+								skins[i].crouchsprite = lSpriteNum;
+							R_InstallSprite( lSpriteNum );
+						}
+/*						
+						// Loop through all the lumps searching for frames for this skin.
+						for ( ulIdx = 0; ulIdx < Wads.GetNumLumps( ); ulIdx++ )
+						{
+							// Only process skin entries from the wad the SKININFO lump is in.
+							// NOTE: If this isn't done, Skulltag doesn't work with hr.wad.
+							if ( Wads.GetLumpFile( lCurLump ) != Wads.GetLumpFile( ulIdx ))
+								continue;
+
+							Wads.GetLumpName( szTempLumpName, ulIdx );
+							if ( *(DWORD *)szTempLumpName == intname )
+							{
+								LONG	lPicNum = TexMan.AddTexture( new FPatchTexture( ulIdx, FTexture::TEX_SkinSprite ));
+
+								R_InstallSpriteLump( lPicNum, 
+													 szTempLumpName[4] - 'A',
+													 szTempLumpName[5],
+													 false );
+
+								// This lump represents two frames (A3A7, etc.), so install it twice.
+								if ( szTempLumpName[6] )
+									R_InstallSpriteLump( lPicNum,
+													 szTempLumpName[6] - 'A',
+													 szTempLumpName[7],
+													 true );
+							}
+						}
+
+						if ( maxframe <= 0 )
+						{
+							Printf (PRINT_BOLD, "Skin %s (#%d) has no frames. Removing.\n", skins[i].name, i);
+							if (i < numskins-1)
+								memmove (&skins[i], &skins[i+1], sizeof(skins[0])*(numskins-i-1));
+							i--;
+							continue;
+						}
+
+						// Now that all the frames have been installed, install our new sprite.
+						strncpy( temp.name, szSpriteName, 4 );
+						temp.name[4] = 0;
+						skins[i].sprite = (int)sprites.Push( temp );
+						R_InstallSprite( skins[i].sprite );
+*/
+					}
+				}
+
+				if ( remove )
+				{
+					if (i < numskins-1)
+						memmove (&skins[i], &skins[i+1], sizeof(skins[0])*(numskins-i-1));
+					i--;
+					continue;
+				}
+
+				// Register any sounds this skin provides.
+				aliasid = 0;
+				for ( ulIdx = 0; ulIdx < NUMSKINSOUNDS; ulIdx++ )
+				{
+					if ( sndlumps[ulIdx] != -1 )
+					{
+						if (( ulIdx == 0 ) || ( sndlumps[ulIdx] != sndlumps[ulIdx-1] ))
+						{
+							aliasid = S_AddPlayerSound (skins[i].name, skins[i].gender,
+								playersoundrefs[ulIdx], sndlumps[ulIdx], true);
+						}
+						else
+						{
+							S_AddPlayerSoundExisting (skins[i].name, skins[i].gender,
+								playersoundrefs[ulIdx], aliasid, true);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if (numskins > PlayerClasses.Size ())
 	{ // The sound table may have changed, so rehash it.
 		S_HashSounds ();
@@ -802,9 +1276,26 @@ int R_FindSkin (const char *name, int pclass)
 CCMD (skins)
 {
 	int i;
+	ULONG	ulNumSkins;
+	ULONG	ulNumHiddenSkins;
 
+	ulNumSkins = 0;
+	ulNumHiddenSkins = 0;
 	for (i = PlayerClasses.Size ()-1; i < (int)numskins; i++)
-		Printf ("% 3d %s\n", i-PlayerClasses.Size ()+1, skins[i].name);
+	{
+		if ( skins[i].bRevealed )
+		{
+			Printf ("% 3d %s\n", ulNumSkins, skins[i].name);
+			ulNumSkins++;
+		}
+		else
+			ulNumHiddenSkins++;
+	}
+
+	if ( ulNumHiddenSkins == 0 )
+		Printf( "\n%d skins; All hidden skins unlocked!\n", (int)numskins );
+	else
+		Printf( "\n%d skins; %d remain%s hidden.\n", (int)numskins, ulNumHiddenSkins, ulNumHiddenSkins == 1 ? "s" : "" );
 }
 
 //
@@ -831,6 +1322,38 @@ static void R_CreateSkinTranslation (const char *palname)
 		OtherGameSkinRemap[i] = ColorMatcher.Pick (otherPal[0], otherPal[1], otherPal[2]);
 		otherPal += 3;
 	}
+}
+
+//*****************************************************************************
+//
+ULONG R_CountSkinInfoSkins( void )
+{
+	LONG		lCurLump;
+	LONG		lLastLump = 0;
+	ULONG		ulNumSkins = 0;
+
+	// Search through all loaded wads for a lump called "SKININFO".
+	while (( lCurLump = Wads.FindLump( "SKININFO", (int *)&lLastLump )) != -1 )
+	{
+		// Open the found skininfo lump.
+		SC_OpenLumpNum( lCurLump, "SKININFO" );
+
+		// Begin parsing that text found within that lump.
+		while ( SC_GetString( ))
+		{
+			// We found a starting brace. This indicated we're creating a new skin.
+			while ( sc_String[0] != '{' )
+				SC_GetString( );
+
+			ulNumSkins++;
+
+			// Continue to parse until we've found the corresponding closing brace.
+			while ( sc_String[0] != '}' )
+				SC_GetString( );
+		}
+	}
+
+	return ( ulNumSkins );
 }
 
 
@@ -863,6 +1386,9 @@ void R_InitSprites ()
 		numskins++;
 	}
 
+	// [BC] Count the number of skins in the SKININFO lumps.
+	numskins += R_CountSkinInfoSkins( );
+
 	// [RH] Do some preliminary setup
 	skins = new FPlayerSkin[numskins];
 	memset (skins, 0, sizeof(*skins) * numskins);
@@ -872,6 +1398,11 @@ void R_InitSprites ()
 		skins[i].range0start = type->Meta.GetMetaInt (APMETA_ColorRange) & 255;
 		skins[i].range0end = type->Meta.GetMetaInt (APMETA_ColorRange) >> 8;
 		skins[i].scale = GetDefaultByType (type)->xscale;
+		// [BC] We need to initialize the default sprite, because when we create a skin
+		// using SKININFO, we don't necessarily specify a sprite.
+		skins[i].sprite = GetDefaultByType (type)->SpawnState->sprite.index;
+		skins[i].bRevealed = true;
+		skins[i].bRevealedByDefault = true;
 	}
 
 	R_InitSpriteDefs ();
@@ -920,6 +1451,9 @@ void R_DeinitSprites()
 	{
 		delete[] skins;
 		skins = NULL;
+
+		// [BC] Also reset the number of skins.
+		numskins = 0;
 	}
 
 	// Free vissprites
@@ -1185,6 +1719,9 @@ void R_ProjectSprite (AActor *thing, int fakeside)
 
 	sector_t*			heightsec;			// killough 3/27/98
 
+	SWORD				TopOffset;
+	SWORD				LeftOffset;
+
 	if (thing == NULL ||
 		(thing->renderflags & RF_INVISIBLE) ||
 		thing->RenderStyle == STYLE_None ||
@@ -1296,9 +1833,21 @@ void R_ProjectSprite (AActor *thing, int fakeside)
 		return;
 	}
 
+	// [BC] Render flag here for the random powerup, which has all of its frames centered.
+	if ( thing->renderflags & RF_RANDOMPOWERUPHACK )
+	{
+		TopOffset = tex->GetHeight( ) + 24 - ( tex->GetHeight( ) / 2 );
+		LeftOffset = tex->GetWidth( ) / 2;
+	}
+	else
+	{
+		TopOffset = tex->TopOffset;
+		LeftOffset = tex->LeftOffset;
+	}
+
 	// [RH] Added scaling
-	gzt = fz + (tex->TopOffset << (FRACBITS-6-3)) * (thing->yscale+1) * tex->ScaleX;
-	gzb = fz + ((tex->TopOffset - tex->GetHeight()) << (FRACBITS-6-3)) * (thing->yscale+1) * tex->ScaleY;
+	gzt = fz + (TopOffset << (FRACBITS-6-3)) * (thing->yscale+1) * tex->ScaleX;
+	gzb = fz + ((TopOffset - tex->GetHeight()) << (FRACBITS-6-3)) * (thing->yscale+1) * tex->ScaleY;
 
 	// [RH] Reject sprites that are off the top or bottom of the screen
 	if (MulScale12 (globaluclip, tz) > viewz - gzb ||
@@ -1385,7 +1934,7 @@ void R_ProjectSprite (AActor *thing, int fakeside)
 	vis->gz = gzb;		// [RH] use gzb, not thing->z
 	vis->gzt = gzt;		// killough 3/27/98
 	vis->floorclip = SafeDivScale9 (thing->floorclip, (thing->yscale+1) * tex->ScaleY);
-	vis->texturemid = (tex->TopOffset << FRACBITS)
+	vis->texturemid = (TopOffset << FRACBITS)
 		- SafeDivScale9 (viewz-fz+thing->floorclip, (thing->yscale+1) * tex->ScaleY);
 	vis->x1 = x1 < WindowLeft ? WindowLeft : x1;
 	vis->x2 = x2 > WindowRight ? WindowRight : x2;
@@ -1409,14 +1958,40 @@ void R_ProjectSprite (AActor *thing, int fakeside)
 		vis->startfrac += vis->xiscale*(vis->x1-x1);
 	
 	// get light level
-	if (fixedlightlev)
-	{
-		vis->colormap = basecolormap + fixedlightlev;
-	}
-	else if (fixedcolormap)
+	if (fixedcolormap)
 	{
 		// fixed map
 		vis->colormap = fixedcolormap;
+	}
+	else if ( thing->lFixedColormap )
+	{
+		switch ( thing->lFixedColormap )
+		{
+		case REDCOLORMAP:
+
+			vis->colormap = RedColormap;
+			break;
+		case GREENCOLORMAP:
+
+			vis->colormap = GreenColormap;
+			break;
+		case GOLDCOLORMAP:
+
+			vis->colormap = GoldColormap;
+			break;
+		case NUMCOLORMAPS:
+
+			vis->colormap = InverseColormap;
+			break;
+		default:
+
+			vis->colormap = NormalLight.Maps;
+			break;
+		}
+	}
+	else if (fixedlightlev)
+	{
+		vis->colormap = basecolormap + fixedlightlev;
 	}
 	else if (!foggy && (thing->renderflags & RF_FULLBRIGHT))
 	{
@@ -2086,9 +2661,18 @@ void R_DrawMasked (void)
 #endif
 	R_SortVisSprites (sv_compare, firstvissprite - vissprites);
 
-	for (i = vsprcount; i > 0; i--)
+	// [BC] Potentially prevent spectators from viewing active players during LMS games.
+	if ((( teamlms || lastmanstanding ) &&
+		(( lmsspectatorsettings & LMS_SPF_VIEW ) == false ) &&
+		( players[consoleplayer].bSpectating ) &&
+		( players[consoleplayer].mo->CheckLocalView( consoleplayer )) &&
+		( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+		( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS )) == false )
 	{
-		R_DrawSprite (spritesorter[i-1]);
+		for (i = vsprcount; i > 0; i--)
+		{
+			R_DrawSprite (spritesorter[i-1]);
+		}
 	}
 
 	// render any remaining masked mid textures
@@ -2119,15 +2703,34 @@ void R_DrawMasked (void)
 // [RH] Particle functions
 //
 
+// [BC] Allow the maximum number of particles to be specified by a cvar (so people
+// with lots of nice hardware can have lots of particles!).
+CUSTOM_CVAR( Int, r_maxparticles, 4000, CVAR_ARCHIVE )
+{
+	if ( self == 0 )
+		self = 4000;
+	else if ( self < 100 )
+		self = 100;
+
+	if ( gamestate != GS_STARTUP )
+	{
+		R_DeinitParticles( );
+		R_InitParticles( );
+	}
+}
+
 void R_InitParticles ()
 {
 	char *i;
 
 	if ((i = Args.CheckValue ("-numparticles")))
 		NumParticles = atoi (i);
-	if (NumParticles == 0)
-		NumParticles = 4000;
-	else if (NumParticles < 100)
+	// [BC] Use r_maxparticles now.
+	else
+		NumParticles = r_maxparticles;
+
+	// This should be good, but eh...
+	if ( NumParticles < 100 )
 		NumParticles = 100;
 
 	Particles = new particle_t[NumParticles];

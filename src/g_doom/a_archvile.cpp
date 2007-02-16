@@ -6,6 +6,8 @@
 #include "a_doomglobal.h"
 #include "gstrings.h"
 #include "a_action.h"
+#include "cooperative.h"
+#include "invasion.h"
 
 void A_VileChase (AActor *);
 void A_VileStart (AActor *);
@@ -81,6 +83,7 @@ IMPLEMENT_ACTOR (AArchvile, Doom, 64, 111)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags3 (MF3_NOTARGET)
 	PROP_Flags4 (MF4_QUICKTORETALIATE|MF4_SHORTMISSILERANGE)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_VILE_STND)
 	PROP_SeeState (S_VILE_RUN)
@@ -95,6 +98,7 @@ IMPLEMENT_ACTOR (AArchvile, Doom, 64, 111)
 	PROP_Obituary("$OB_VILE")
 
 END_DEFAULTS
+
 
 class AArchvileFire : public AActor
 {
@@ -138,6 +142,7 @@ FState AArchvileFire::States[] =
 IMPLEMENT_ACTOR (AArchvileFire, Doom, -1, 98)
 	PROP_Flags (MF_NOBLOCKMAP|MF_NOGRAVITY)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 	PROP_RenderStyle (STYLE_Add)
 
 	PROP_SpawnState (0)
@@ -211,6 +216,10 @@ void A_VileChase (AActor *self)
 	const AActor *info;
 	AActor *temp;
 		
+	// [BC] Movement is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->movedir != DI_NODIR)
 	{
 		const fixed_t absSpeed = abs (self->Speed);
@@ -247,7 +256,6 @@ void A_VileChase (AActor *self)
 						// and the Arch-Vile is currently targetting the resurrected monster the target must be cleared.
 						if (self->lastenemy == temp) self->lastenemy = NULL;
 						if (temp == self->target) temp = NULL;
-						
 					}
 					self->target = temp;
 										
@@ -264,7 +272,21 @@ void A_VileChase (AActor *self)
 					S_Sound (corpsehit, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
 					info = corpsehit->GetDefault ();
 					
+					// [BC] If we are the server, tell clients about the state change.
+					// to play the raise sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( self, STATE_HEAL );
+
 					corpsehit->SetState (info->RaiseState);
+
+					// [BC] If we are the server, tell clients about the state change, and
+					// to play the sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					{
+						SERVERCOMMANDS_SoundActor( corpsehit, CHAN_BODY, "vile/raise", 127, ATTN_IDLE );
+						SERVERCOMMANDS_SetThingState( corpsehit, STATE_RAISE );
+					}
+
 					corpsehit->height = info->height;	// [RH] Use real mobj height
 					corpsehit->radius = info->radius;	// [RH] Use real radius
 					/*
@@ -276,6 +298,10 @@ void A_VileChase (AActor *self)
 					corpsehit->flags2 = info->flags2;
 					corpsehit->flags3 = info->flags3;
 					corpsehit->flags4 = info->flags4;
+					// [BC] Apply new ST flags as well.
+					corpsehit->flags5 = info->flags5;
+					corpsehit->ulSTFlags = info->ulSTFlags;
+					corpsehit->ulNetworkFlags = info->ulNetworkFlags;
 					corpsehit->health = info->health;
 					corpsehit->target = NULL;
 					corpsehit->lastenemy = NULL;
@@ -284,6 +310,16 @@ void A_VileChase (AActor *self)
 					if (corpsehit->CountsAsKill())
 					{
 						level.total_monsters++;
+
+						// [BC] Update invasion's HUD.
+						if ( invasion )
+						{
+							INVASION_SetNumMonstersLeft( INVASION_GetNumMonstersLeft( ) + 1 );
+
+							// [BC] If we're the server, tell the client how many monsters are left.
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVERCOMMANDS_SetInvasionNumMonstersLeft( );
+						}
 					}
 
 					// You are the Archvile's minion now, so hate what it hates
@@ -331,6 +367,10 @@ void A_Fire (AActor *self)
 	AActor *dest;
 	angle_t an;
 				
+	// [BC] Fire movement is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	dest = self->tracer;
 	if (!dest)
 		return;
@@ -356,6 +396,10 @@ void A_VileTarget (AActor *actor)
 {
 	AActor *fog;
 		
+	// [BC] Fire movement is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (!actor->target)
 		return;
 
@@ -364,6 +408,10 @@ void A_VileTarget (AActor *actor)
 	fog = Spawn<AArchvileFire> (actor->target->x, actor->target->x,
 		actor->target->z, ALLOW_REPLACE);
 	
+	// [BC] If we're the server, tell clients to spawn the thing.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnThing( fog );
+
 	actor->tracer = fog;
 	fog->target = actor;
 	fog->tracer = actor->target;
@@ -394,6 +442,10 @@ void A_VileAttack (AActor *actor)
 	P_TraceBleed (20, actor->target);
 	actor->target->momz = 1000 * FRACUNIT / actor->target->Mass;
 		
+	// [BC] Tell clients to play the arch-vile sound on their end.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( actor, CHAN_WEAPON, "vile/stop", 127, ATTN_NORM );
+
 	an = actor->angle >> ANGLETOFINESHIFT;
 
 	fire = actor->tracer;

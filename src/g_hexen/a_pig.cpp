@@ -71,7 +71,7 @@ FState ASnout::States[] =
 
 IMPLEMENT_ACTOR (ASnout, Hexen, -1, 0)
 	PROP_Weapon_SelectionOrder (10000)
-	PROP_Weapon_Flags (WIF_DONTBOB|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_DONTBOB)
 	PROP_Weapon_UpState (S_SNOUTUP)
 	PROP_Weapon_DownState (S_SNOUTDOWN)
 	PROP_Weapon_ReadyState (S_SNOUTREADY)

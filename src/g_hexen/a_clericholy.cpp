@@ -6,6 +6,8 @@
 #include "p_enemy.h"
 #include "a_hexenglobal.h"
 #include "gstrings.h"
+#include "deathmatch.h"
+#include "network.h"
 
 #define BLAST_FULLSTRENGTH	255
 
@@ -209,7 +211,6 @@ IMPLEMENT_ACTOR (ACWeapWraithverge, Hexen, -1, 0)
 	PROP_Weapon_AtkState (S_CHOLYATK)
 	PROP_Weapon_HoldAtkState (S_CHOLYATK)
 	PROP_Weapon_Kickback (150)
-	PROP_Weapon_MoveCombatDist (22000000)
 	PROP_Weapon_AmmoType1 ("Mana1")
 	PROP_Weapon_AmmoType2 ("Mana2")
 	PROP_Weapon_ProjectileType ("HolyMissile")
@@ -336,7 +337,7 @@ bool AHolySpirit::Slam (AActor *thing)
 {
 	if (thing->flags&MF_SHOOTABLE && thing != target)
 	{
-		if (multiplayer && !deathmatch && thing->player && target->player)
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && thing->player && target->player)
 		{ // don't attack other co-op players
 			return true;
 		}
@@ -399,7 +400,7 @@ bool AHolySpirit::IsOkayToAttack (AActor *link)
 		{
 			return false;
 		}
-		if (multiplayer && !deathmatch && link->player && target->player)
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && link->player && target->player)
 		{
 			return false;
 		}
@@ -564,6 +565,11 @@ void A_CHolyAttack (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	AActor * missile = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(AHolyMissile));
 	if (missile != NULL) missile->tracer = linetarget;
 

@@ -52,6 +52,7 @@ extern constate_e ConsoleState;
 // Initialize the console
 void C_InitConsole (int width, int height, bool ingame);
 void C_DeinitConsole ();
+void C_GetConback(int width, int height); // [ZDoomGL]
 
 // Adjust the console for a new screen mode
 void C_NewModeAdjust (void);
@@ -68,6 +69,11 @@ void C_FullConsole (void);
 void C_HideConsole (void);
 void C_AdjustBottom (void);
 void C_FlushDisplay (void);
+
+// [BC] New function prototypes.
+void CONSOLE_ClearNotifyText( void );
+void CONSOLE_SetAllowColorCodes( bool bAllow );
+void CONSOLE_SetRCONPlayer( ULONG ulPlayer );
 
 void C_InitTicker (const char *label, unsigned int max, bool showpercent=true);
 void C_SetTicker (unsigned int at, bool forceUpdate=false);

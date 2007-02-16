@@ -40,6 +40,10 @@
 struct wadlist_t
 {
 	wadlist_t *next;
+
+	// [BC] Is this a file that was added automatically from a subdirectory?
+	bool	bLoadedAutomatically;
+
 	char name[1];	// +size of string
 };
 extern wadlist_t *wadfiles;
@@ -160,7 +164,7 @@ public:
 	enum { IWAD_FILENUM = 1 };
 
 	void InitMultipleFiles (wadlist_t **filenames);
-	void AddFile (const char *filename, const char * data=NULL,int length=-1);
+	void AddFile (const char *filename, const char * data=NULL,int length=-1, bool bLoadedAutomatically = false);	// [BC]
 	int CheckIfWadLoaded (const char *name);
 
 	const char *GetWadName (int wadnum) const;
@@ -211,6 +215,9 @@ public:
 	int GetNumLumps () const;
 
 	int AddExternalFile(const char *filename);
+
+	// [BC] Was this wad loaded automatically?
+	bool	GetLoadedAutomatically( int wadnum ) const;
 
 protected:
 	class WadFileRecord;

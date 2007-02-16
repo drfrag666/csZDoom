@@ -50,6 +50,9 @@
 #include "v_video.h"
 #include "vectors.h"
 #include "a_sharedglobal.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 EXTERN_CVAR (Int, tx)
 EXTERN_CVAR (Int, ty)
@@ -1695,6 +1698,10 @@ bool R_AlignFlat (int linenum, int side, int fc)
 		sec->base_floor_angle = 0-angle;
 		sec->base_floor_yoffs = dist & ((1<<(FRACBITS+8))-1);
 	}
+
+	// [BC] If we're the server, tell clients to update the sector's angle/y-offset.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetSectorAngleYOffset( sec - sectors );
 
 	return true;
 }

@@ -31,6 +31,8 @@
 #include "doomstat.h"
 #include "r_state.h"
 #include "gi.h"
+#include "network.h"
+#include "sv_commands.h"
 
 static FRandom pr_doplat ("DoPlat");
 
@@ -74,16 +76,42 @@ void DPlat::Tick ()
 	{
 	case up:
 		res = MoveFloor (m_Speed, m_High, m_Crush, 1);
-										
+		
+		// [BC] That's all we need to do in client mode.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			break;
+
 		if (res == crushed && (m_Crush == -1))
 		{
 			m_Count = m_Wait;
 			m_Status = down;
 			PlayPlatSound ("Platform");
+
+			// [BC] Tell clients that this plat is changing directions.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_ChangePlatStatus( m_lPlatID, m_Status );
+				SERVERCOMMANDS_PlayPlatSound( m_lPlatID, 1 );
+			}
 		}
 		else if (res == pastdest)
 		{
+			// [BC] If the sector has reached its destination, this is probably a good time to verify all the clients
+			// have the correct floor/ceiling height for this sector.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				if ( m_Sector->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
+
 			SN_StopSequence (m_Sector);
+
+			// [BC] If we're the server, tell clients to play the plat sound.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_PlayPlatSound( m_lPlatID, 0 );
+
 			if (m_Type != platToggle)
 			{
 				m_Count = m_Wait;
@@ -100,6 +128,11 @@ void DPlat::Tick ()
 					case platUpByValueStay:
 					case platDownToNearestFloor:
 					case platDownToLowestCeiling:
+
+						// [BC] If we're the server, tell clients to destroy the plat.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_DestroyPlat( m_lPlatID );
+
 						Destroy ();
 						break;
 					default:
@@ -110,16 +143,39 @@ void DPlat::Tick ()
 			{
 				m_OldStatus = m_Status;		//jff 3/14/98 after action wait  
 				m_Status = in_stasis;		//for reactivation of toggle
+
+				// [BC] If we're the server, tell clients that that status is changing.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_ChangePlatStatus( m_lPlatID, m_Status );
 			}
 		}
 		break;
-		
 	case down:
+
 		res = MoveFloor (m_Speed, m_Low, -1, -1);
+
+		// [BC] That's all we need to do in client mode.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			break;
 
 		if (res == pastdest)
 		{
+			// [BC] If the sector has reached its destination, this is probably a good time to verify all the clients
+			// have the correct floor/ceiling height for this sector.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				if ( m_Sector->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
+
 			SN_StopSequence (m_Sector);
+
+			// [BC] If we're the server, tell clients to play the plat sound.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_PlayPlatSound( m_lPlatID, 0 );
+
 			// if not an instant toggle, start waiting
 			if (m_Type != platToggle)		//jff 3/14/98 toggle up down
 			{								// is silent, instant, no waiting
@@ -131,9 +187,20 @@ void DPlat::Tick ()
 					case platUpWaitDownStay:
 					case platUpNearestWaitDownStay:
 					case platUpByValue:
+
+						// [BC] If we're the server, tell clients to destroy the plat.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_DestroyPlat( m_lPlatID );
+
 						Destroy ();
 						break;
 					default:
+
+						// [BC] In this case, the plat didn't get destroyed, so tell clients about
+						// the state change.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_ChangePlatStatus( m_lPlatID, m_Status );
+
 						break;
 				}
 			}
@@ -141,6 +208,10 @@ void DPlat::Tick ()
 			{	// instant toggles go into stasis awaiting next activation
 				m_OldStatus = m_Status;		//jff 3/14/98 after action wait  
 				m_Status = in_stasis;		//for reactivation of toggle
+
+				// [BC] If we're the server, tell clients that that status is changing.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_ChangePlatStatus( m_lPlatID, m_Status );
 			}
 		}
 
@@ -152,6 +223,11 @@ void DPlat::Tick ()
 		{
 			case platUpByValueStay:
 			case platRaiseAndStay:
+
+				// [BC] If we're the server, tell clients to destroy the plat.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_DestroyPlat( m_lPlatID );
+
 				Destroy ();
 			default:
 				break;
@@ -160,6 +236,11 @@ void DPlat::Tick ()
 		break;
 		
 	case waiting:
+
+		// [BC] That's all we need to do in client mode.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			break;
+
 		if (m_Count > 0 && !--m_Count)
 		{
 			if (m_Sector->floorplane.d == m_Low)
@@ -167,10 +248,26 @@ void DPlat::Tick ()
 			else
 				m_Status = down;
 
+			// [BC] If we're the server, tell clients that that status is changing.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_ChangePlatStatus( m_lPlatID, m_Status );
+
 			if (m_Type == platToggle)
+			{
 				SN_StartSequence (m_Sector, "Silence", 0);
+
+				// [BC] If we're the server, tell clients to play the plat sound.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPlatSound( m_lPlatID, 2 );
+			}
 			else
+			{
 				PlayPlatSound ("Platform");
+
+				// [BC] If we're the server, tell clients to play the plat sound.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPlatSound( m_lPlatID, 1 );
+			}
 		}
 		break;
 
@@ -179,10 +276,95 @@ void DPlat::Tick ()
 	}
 }
 
+// [BC]
+void DPlat::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoPlat( m_Type, m_Sector, m_Status, m_High, m_Low, m_Speed, m_lPlatID, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
 DPlat::DPlat (sector_t *sector)
 	: DMovingFloor (sector)
 {
 }
+
+// [BC]
+LONG DPlat::GetID( void )
+{
+	return ( m_lPlatID );
+}
+
+// [BC]
+void DPlat::SetID( LONG lID )
+{
+	m_lPlatID = lID;
+}
+
+// [BC]
+fixed_t DPlat::GetLow( void )
+{
+	return ( m_Low );
+}
+
+// [BC]
+void DPlat::SetLow( fixed_t Low )
+{
+	m_Low = Low;
+}
+
+// [BC]
+fixed_t DPlat::GetHigh( void )
+{
+	return ( m_High );
+}
+
+// [BC]
+void DPlat::SetHigh( fixed_t High )
+{
+	m_High = High;
+}
+
+// [BC]
+DPlat::EPlatState DPlat::GetStatus( void )
+{
+	return ( m_Status );
+}
+
+// [BC]
+void DPlat::SetStatus( LONG lStatus )
+{
+	m_Status = (DPlat::EPlatState)lStatus;
+}
+
+// [BC]
+void DPlat::SetType( EPlatType Type )
+{
+	m_Type = Type;
+}
+
+// [BC]
+void DPlat::SetCrush( bool bCrush )
+{
+	m_Crush = bCrush;
+}
+
+// [BC]
+void DPlat::SetTag( LONG lTag )
+{
+	m_Tag = lTag;
+}
+
+// [BC]
+void DPlat::SetSpeed( LONG lSpeed )
+{
+	m_Speed = lSpeed;
+}
+
+// [BC]
+void DPlat::SetDelay( LONG lDelay )
+{
+	m_Wait = lDelay;
+}
+
 
 //
 // Do Platforms
@@ -248,6 +430,12 @@ manual_plat:
 		plat->m_Speed = speed;
 		plat->m_Wait = delay;
 
+		// [BC] Potentially create the platform's network ID.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			plat->m_lPlatID = -1;
+		else
+			plat->m_lPlatID = P_GetFirstFreePlatID( );
+
 		//jff 1/26/98 Avoid raise plat bouncing a head off a ceiling and then
 		//going down forever -- default lower to plat height when triggered
 		plat->m_Low = sec->floorplane.d;
@@ -255,7 +443,16 @@ manual_plat:
 		if (change)
 		{
 			if (line)
+			{
 				sec->floorpic = sides[line->sidenum[0]].sector->floorpic;
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+
+				// [BC] Also, mark this sector as having its flat changed.
+				sec->bFlatChange = true;
+			}
 			if (change == 1)
 				sec->special &= SECRET_MASK;	// Stop damage and other stuff, if any
 		}
@@ -285,7 +482,9 @@ manual_plat:
 			plat->m_Low = sec->floorplane.PointToDist (0, 0, newheight);
 			plat->m_High = sec->floorplane.d;
 			plat->m_Status = DPlat::down;
-			plat->PlayPlatSound ("Floor");
+
+			// [BC] I think this should be the platform sound, but I could be wrong.
+			plat->PlayPlatSound ("Platform");
 			break;
 
 		case DPlat::platDownWaitUpStay:
@@ -334,7 +533,6 @@ manual_plat:
 				plat->m_High = sec->floorplane.d;
 
 			plat->m_Status = pr_doplat() & 1 ? DPlat::up : DPlat::down;
-
 			plat->PlayPlatSound ("Platform");
 			break;
 
@@ -372,6 +570,64 @@ manual_plat:
 		default:
 			break;
 		}
+
+		// [BC] If we're the server, tell clients to create the plat.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_DoPlat( type, &sectors[secnum], plat->m_Status, plat->m_High, plat->m_Low, plat->m_Speed, plat->m_lPlatID );
+
+			// [BC] Also, if we're the server, tell clients to play the appropriate plat sound.
+			switch ( type )
+			{
+			case DPlat::platRaiseAndStay:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 3 );
+				break;
+			case DPlat::platUpByValue:
+			case DPlat::platUpByValueStay:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 3 );
+				break;
+			case DPlat::platDownByValue:
+
+				// [BC] I think this should be the platform sound, but I could be wrong.
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			case DPlat::platDownWaitUpStay:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			case DPlat::platDownWaitUpStayStone:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 3 );
+				break;
+			case DPlat::platUpNearestWaitDownStay:
+			case DPlat::platUpWaitDownStay:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			case DPlat::platPerpetualRaise:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			case DPlat::platToggle:	//jff 3/14/98 add new type to support instant toggle
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 2 );
+				break;
+			case DPlat::platDownToNearestFloor:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			case DPlat::platDownToLowestCeiling:
+
+				SERVERCOMMANDS_PlayPlatSound( plat->m_lPlatID, 1 );
+				break;
+			default:
+
+				break;
+			}
+		}
+
 		if (manual)
 			return rtn;
 	}
@@ -394,7 +650,23 @@ void P_ActivateInStasis (int tag)
 	while ( (scan = iterator.Next ()) )
 	{
 		if (scan->m_Tag == tag && scan->m_Status == DPlat::in_stasis)
+		{
 			scan->Reactivate ();
+
+			// [BC] If we're the server, tell clients that that status is changing.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_ChangePlatStatus( scan->m_lPlatID, scan->m_Status );
+
+				// [BC] If the sector is starting to moved, then this is probably a good time
+				// to verify all the clients have the correct floor/ceiling height for
+				// this sector.
+				if ( scan->m_Sector->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+			}
+		}
 	}
 }
 
@@ -412,7 +684,68 @@ void EV_StopPlat (int tag)
 	while ( (scan = iterator.Next ()) )
 	{
 		if (scan->m_Status != DPlat::in_stasis && scan->m_Tag == tag)
+		{
 			scan->Stop ();
+
+			// [BC] If we're the server, tell clients that that status is changing.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_ChangePlatStatus( scan->m_lPlatID, scan->m_Status );
+
+				// [BC] If the sector has stopped, then this is probably a good time
+				// to verify all the clients have the correct floor/ceiling height for
+				// this sector.
+				if ( scan->m_Sector->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+			}
+		}
 	}
 }
 
+//*****************************************************************************
+//
+DPlat *P_GetPlatByID( LONG lID )
+{
+	DPlat	*pPlat;
+
+	TThinkerIterator<DPlat>		Iterator;
+
+	while (( pPlat = Iterator.Next( )))
+	{
+		if ( pPlat->GetID( ) == lID )
+			return ( pPlat );
+	}
+
+	return ( NULL );
+}
+
+//*****************************************************************************
+//
+LONG P_GetFirstFreePlatID( void )
+{
+	LONG		lIdx;
+	DPlat		*pPlat;
+	bool		bIDIsAvailable;
+
+	for ( lIdx = 0; lIdx < 8192; lIdx++ )
+	{
+		TThinkerIterator<DPlat>		Iterator;
+
+		bIDIsAvailable = true;
+		while (( pPlat = Iterator.Next( )))
+		{
+			if ( pPlat->GetID( ) == lIdx )
+			{
+				bIDIsAvailable = false;
+				break;
+			}
+		}
+
+		if ( bIDIsAvailable )
+			return ( lIdx );
+	}
+
+	return ( -1 );
+}

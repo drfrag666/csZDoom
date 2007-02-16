@@ -45,6 +45,13 @@
 #include "sc_man.h"
 #include "v_text.h"
 #include "gi.h"
+#include "campaign.h"
+#include "cooperative.h"
+#include "deathmatch.h"
+#include "scoreboard.h"
+#include "team.h"
+#include "sv_main.h"
+#include "network.h"
 
 // States for the intermission
 typedef enum
@@ -203,6 +210,17 @@ static int				cnt_par;
 static int				cnt_pause;
 static bool				noautostartmap;
 
+// [BC] New counters for campaign mode.
+static int				cnt_Frags;
+static int				cnt_Deaths;
+static int				cnt_Rank;
+static int				cnt_Wins;
+static int				cnt_NumPlayers;
+
+// [BC] Timer for the amount of time elapsed during intermission for multiplayer games.
+// This is because in multiplayer, we don't want to sit at intermission forever!
+static	LONG			g_lStopWatch;
+
 //
 //		GRAPHICS
 //
@@ -286,6 +304,117 @@ static bool IsExMy(const char * name)
 	return (tolower(name[0])=='e' && name[1]>='1' && name[1]<='3' && tolower(name[2])=='m');
 }
 
+//====================================================================
+// 
+//	[BC] WI_CalcRank
+//
+//	This calculates the rank the player was in the previously played
+//	game. This can determine if he won or lost.
+//
+//====================================================================
+
+ULONG WI_CalcRank( void )
+{
+	ULONG	ulRank;
+	ULONG	ulIdx;
+
+	// This is only valid for deathmatch modes. If we're not playing a deathmatch mode,
+	// then the player automatically lost.
+	if ( deathmatch == false )
+		return ( 2 );
+
+	// In teamplay deathmatch, go by the team's score to determine what this player's
+	// rank is.
+	if ( teamplay )
+	{
+		// Not being on a team in teamplay is an automatic loss!
+		if ( players[consoleplayer].bOnTeam == false )
+			return ( 2 );
+
+		if ( TEAM_GetFragCount( players[consoleplayer].ulTeam ) > TEAM_GetFragCount( !players[consoleplayer].ulTeam ))
+			return ( 1 );
+		else
+			return ( 2 );
+	}
+
+	// In team LMS, go by the team's wins to determine what this player's
+	// rank is.
+	if ( teamlms )
+	{
+		// Not being on a team in teamplay is an automatic loss!
+		if ( players[consoleplayer].bOnTeam == false )
+			return ( 2 );
+
+		if ( TEAM_GetWinCount( players[consoleplayer].ulTeam ) > TEAM_GetWinCount( !players[consoleplayer].ulTeam ))
+			return ( 1 );
+		else
+			return ( 2 );
+	}
+
+	// In team possession, go by the team's points to determine what this player's
+	// rank is.
+	if ( teampossession )
+	{
+		// Not being on a team in teamplay is an automatic loss!
+		if ( players[consoleplayer].bOnTeam == false )
+			return ( 2 );
+
+		if ( TEAM_GetScore( players[consoleplayer].ulTeam ) > TEAM_GetScore( !players[consoleplayer].ulTeam ))
+			return ( 1 );
+		else
+			return ( 2 );
+	}
+
+	// Go through all the players, and check which ones have a higher score than the
+	// console player.
+	ulRank = 1;
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] == false ) ||
+			( ulIdx == consoleplayer ) ||
+			( PLAYER_IsTrueSpectator( &players[ulIdx] )))
+		{
+			continue;
+		}
+
+		// In LMS, use wins to determine the player's score.
+		if ( lastmanstanding )
+		{
+			if ( players[ulIdx].ulWins > players[consoleplayer].ulWins )
+				ulRank++;
+		}
+		// In possession, use points to determine the player's score.
+		else if ( possession )
+		{
+			if ( players[ulIdx].lPointCount > players[consoleplayer].lPointCount )
+				ulRank++;
+		}
+		else
+		{
+			if ( players[ulIdx].fragcount > players[consoleplayer].fragcount )
+				ulRank++;
+		}
+	}
+
+	return ( ulRank );
+}
+
+//====================================================================
+// 
+//	[BC] WI_UseSkulltagIntermissionAndMusic
+//
+//	Returns true if the intermission should use ST's WINERPIC or
+//	LOSERPIC, along with the appropriate music.
+//
+//====================================================================
+
+bool WI_UseSkulltagIntermissionAndMusic( void )
+{
+	return (( gameinfo.gametype == GAME_Doom ) &&
+			( deathmatch ) &&
+			(( compatflags & COMPATF_OLDINTERMISSION ) == false ));
+}
+
 void WI_LoadBackground(bool isenterpic)
 {
 	const char * lumpname = NULL;
@@ -342,7 +471,16 @@ void WI_LoadBackground(bool isenterpic)
 						if (IsExMy(wbs->next)) return;
 					}
 				}
-				lumpname = "INTERPIC";
+				// [BC] 
+				if ( WI_UseSkulltagIntermissionAndMusic( ))
+				{
+					if ( WI_CalcRank( ) <= 1 )
+						lumpname = "WINERPIC";
+					else
+						lumpname = "LOSERPIC";
+				}
+				else
+					lumpname = "INTERPIC";
 			}
 			break;
 
@@ -1041,12 +1179,13 @@ void WI_End ()
 {
 	state = LeavingIntermission;
 	WI_unloadData ();
-
+/*
 	//Added by mc
 	if (deathmatch)
 	{
 		bglobal.RemoveAllBots (consoleplayer != Net_Arbitrator);
 	}
+*/
 }
 
 void WI_initNoState ()
@@ -1153,6 +1292,378 @@ int WI_fragSum (int playernum)
 	return frags;
 }
 
+static	int		cp_state;
+
+//====================================================================
+// 
+//	[BC] WI_InitCampaignStats
+//
+//	Initializes various stats for campaign mode. Should closely
+//	resemble WI_InitDeathmatchStats().
+//
+//====================================================================
+
+void WI_InitCampaignStats( void )
+{
+	state = StatCount;
+	acceleratestage = 0;
+	cp_state = 1;
+
+	cnt_pause = TICRATE;
+
+	cnt_Frags = 0;
+	cnt_Deaths = 0;
+	cnt_Rank = 0;
+	cnt_NumPlayers = 0;
+}
+
+//====================================================================
+// 
+//	[BC] WI_UseSkulltagIntermissionAndMusic
+//
+//	Updates the various campaign stats that are displayed. Should
+//	closely resemble WI_UpdateDeathmatchStats().
+//
+//====================================================================
+
+void WI_UpdateCampaignStats( void )
+{
+	WI_updateAnimatedBack( );
+
+	if (( cp_state != 10 ) && acceleratestage )
+	{
+		acceleratestage = 0;
+		cp_state = 10;
+		S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+
+		if (( teamplay ) && ( players[consoleplayer].bOnTeam ))
+		{
+			cnt_Frags = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+			cnt_Deaths = TEAM_GetDeathCount( players[consoleplayer].ulTeam );
+			if ( TEAM_GetFragCount( players[consoleplayer].ulTeam ) >= TEAM_GetFragCount( !players[consoleplayer].ulTeam ))
+				cnt_Rank = 1;
+			else
+				cnt_Rank = 2;
+			cnt_NumPlayers = 2;
+		}
+		else if ( lastmanstanding )
+		{
+			cnt_Frags = players[consoleplayer].ulWins;
+			cnt_Deaths = players[consoleplayer].fragcount;
+			cnt_Rank = WI_CalcRank( );
+			cnt_NumPlayers = SERVER_CalcNumPlayers( );
+		}
+		else if (( teamlms ) && ( players[consoleplayer].bOnTeam ))
+		{
+			cnt_Frags = TEAM_GetWinCount( players[consoleplayer].ulTeam );
+			cnt_Deaths = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+			if ( TEAM_GetWinCount( players[consoleplayer].ulTeam ) >= TEAM_GetWinCount( !players[consoleplayer].ulTeam ))
+				cnt_Rank = 1;
+			else
+				cnt_Rank = 2;
+			cnt_NumPlayers = 2;
+		}
+		else if (( teamgame || teampossession ) && ( players[consoleplayer].bOnTeam ))
+		{
+			cnt_Frags = TEAM_GetScore( players[consoleplayer].ulTeam );
+			cnt_Deaths = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+			cnt_Rank = WI_CalcRank( );
+			cnt_NumPlayers = SERVER_CalcNumPlayers( );
+		}
+		else
+		{
+			cnt_Frags = players[consoleplayer].fragcount;
+			cnt_Deaths = players[consoleplayer].ulDeathCount;
+			cnt_Rank = WI_CalcRank( );
+			cnt_NumPlayers = SERVER_CalcNumPlayers( );
+		}
+		cnt_time = plrs[0].stime / TICRATE;
+	}
+
+	if ( cp_state == 2 )
+	{
+		cnt_Frags += 2;
+
+		if (!( bcnt & 3 ))
+			S_Sound( CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE );
+
+		if (( teamplay ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Frags >= TEAM_GetFragCount( players[consoleplayer].ulTeam ))
+			{
+				cnt_Frags = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if ( lastmanstanding )
+		{
+			if ( cnt_Frags >= players[consoleplayer].ulWins )
+			{
+				cnt_Frags = players[consoleplayer].ulWins;
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if (( teamlms ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Frags >= TEAM_GetWinCount( players[consoleplayer].ulTeam ))
+			{
+				cnt_Frags = TEAM_GetWinCount( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if (( teamgame || teampossession ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Frags >= TEAM_GetScore( players[consoleplayer].ulTeam ))
+			{
+				cnt_Frags = TEAM_GetScore( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else
+		{
+			if ( cnt_Frags >= players[consoleplayer].fragcount )
+			{
+				cnt_Frags = players[consoleplayer].fragcount;
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+	}
+	else if (cp_state == 4)
+	{
+		cnt_Deaths += 2;
+
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
+
+		if (( teamplay ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Deaths >= TEAM_GetDeathCount( players[consoleplayer].ulTeam ))
+			{
+				cnt_Deaths = TEAM_GetDeathCount( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if ( lastmanstanding )
+		{
+			if ( cnt_Deaths >= players[consoleplayer].fragcount )
+			{
+				cnt_Deaths = players[consoleplayer].fragcount;
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if (( teamlms ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Deaths >= TEAM_GetFragCount( players[consoleplayer].ulTeam ))
+			{
+				cnt_Deaths = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else if (( teamgame || teampossession ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( cnt_Deaths >= TEAM_GetFragCount( players[consoleplayer].ulTeam ))
+			{
+				cnt_Deaths = TEAM_GetFragCount( players[consoleplayer].ulTeam );
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+		else
+		{
+			if ( cnt_Deaths >= players[consoleplayer].ulDeathCount )
+			{
+				cnt_Deaths = players[consoleplayer].ulDeathCount;
+				S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+				cp_state++;
+			}
+		}
+	}
+	else if (cp_state == 6)
+	{
+		cnt_Rank += 2;
+		cnt_NumPlayers += 2;
+
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
+
+		if (( teamplay ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( TEAM_GetFragCount( players[consoleplayer].ulTeam ) >= TEAM_GetFragCount( !players[consoleplayer].ulTeam ))
+			{
+				if ( cnt_Rank > 1 )
+					cnt_Rank = 1;
+			}
+			else
+			{
+				if ( cnt_Rank > 2 )
+					cnt_Rank = 2;
+			}
+		}
+		else if (( teamlms ) && ( players[consoleplayer].bOnTeam ))
+		{
+			if ( TEAM_GetWinCount( players[consoleplayer].ulTeam ) >= TEAM_GetWinCount( !players[consoleplayer].ulTeam ))
+			{
+				if ( cnt_Rank > 1 )
+					cnt_Rank = 1;
+			}
+			else
+			{
+				if ( cnt_Rank > 2 )
+					cnt_Rank = 2;
+			}
+		}
+		else
+		{
+			if ( cnt_Rank >= WI_CalcRank( ))
+				cnt_Rank = WI_CalcRank( );
+		}
+
+		if ( cnt_NumPlayers >= (( teamplay || teamlms || teamgame || teampossession ) ? 2 : SERVER_CalcNumPlayers( )))
+		{
+			cnt_NumPlayers = (( teamplay || teamlms || teamgame || teampossession ) ? 2 : SERVER_CalcNumPlayers( ));
+			S_Sound( CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE );
+			cp_state++;
+		}
+	}
+	else if (cp_state == 8)
+	{
+		cnt_time += 3;
+
+		if (!(bcnt&3))
+			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
+
+		if (cnt_time >= plrs[0].stime / TICRATE)
+		{
+			cnt_time = plrs[0].stime / TICRATE;
+			S_Sound (CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE);
+			cp_state++;
+		}
+	}
+	else if (cp_state == 10)
+	{
+		if (acceleratestage)
+		{
+			S_Sound (CHAN_VOICE, PASTSTATS, 1, ATTN_NONE);
+
+			if (gamemode == commercial)
+				WI_initNoState();
+			else
+				WI_initShowNextLoc();
+		}
+	}
+	else if (cp_state & 1)
+	{
+		if (!--cnt_pause)
+		{
+			cp_state++;
+			cnt_pause = TICRATE;
+		}
+	}
+}
+
+//====================================================================
+// 
+//	[BC] WI_DrawCampaignStats
+//
+//	Draws all the text and graphics necessary for the campaign
+//	intermission screen. Should closely resemble WI_DrawDeathmatchStats().
+//
+//====================================================================
+
+void WI_DrawCampaignStats (void)
+{
+	// line height
+	int lh; 	
+
+	lh = (3*num[0]->GetHeight())/2;
+
+	WI_drawBackground(); 
+	WI_drawLF();
+
+	screen->SetFont (BigFont);
+	if ( lastmanstanding || teamlms )
+	{
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY, "WINS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY+lh, "FRAGS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+	}
+	else if ( teamgame )
+	{
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY, "POINTS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY+lh, "FRAGS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+	}
+	else
+	{
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY, "FRAGS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		screen->DrawText (CR_RED, SP_STATSX, SP_STATSY+lh, "DEATHS", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+	}
+	screen->DrawText (CR_RED, SP_STATSX, SP_STATSY+2*lh, "RANK", DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+
+	if (cp_state >= 2)
+	{
+		WI_drawNum (320 - SP_STATSX, SP_STATSY, cnt_Frags, -1, false);
+	}
+	if (cp_state >= 4)
+	{
+		WI_drawNum (320 - SP_STATSX, SP_STATSY+lh, cnt_Deaths, -1, false);
+	}
+	if (cp_state >= 6)
+	{
+		char	szString[32];
+		LONG	lX;
+
+		lX = WI_drawNum (320 - SP_STATSX, 50+2*lh, cnt_NumPlayers, -1, false);
+		screen->DrawTexture (slash, lX - slash->GetWidth( ), 50+2*lh,
+			DTA_ShadowAlpha, FRACUNIT/2,
+			DTA_Clean, true,
+			TAG_DONE);
+		WI_drawNum (lX - slash->GetWidth( ), 50+2*lh, cnt_Rank, -1, false);
+
+		if ( cp_state >= 7 )
+		{
+			if ( teamplay || teamlms || teamgame || teampossession )
+			{
+				if ( CAMPAIGN_DidPlayerBeatMap( ))
+					sprintf( szString, "YOU WIN!" );
+				else
+					sprintf( szString, "YOU LOSE!" );
+			}
+			else
+			{
+				if ( cnt_Rank == 1 )
+					sprintf( szString, "YOU WIN!" );
+				else if ( cnt_Rank >= 4 )
+					sprintf( szString, "YOU SUCK!" );
+				else
+					sprintf( szString, "YOU LOSE!" );
+			}
+
+			screen->DrawText( CR_UNTRANSLATED,
+				160 - ( BigFont->StringWidth( szString ) / 2 ),
+				50 + 3 * lh,
+				szString, DTA_Clean, true, TAG_DONE );
+
+			screen->SetFont (SmallFont);
+			MEDAL_RenderAllMedals( -20 );
+			screen->SetFont (BigFont);
+		}
+	}
+	if (cp_state >= 8)
+	{
+		screen->DrawText (CR_RED, SP_TIMEX, 175, "TIME",
+			DTA_Clean, true, DTA_Shadow, true, TAG_DONE);
+		WI_drawTime (160 - SP_TIMEX, 175, cnt_time);
+	}
+	screen->SetFont (SmallFont);
+}
+
 static int dm_state;
 static int dm_frags[MAXPLAYERS][MAXPLAYERS];
 static int dm_totals[MAXPLAYERS];
@@ -1192,6 +1703,7 @@ void WI_updateDeathmatchStats ()
 
 	if (acceleratestage && dm_state != 4)
 	{
+		// [BC] No need to do any of this.
 		/*
 		acceleratestage = 0;
 		
@@ -1215,6 +1727,7 @@ void WI_updateDeathmatchStats ()
     
 	if (dm_state == 2)
 	{
+		// [BC] No need to do any of this.
 		/*
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
@@ -1294,7 +1807,9 @@ void WI_drawDeathmatchStats ()
 	WI_drawLF();
 
 	// [RH] Draw heads-up scores display
-	HU_DrawScores (&players[me]);
+//	HU_DrawScores (&players[me]);
+	// [BC] Use this display instead.
+	SCOREBOARD_RenderBoard( &players[me] );
 
 /*
 	int 		i;
@@ -1406,14 +1921,16 @@ void WI_initNetgameStats ()
 void WI_updateNetgameStats ()
 {
 
-	int i;
-	int fsum;
-	bool stillticking;
+//	int i;
+//	int fsum;
+//	bool stillticking;
 
 	WI_updateAnimatedBack ();
 
 	if (acceleratestage && ng_state != 10)
 	{
+		// [BC] No need to do any of this.
+		/*
 		acceleratestage = 0;
 
 		for (i=0 ; i<MAXPLAYERS ; i++)
@@ -1429,11 +1946,14 @@ void WI_updateNetgameStats ()
 				cnt_frags[i] = WI_fragSum (i);
 		}
 		S_Sound (CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE);
+		*/
 		ng_state = 10;
 	}
 
 	if (ng_state == 2)
 	{
+		// [BC] No need to do any of this.
+		/*
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
@@ -1457,9 +1977,13 @@ void WI_updateNetgameStats ()
 			S_Sound (CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE);
 			ng_state++;
 		}
+		*/
+		ng_state = 3;
 	}
 	else if (ng_state == 4)
 	{
+		// [BC] No need to do any of this.
+		/*
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
@@ -1481,9 +2005,13 @@ void WI_updateNetgameStats ()
 			S_Sound (CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE);
 			ng_state++;
 		}
+		*/
+		ng_state = 5;
 	}
 	else if (ng_state == 6)
 	{
+		// [BC] No need to do any of this.
+		/*
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
@@ -1507,9 +2035,13 @@ void WI_updateNetgameStats ()
 			S_Sound (CHAN_VOICE, NEXTSTAGE, 1, ATTN_NONE);
 			ng_state += 1 + 2*!dofrags;
 		}
+		*/
+		ng_state = 7;
 	}
 	else if (ng_state == 8)
 	{
+		// [BC] No need to do any of this.
+		/*
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
@@ -1533,6 +2065,8 @@ void WI_updateNetgameStats ()
 			S_Sound (CHAN_VOICE, "player/male/death1", 1, ATTN_NONE);
 			ng_state++;
 		}
+		*/
+		ng_state = 9;
 	}
 	else if (ng_state == 10)
 	{
@@ -1554,14 +2088,18 @@ void WI_updateNetgameStats ()
 
 void WI_drawNetgameStats ()
 {
-	int i, x, y;
-	int pwidth = percent->GetWidth();
+	// [BC] We're not using these.
+//	int i, x, y;
+//	int pwidth = percent->GetWidth();
 
 	// draw animated background
 	WI_drawBackground(); 
 
 	WI_drawLF();
 
+	// [BC] In cooperative mode, just draw the scoreboard.
+	SCOREBOARD_RenderBoard( &players[me] );
+/*
 	if (gameinfo.gametype == GAME_Doom)
 	{
 		// draw stat titles (top line)
@@ -1660,6 +2198,7 @@ void WI_drawNetgameStats ()
 		}
 		screen->SetFont (SmallFont);
 	}
+*/
 }
 
 static int  sp_state;
@@ -1829,6 +2368,23 @@ void WI_drawStats (void)
 			WI_drawTime (320 - SP_TIMEX, SP_TIMEY, cnt_par);
 		}
 
+		// [BC] Display "Perfect!" if the player got 100%+ on kills, items, and secrets.
+		if ( sp_state >= 6 )
+		{
+			if (( cnt_kills[0] >= wbs->maxkills ) &&
+				( cnt_items[0] >= wbs->maxitems ) &&
+				( cnt_secret[0] >= wbs->maxsecret ))
+			{
+				screen->SetFont( BigFont );
+
+				screen->DrawText( CR_UNTRANSLATED,
+					160 - ( BigFont->StringWidth( "PERFECT!" ) / 2 ),
+					SP_STATSY + 3 * lh,
+					"PERFECT!", DTA_Clean, true, TAG_DONE );
+
+				screen->SetFont( SmallFont );
+			}
+		}
 	}
 	else
 	{
@@ -1885,6 +2441,29 @@ void WI_checkForAccelerate(void)
 	int i;
 	player_t *player;
 
+	// [BC] Clients can't check for accelerate.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	// [BC] If we're the server, count down the amount of time left in intermission. If
+	// it's been 15 or more seconds, end intermission.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		g_lStopWatch++;
+		if ( g_lStopWatch >= ( 15 * TICRATE ))
+		{
+			g_lStopWatch = 0;
+			acceleratestage = 1;
+		}
+
+		// Also check to see if everyone is ready to go on. If so, then change the map.
+		if ( SERVER_IsEveryoneReadyToGoOn( ))
+			acceleratestage = 1;
+
+		// Nothing more to do in server mode.
+		return;
+	}
+
 	// check for button presses to skip delays
 	for (i = 0, player = players; i < MAXPLAYERS; i++, player++)
 	{
@@ -1926,7 +2505,19 @@ void WI_Ticker(void)
 		else if (gameinfo.gametype == GAME_Strife)	// Strife also needs a default
 			S_ChangeMusic ("d_slide");
 		else if (gamemode == commercial)
-			S_ChangeMusic ("d_dm2int");
+		{
+			// [BC] Use Skulltag's new music.
+			if ( WI_UseSkulltagIntermissionAndMusic( ))
+			{
+				if ( CAMPAIGN_DidPlayerBeatMap( ))
+					S_ChangeMusic( "d_stwin" );
+				else
+					S_ChangeMusic( "d_stlose" );
+			}
+			// [BC] Otherwise, use the default doom2 intermission music.
+			else
+				S_ChangeMusic ("d_dm2int");
+		}
 		else
 			S_ChangeMusic ("d_inter"); 
 
@@ -1937,8 +2528,12 @@ void WI_Ticker(void)
 	switch (state)
 	{
     case StatCount:
-		if (deathmatch) WI_updateDeathmatchStats();
-		else if (multiplayer) WI_updateNetgameStats();
+		// [BC] In campaign mode, update campaign stats.
+		if (( CAMPAIGN_InCampaign( )) && ( invasion == false ))
+			WI_UpdateCampaignStats( );
+		// [BC] Use "deathmatch" stats in teamgame, too.
+		else if (deathmatch || teamgame) WI_updateDeathmatchStats();
+		else if ( NETWORK_GetState( ) != NETSTATE_SINGLE ) WI_updateNetgameStats();
 		else WI_updateStats();
 		break;
 		
@@ -1961,6 +2556,10 @@ void WI_loadData(void)
 	int i;
 	char name[9];
 
+	// [BC] There's no need for servers to do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (gameinfo.gametype == GAME_Doom)
 	{
 		wiminus = TexMan["WIMINUS"];		// minus sign
@@ -1982,6 +2581,7 @@ void WI_loadData(void)
 		star = TexMan["STFST01"];		// your face
 		bstar = TexMan["STFDEAD0"];		// dead face
  		p = TexMan["STPBANY"];
+		slash = TexMan["WISLASH"];		// [BC] Load the slash graphic.
 
 		for (i = 0; i < 10; i++)
 		{ // numbers 0-9
@@ -2049,9 +2649,13 @@ void WI_Drawer (void)
 	switch (state)
 	{
 	case StatCount:
-		if (deathmatch)
+		// [BC] In campaign mode, draw campaign stats.
+		if (( CAMPAIGN_InCampaign( )) && ( invasion == false ))
+			WI_DrawCampaignStats( );
+		// [BC] Use "deathmatch" stats in teamgame, too.
+		else if (deathmatch || teamgame)
 			WI_drawDeathmatchStats();
-		else if (multiplayer)
+		else if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 			WI_drawNetgameStats();
 		else
 			WI_drawStats();
@@ -2078,20 +2682,39 @@ void WI_initVariables (wbstartstruct_t *wbstartstruct)
 	cnt = bcnt = 0;
 	me = wbs->pnum;
 	plrs = wbs->plyr;
+
+	// [BC] Initialize the stopwatch.
+	g_lStopWatch = 0;
 }
 
 void WI_Start (wbstartstruct_t *wbstartstruct)
 {
+	ULONG	ulIdx;
+
 	noautostartmap = false;
 	V_SetBlend (0,0,0,0);
 	WI_initVariables (wbstartstruct);
 	WI_loadData ();
-	if (deathmatch)
+	// [BC] In campaign mode, draw campaign stats.
+	if (( CAMPAIGN_InCampaign( )) && ( invasion == false ))
+		WI_InitCampaignStats( );
+	// [BC] Use "deathmatch" stats in teamgame, too.
+	else if (deathmatch || teamgame)
 		WI_initDeathmatchStats();
-	else if (multiplayer)
+	else if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 		WI_initNetgameStats();
 	else
 		WI_initStats();
 	S_StopAllChannels ();
 	SN_StopAllSequences ();
+
+	// [BC] Tell the bots that we're now at intermission.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playeringame[ulIdx] == false )
+			continue;
+
+		if ( players[ulIdx].pSkullBot )
+			players[ulIdx].pSkullBot->PostEvent( BOTEVENT_INTERMISSION );
+	}
 }

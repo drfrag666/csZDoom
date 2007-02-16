@@ -214,7 +214,8 @@ inline FArchive &operator<< (FArchive &arc, secplane_t &plane)
 // Ceiling/floor flags
 enum
 {
-	SECF_ABSLIGHTING	= 1		// floor/ceiling light is absolute, not relative
+	SECF_ABSLIGHTING	= 1,	// floor/ceiling light is absolute, not relative
+	SECF_SPRINGPAD		= 2,	// [BC] Floor bounces actors up at the same velocity they landed on it with.	
 };
 
 // Misc sector flags
@@ -229,6 +230,7 @@ enum
 	SECF_FORCEDUNDERWATER= 64,	// sector is forced to be underwater
 	SECF_UNDERWATERMASK	= 32+64,
 	SECF_DRAWN			= 128,	// sector has been drawn at least once
+	SECF_RETURNZONE		= 256,	// [BC] Flags should be immediately returned if they're dropped within this sector (lava sectors, unreachable sectors, etc.).
 };
 
 struct FDynamicColormap;
@@ -368,6 +370,29 @@ struct sector_t
 
 	vertex_t *Triangle[3];	// Three points that can define a plane
 	short						oldspecial;			//jff 2/16/98 remembers if sector WAS secret (automap)
+
+	// [ZDoomGL]
+	fixed_t CenterX, CenterY;
+
+	// Is this sector a floor or ceiling?
+	int		floorOrCeiling;
+
+	// [BC] Has the height changed during the course of the level?
+	bool		bCeilingHeightChange;
+	bool		bFloorHeightChange;
+	secplane_t	SavedCeilingPlane;
+	secplane_t	SavedFloorPlane;
+	fixed_t		SavedCeilingTexZ;
+	fixed_t		SavedFloorTexZ;
+
+	// [BC] Has the flat changed?
+	bool	bFlatChange;
+	short	SavedFloorPic;
+	short	SavedCeilingPic;
+
+	// [BC] Has the light level changed?
+	bool	bLightChange;
+	BYTE	SavedLightLevel;
 };
 
 struct ReverbContainer;
@@ -404,6 +429,12 @@ struct side_s
 	SBYTE		Light;
 	BYTE		Flags;
 
+	// [BC] Saved properties for when a map resets, or when we need to give updates
+	// to new clients connecting.
+	short		SavedTopTexture;
+	short		SavedMidTexture;
+	short		SavedBottomTexture;
+
 	int GetLightLevel (bool foggy, int baselight) const;
 };
 typedef struct side_s side_t;
@@ -420,6 +451,12 @@ enum slopetype_t
 	ST_NEGATIVE
 };
 
+#define	TEXCHANGE_FRONTTOP		1
+#define	TEXCHANGE_FRONTMEDIUM	2
+#define	TEXCHANGE_FRONTBOTTOM	4
+#define	TEXCHANGE_BACKTOP		8
+#define	TEXCHANGE_BACKMEDIUM	16
+#define	TEXCHANGE_BACKBOTTOM	32
 
 struct line_s
 {
@@ -436,6 +473,18 @@ struct line_s
 	slopetype_t	slopetype;	// To aid move clipping.
 	sector_t	*frontsector, *backsector;
 	int 		validcount;	// if == validcount, already checked
+
+	// [ZDoomGL]
+	unsigned int textureChanged;
+
+	// [BC] Have any of this line's textures been changed during the course of the level?
+	ULONG		ulTexChangeFlags;
+
+	// [BC] Saved properties for when a map resets, or when we need to give updates
+	// to new clients connecting.
+	BYTE		SavedSpecial;
+	DWORD		SavedFlags;
+	BYTE		SavedAlpha;
 
 };
 typedef struct line_s line_t;
@@ -482,6 +531,12 @@ typedef struct subsector_s
 	FPolyObj	*poly;
 	int			validcount;
 	fixed_t		CenterX, CenterY;
+	// [ZDoomGL]
+	int index;
+	unsigned long verts, texCoords;
+	bool isPoly, isMapped;
+	float bbox[2][3];
+
 } subsector_t;
 
 //
@@ -503,6 +558,12 @@ struct seg_s
 	seg_s*			PartnerSeg;
 
 	BITFIELD		bPolySeg:1;
+
+	// [ZDoomGL] added for GL node compatibility and texturing
+	long offset;
+	long index;
+	bool tagged;
+	float length;
 };
 typedef struct seg_s seg_t;
 
@@ -523,6 +584,16 @@ typedef struct FPolyObj
 	int			seqType;
 	fixed_t		size;			// polyobj size (area of POLY_AREAUNIT == size of FRACUNIT)
 	DThinker	*specialdata;	// pointer to a thinker, if the poly is moving
+
+	// Has this polyobject moved at all? If so, we need to tell connecting clients of its new position.
+	bool		bMoved;
+
+	// Has this polyobject rotated at all? If so, we need to tell connecting clients of its new position.
+	bool		bRotated;
+
+	// Was the polyobject blocked the last time it tried to move?
+	bool		bBlocked;
+
 } polyobj_t;
 
 //
@@ -587,6 +658,21 @@ struct patch_t
 	// the [0] is &columnofs[width] 
 };
 
+// [ZDoomGL]
+class FTextureGLData
+{
+public:
+   FTextureGLData();
+   ~FTextureGLData();
+
+   BYTE *translation;
+   unsigned int glTex;
+   unsigned long averageColor;
+   bool isTransparent;
+   bool isAlpha;
+   float cx, cy;
+};
+
 class FileReader;
 
 // Base texture class
@@ -603,6 +689,7 @@ public:
 
 	char Name[9];
 	BYTE UseType;	// This texture's primary purpose
+	int index; // [ZDoomGL] - quick lookup for the TexMan index
 
 	BYTE bNoDecals:1;		// Decals should not stick to texture
 	BYTE bNoRemap0:1;		// Do not remap color 0 (used by front layer of parallax skies)
@@ -614,6 +701,8 @@ public:
 	BYTE bIsPatch:1;		// 1 if an FPatchTexture. Required to fix FMultipatchTexture::CheckForHacks
 
 	WORD Rotations;
+
+	TArray<FTextureGLData *> glData; // [ZDoomGL]
 
 	enum // UseTypes
 	{
@@ -629,6 +718,7 @@ public:
 		TEX_FontChar,
 		TEX_Override,	// For patches between TX_START/TX_END
 		TEX_Autopage,	// Automap background - used to enable the use of FAutomapTexture
+		TEX_Defined, // [ZDoomGL] - special defined textures for shaders
 		TEX_Null,
 	};
 
@@ -664,6 +754,15 @@ public:
 	// is immediately followed by a call to GetPixels().
 	virtual bool CheckModified ();
 	static void InitGrayMap();
+
+	// [ZDoomGL]
+	static void ClearGLTextures();
+	static void TrackTexture(FTexture *tex);
+	static void Init();
+
+	// [ZDoomGL]
+	FTexture *Next;
+	static FTexture *FirstTexture;
 
 protected:
 	WORD Width, Height, WidthMask;
@@ -761,6 +860,11 @@ public:
 
 	int NumTextures () const { return (int)Textures.Size(); }
 
+	// [ZDoomGL]: used to get the real unique id for the resource
+	int TextureTranslation(int texnum)
+	{
+		return Translation[texnum];
+	}
 
 private:
 	struct TextureHash
@@ -860,6 +964,20 @@ public:
 	int			sprite;
 	int			crouchsprite;
 	int			namespc;	// namespace for this skin
+
+	// [BC] New skin properties for Skulltag.
+	// Default color used for this skin.
+	char		szColor[16];
+
+	// Can this skin be selected from the menu?
+	bool		bRevealed;
+
+	// Is this skin hidden by default?
+	bool		bRevealedByDefault;
+
+	// Is this skin a cheat skin?
+	bool		bCheat;
+	// [BC] End of new skin properties.
 };
 
 #endif

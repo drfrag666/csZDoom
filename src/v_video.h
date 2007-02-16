@@ -46,7 +46,9 @@
 // Needed because we are refering to patches.
 #include "r_data.h"
 
-extern int CleanWidth, CleanHeight, CleanXfac, CleanYfac;
+// [BC] Make CleanX/Yfac floats in Skulltag.
+extern float CleanXfac, CleanYfac;
+extern int CleanWidth, CleanHeight;
 extern int DisplayWidth, DisplayHeight, DisplayBits;
 
 class FTexture;
@@ -102,6 +104,7 @@ enum
 	DTA_KeepRatio,		// doesn't adjust screen size for DTA_Virtual* if the aspect ratio is not 4:3
 	DTA_TextLen,		// for DrawText: stop after this many characters, even if \0 not hit
 	DTA_RenderStyle,	// same as render style for actors
+	DTA_IsText,			// [BC] Handle the drawing slightly differently for text.
 };
 
 enum

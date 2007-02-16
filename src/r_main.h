@@ -91,6 +91,8 @@ extern bool				r_dontmaplines;
 
 #define INVERSECOLORMAP			32
 #define GOLDCOLORMAP			33
+#define REDCOLORMAP				34
+#define GREENCOLORMAP			35
 
 // The size of a single colormap, in bits
 #define COLORMAPSHIFT			8
@@ -205,6 +207,41 @@ void R_MultiresInit (void);
 
 // BUILD stuff for interpolating between frames, but modified (rather a lot)
 #define INTERPOLATION_BUCKETS 107
+
+struct FAnimDef
+{
+	WORD 	BasePic;
+	WORD	NumFrames;
+	WORD	CurFrame;
+	BYTE	AnimType;
+	DWORD	SwitchTime;			// Time to advance to next frame
+	struct FAnimFrame
+	{
+		DWORD	SpeedMin;		// Speeds are in ms, not tics
+		DWORD	SpeedRange;
+		WORD	FramePic;
+	} Frames[1];
+	enum
+	{
+		ANIM_Forward,
+		ANIM_Backward,
+		ANIM_OscillateUp,
+		ANIM_OscillateDown,
+		ANIM_DiscreteFrames
+	};
+
+	void SetSwitchTime (DWORD mstime);
+};
+
+// This is an array of pointers to animation definitions.
+// When it is destroyed, it deletes any animations it points to as well.
+class AnimArray : public TArray<FAnimDef *>
+{
+public:
+	~AnimArray();
+	void AddAnim (FAnimDef *anim);
+	void FixAnimations ();
+};
 
 enum EInterpType
 {

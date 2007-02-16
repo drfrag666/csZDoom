@@ -183,6 +183,7 @@ IMPLEMENT_ACTOR (AScriptedMarine, Doom, 9100, 151)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags3 (MF3_ISMONSTER)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 	PROP_Translation (TRANSLATION_Standard,0)	// Scripted marines wear black
 	PROP_Damage (100)
 
@@ -260,12 +261,24 @@ void AScriptedMarine::Tick ()
 				{
 				case 14:
 					S_Sound (this, CHAN_WEAPON, "weapons/sshoto", 1, ATTN_NORM);
+
+					// [BC] If we're the server, tell clients to play this sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SoundActor( this, CHAN_WEAPON, "weapons/sshoto", 127, ATTN_NORM );
 					break;
 				case 28:
 					S_Sound (this, CHAN_WEAPON, "weapons/sshotl", 1, ATTN_NORM);
+
+					// [BC] If we're the server, tell clients to play this sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SoundActor( this, CHAN_WEAPON, "weapons/sshotl", 127, ATTN_NORM );
 					break;
 				case 41:
 					S_Sound (this, CHAN_WEAPON, "weapons/sshotc", 1, ATTN_NORM);
+
+					// [BC] If we're the server, tell clients to play this sound.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SoundActor( this, CHAN_WEAPON, "weapons/sshotc", 127, ATTN_NORM );
 					break;
 				}
 			}
@@ -343,9 +356,17 @@ void A_M_SawRefire (AActor *self)
 
 void A_MarineChase (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->MeleeState == &AScriptedMarine::States[S_MPLAY_ATK_CHAINSAW])
 	{
 		S_Sound (self, CHAN_WEAPON, "weapons/sawidle", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sawidle", 127, ATTN_NORM );
 	}
 	A_Chase (self);
 }
@@ -370,9 +391,17 @@ void A_MarineLook (AActor *self)
 
 void A_MarineNoise (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->MeleeState == &AScriptedMarine::States[S_MPLAY_ATK_CHAINSAW])
 	{
 		S_Sound (self, CHAN_WEAPON, "weapons/sawidle", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sawidle", 127, ATTN_NORM );
 	}
 }
 
@@ -384,6 +413,10 @@ void A_MarineNoise (AActor *self)
 
 void A_M_Saw (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -403,9 +436,17 @@ void A_M_Saw (AActor *self)
 		if (!linetarget)
 		{
 			S_Sound (self, CHAN_WEAPON, "weapons/sawfull", 1, ATTN_NORM);
+
+			// [BC] If we're the server, tell clients to play this sound.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sawfull", 127, ATTN_NORM );
 			return;
 		}
 		S_Sound (self, CHAN_WEAPON, "weapons/sawhit", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sawhit", 127, ATTN_NORM );
 			
 		// turn to face target
 		angle = R_PointToAngle2 (self->x, self->y, linetarget->x, linetarget->y);
@@ -427,6 +468,10 @@ void A_M_Saw (AActor *self)
 	else
 	{
 		S_Sound (self, CHAN_WEAPON, "weapons/sawfull", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sawfull", 127, ATTN_NORM );
 	}
 	//A_Chase (self);
 }
@@ -443,6 +488,10 @@ void A_M_Punch (AActor *self)
 	int 		damage;
 	int 		pitch;
 
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -457,6 +506,11 @@ void A_M_Punch (AActor *self)
 	if (linetarget)
 	{
 		S_Sound (self, CHAN_WEAPON, "*fist", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "*fist", 127, ATTN_NORM );
+
 		self->angle = R_PointToAngle2 (self->x, self->y, linetarget->x, linetarget->y);
 	}
 }
@@ -473,6 +527,10 @@ void A_M_BerserkPunch (AActor *self)
 	int 		damage;
 	int 		pitch;
 
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -487,6 +545,11 @@ void A_M_BerserkPunch (AActor *self)
 	if (linetarget)
 	{
 		S_Sound (self, CHAN_WEAPON, "*fist", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "*fist", 127, ATTN_NORM );
+
 		self->angle = R_PointToAngle2 (self->x, self->y, linetarget->x, linetarget->y);
 	}
 }
@@ -502,6 +565,10 @@ void P_GunShot2 (AActor *mo, bool accurate, int pitch, const PClass *pufftype)
 	angle_t 	angle;
 	int 		damage;
 		
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	damage = 5*(pr_m_gunshot()%3+1);
 	angle = mo->angle;
 
@@ -521,10 +588,19 @@ void P_GunShot2 (AActor *mo, bool accurate, int pitch, const PClass *pufftype)
 
 void A_M_FirePistol (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON, "weapons/pistol", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/pistol", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	P_GunShot2 (self, true, P_AimLineAttack (self, self->angle, MISSILERANGE),
 		RUNTIME_CLASS(ABulletPuff));
@@ -538,10 +614,19 @@ void A_M_FirePistol (AActor *self)
 
 void A_M_FirePistolInaccurate (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON, "weapons/pistol", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/pistol", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	P_GunShot2 (self, false, P_AimLineAttack (self, self->angle, MISSILERANGE),
 		RUNTIME_CLASS(ABulletPuff));
@@ -557,10 +642,19 @@ void A_M_FireShotgun (AActor *self)
 {
 	int pitch;
 
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON,  "weapons/shotgf", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/shotgf", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	pitch = P_AimLineAttack (self, self->angle, MISSILERANGE);
 	for (int i = 0; i < 7; ++i)
@@ -578,6 +672,10 @@ void A_M_FireShotgun (AActor *self)
 
 void A_M_CheckAttack (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->special1 != 0 || self->target == NULL)
 	{
 		self->SetState (&AScriptedMarine::States[S_MPLAY_SKIP_ATTACK]);
@@ -598,10 +696,19 @@ void A_M_FireShotgun2 (AActor *self)
 {
 	int pitch;
 
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON, "weapons/sshotf", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/sshotf", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	pitch = P_AimLineAttack (self, self->angle, MISSILERANGE);
 	for (int i = 0; i < 20; ++i)
@@ -624,10 +731,19 @@ void A_M_FireShotgun2 (AActor *self)
 
 void A_M_FireCGunAccurate (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON, "weapons/chngun", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/chngun", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	P_GunShot2 (self, true, P_AimLineAttack (self, self->angle, MISSILERANGE),
 		RUNTIME_CLASS(ABulletPuff));
@@ -641,10 +757,19 @@ void A_M_FireCGunAccurate (AActor *self)
 
 void A_M_FireCGun (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	S_Sound (self, CHAN_WEAPON, "weapons/chngun", 1, ATTN_NORM);
+
+	// [BC] If we're the server, tell clients to play this sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/chngun", 127, ATTN_NORM );
+
 	A_FaceTarget (self);
 	P_GunShot2 (self, false, P_AimLineAttack (self, self->angle, MISSILERANGE),
 		RUNTIME_CLASS(ABulletPuff));
@@ -662,6 +787,13 @@ void A_M_FireCGun (AActor *self)
 
 void A_M_FireMissile (AActor *self)
 {
+	// [BC]
+	AActor	*pMissile;
+
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -672,7 +804,11 @@ void A_M_FireMissile (AActor *self)
 	else
 	{
 		A_FaceTarget (self);
-		P_SpawnMissile (self, self->target, RUNTIME_CLASS(ARocket));
+		pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(ARocket));
+
+		// [BC] If we're the server, tell clients to spawn this missile.
+		if (( pMissile ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+			SERVERCOMMANDS_SpawnMissile( pMissile );
 	}
 }
 
@@ -684,6 +820,10 @@ void A_M_FireMissile (AActor *self)
 
 void A_M_FireRailgun (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -699,12 +839,23 @@ void A_M_FireRailgun (AActor *self)
 
 void A_M_FirePlasma (AActor *self)
 {
+	// [BC]
+	AActor	*pMissile;
+
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	A_FaceTarget (self);
-	P_SpawnMissile (self, self->target, RUNTIME_CLASS(APlasmaBall));
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(APlasmaBall));
 	self->special1 = level.maptime + 20;
+
+	// [BC] If we're the server, tell clients to spawn this missile.
+	if (( pMissile ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
 }
 
 //============================================================================
@@ -715,6 +866,10 @@ void A_M_FirePlasma (AActor *self)
 
 void A_M_BFGsound (AActor *self)
 {
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
@@ -726,6 +881,11 @@ void A_M_BFGsound (AActor *self)
 	{
 		A_FaceTarget (self);
 		S_Sound (self, CHAN_WEAPON, "weapons/bfgf", 1, ATTN_NORM);
+
+		// [BC] If we're the server, tell clients to play this sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, "weapons/bfgf", 127, ATTN_NORM );
+
 		// Don't interrupt the firing sequence
 		self->PainChance = 0;
 	}
@@ -739,13 +899,23 @@ void A_M_BFGsound (AActor *self)
 
 void A_M_FireBFG (AActor *self)
 {
+	AActor	*pMissile;
+
+	// [BC] Don't do this in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (self->target == NULL)
 		return;
 
 	A_FaceTarget (self);
-	P_SpawnMissile (self, self->target, RUNTIME_CLASS(ABFGBall));
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(ABFGBall));
 	self->special1 = level.maptime + 30;
 	self->PainChance = MARINE_PAIN_CHANCE;
+
+	// [BC] If we're the server, tell clients to spawn this missile.
+	if (( pMissile ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
 }
 
 //---------------------------------------------------------------------------

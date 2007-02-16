@@ -45,8 +45,6 @@
 #include "p_effect.h"
 #include "p_acs.h"
 
-#include "b_bot.h"	//Added by MC:
-
 #include "a_doomglobal.h"
 #include "a_hereticglobal.h"
 #include "ravenshared.h"
@@ -56,6 +54,25 @@
 #include "gi.h"
 #include "templates.h"
 #include "sbar.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "medal.h"
+#include "network.h"
+#include "sv_commands.h"
+#include "g_game.h"
+#include "cl_main.h"
+#include "joinqueue.h"
+#include "lastmanstanding.h"
+#include "scoreboard.h"
+#include "cooperative.h"
+#include "invasion.h"
+#include "survival.h"
+#include "team.h"
+#include "cl_commands.h"
+
+// [BC] Ugh.
+void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
+void SERVERCONSOLE_UpdateScoreboard( void );
 
 static FRandom pr_obituary ("Obituary");
 static FRandom pr_botrespawn ("BotRespawn");
@@ -65,8 +82,7 @@ static FRandom pr_lightning ("LightningDamage");
 static FRandom pr_poison ("PoisonDamage");
 static FRandom pr_switcher ("SwitchTarget");
 
-CVAR (Bool, cl_showsprees, true, CVAR_ARCHIVE)
-CVAR (Bool, cl_showmultikills, true, CVAR_ARCHIVE)
+/*static*/	bool		g_bFirstFragAwarded;
 EXTERN_CVAR (Bool, show_obituaries)
 
 //
@@ -90,12 +106,13 @@ void P_TouchSpecialThing (AActor *special, AActor *toucher)
 	if (toucher->health <= 0)
 		return;
 
-	//Added by MC: Finished with this destination.
-	if (toucher->player != NULL && toucher->player->isbot && special == toucher->player->dest)
-	{
-		toucher->player->prev = toucher->player->dest;
-    	toucher->player->dest = NULL;
-	}
+	// [BC] Don't allow non-players to touch special things.
+	if ( toucher->player == NULL )
+		return;
+
+	// [BC] Don't allow spectating players to pickup items.
+	if ( toucher->player->bSpectating )
+		return;
 
 	special->Touch (toucher);
 }
@@ -170,7 +187,8 @@ void SexMessage (const char *from, char *to, int gender, const char *victim, con
 // [RH]
 // ClientObituary: Show a message when a player dies
 //
-void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
+// [BC] Allow passing in of the MOD so clients can use this function too.
+void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, LONG lMeansOfDeath)
 {
 	int	mod;
 	const char *message;
@@ -178,38 +196,29 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 	char gendermessage[1024];
 	INTBOOL friendly;
 	int  gender;
+	bool	bGibbed;
+	char	szAttacker[32];
+	char	szVictim[32];
 
 	// No obituaries for non-players, voodoo dolls or when not wanted
 	if (self->player == NULL || self->player->mo != self || !show_obituaries)
 		return;
 
+	bGibbed = self->health <= -100;
 	gender = self->player->userinfo.gender;
 
 	// Treat voodoo dolls as unknown deaths
 	if (inflictor && inflictor->player == self->player)
-		MeansOfDeath = MOD_UNKNOWN;
+		lMeansOfDeath = MOD_UNKNOWN;
 
-	if (multiplayer && !deathmatch)
-		MeansOfDeath |= MOD_FRIENDLY_FIRE;
+	// Must be in cooperative mode.
+	if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && ( deathmatch == false ) && ( teamgame == false ))
+		lMeansOfDeath |= MOD_FRIENDLY_FIRE;
 
-	friendly = MeansOfDeath & MOD_FRIENDLY_FIRE;
-	mod = MeansOfDeath & ~MOD_FRIENDLY_FIRE;
+	friendly = lMeansOfDeath & MOD_FRIENDLY_FIRE;
+	mod = lMeansOfDeath & ~MOD_FRIENDLY_FIRE;
 	message = NULL;
 	messagename = NULL;
-
-	if (attacker == NULL || attacker->player != NULL)
-	{
-		if (mod == MOD_TELEFRAG)
-		{
-			if (AnnounceTelefrag (attacker, self))
-				return;
-		}
-		else
-		{
-			if (AnnounceKill (attacker, self))
-				return;
-		}
-	}
 
 	switch (mod)
 	{
@@ -222,6 +231,8 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 	case MOD_FIRE:			messagename = "OB_LAVA";		break;
 	case MOD_BARREL:		messagename = "OB_BARREL";		break;
 	case MOD_SPLASH:		messagename = "OB_SPLASH";		break;
+	// [BC] Handle Skulltag's reflection rune.
+	case MOD_REFLECTION:	messagename = "OB_REFLECTION";	break;
 	}
 
 	if (messagename != NULL)
@@ -235,13 +246,16 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 			{
 			case MOD_R_SPLASH:	messagename = "OB_R_SPLASH";		break;
 			case MOD_ROCKET:	messagename = "OB_ROCKET";			break;
+			// [BC] Obituaries for killing yourself with Skulltag weapons.
+			case MOD_GRENADE:	messagename = "OB_GRENADE_SELF";	break;
+			case MOD_BFG10K:	messagename = "OB_BFG10K_SELF";		break;
 			default:			messagename = "OB_KILLEDSELF";		break;
 			}
 			message = GStrings(messagename);
 		}
 		else if (attacker->player == NULL)
 		{
-			if (mod == MOD_TELEFRAG)
+			if ((mod == MOD_TELEFRAG) || (mod == MOD_SPAWNTELEFRAG))
 			{
 				message = GStrings("OB_MONTELEFRAG");
 			}
@@ -265,7 +279,6 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 		if (friendly)
 		{
 			attacker->player->fragcount -= 2;
-			attacker->player->frags[attacker->player - players]++;
 			self = attacker;
 			gender = self->player->userinfo.gender;
 			sprintf (gendermessage, "OB_FRIENDLY%c", '1' + (pr_obituary() & 3));
@@ -273,7 +286,8 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 		}
 		else
 		{
-			if (mod == MOD_TELEFRAG) message = GStrings("OB_MPTELEFRAG");
+			// [BC] MOD_SPAWNTELEFRAG, too.
+			if ((mod == MOD_TELEFRAG) || (mod == MOD_SPAWNTELEFRAG)) message = GStrings("OB_MPTELEFRAG");
 			if (message == NULL)
 			{
 				if (inflictor != NULL)
@@ -310,8 +324,20 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker)
 		message = GStrings("OB_DEFAULT");
 	}
 
+	// [BC] Stop the color codes after we display a name in the obituary string.
+	if ( attacker && attacker->player )
+		sprintf( szAttacker, "%s\\c-", attacker->player->userinfo.netname );
+	else
+		szAttacker[0] = 0;
+
+	if ( self && self->player )
+		sprintf( szVictim, "%s\\c-", self->player->userinfo.netname );
+	else
+		szVictim[0] = 0;
+
 	SexMessage (message, gendermessage, gender,
-		self->player->userinfo.netname, attacker->player->userinfo.netname);
+		szVictim[0] ? szVictim : self->player->userinfo.netname,
+		szAttacker[0] ? szAttacker : attacker->player->userinfo.netname);
 	Printf (PRINT_MEDIUM, "%s\n", gendermessage);
 }
 
@@ -323,10 +349,21 @@ EXTERN_CVAR (Int, fraglimit)
 
 void AActor::Die (AActor *source, AActor *inflictor)
 {
+	// [BC]
+	bool	bPossessedTerminatorArtifact;
+
 	// [SO] 9/2/02 -- It's rather funny to see an exploded player body with the invuln sparkle active :) 
 	effects &= ~FX_RESPAWNINVUL;
-	//flags &= ~MF_INVINCIBLE;
 
+	// Also kill the alpha flicker cause by the visibility flicker.
+	if ( effects & FX_VISIBILITYFLICKER )
+	{
+		RenderStyle = STYLE_Normal;
+		effects &= ~FX_VISIBILITYFLICKER;
+	}
+
+	//flags &= ~MF_INVINCIBLE;
+/*
 	if (debugfile && this->player)
 	{
 		static int dieticks[MAXPLAYERS];
@@ -337,6 +374,10 @@ void AActor::Die (AActor *source, AActor *inflictor)
 		fprintf (debugfile, "died (%d) on tic %d (%s)\n", pnum, gametic,
 		this->player->cheats&CF_PREDICTING?"predicting":"real");
 	}
+*/
+	// [BC] Since the player loses his terminator status after we tell his inventory
+	// that we died, check for it before doing so.
+	bPossessedTerminatorArtifact = !!(( player ) && ( player->Powers & PW_TERMINATORARTIFACT ));
 
 	// [RH] Notify this actor's items.
 	for (AInventory *item = Inventory; item != NULL; )
@@ -385,6 +426,7 @@ void AActor::Die (AActor *source, AActor *inflictor)
 		height >>= 2;
 	}
 
+
 	// [RH] If the thing has a special, execute and remove it
 	//		Note that the thing that killed it is considered
 	//		the activator of the script.
@@ -399,199 +441,477 @@ void AActor::Die (AActor *source, AActor *inflictor)
 
 	if (CountsAsKill())
 		level.killed_monsters++;
-		
+
 	if (source && source->player)
 	{
-		if (CountsAsKill())
+		// [BC] Don't do this in client mode.
+		if ((CountsAsKill()) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
 		{ // count for intermission
 			source->player->killcount++;
+			
+			if ( invasion )
+			{
+				INVASION_SetNumMonstersLeft( INVASION_GetNumMonstersLeft( ) - 1 );
+
+				if ( GetClass( ) == RUNTIME_CLASS( AArchvile ))
+					INVASION_SetNumArchVilesLeft( INVASION_GetNumArchVilesLeft( ) - 1 );
+
+				// If we're the server, tell the client how many monsters are left.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetInvasionNumMonstersLeft( );
+			}
+
+			// Update the clients with this player's updated killcount.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_SetPlayerKillCount( ULONG( source->player - players ) );
+
+				// Also, update the scoreboard.
+				SERVERCONSOLE_UpdatePlayerInfo( ULONG( source->player - players ), UDF_FRAGS );
+				SERVERCONSOLE_UpdateScoreboard( );
+			}
 		}
 
 		// Don't count any frags at level start, because they're just telefrags
 		// resulting from insufficient deathmatch starts, and it wouldn't be
 		// fair to count them toward a player's score.
-		if (player && level.maptime)
+		if (player && (( MeansOfDeath & ~MOD_FRIENDLY_FIRE ) != MOD_SPAWNTELEFRAG ))
 		{
-			source->player->frags[player - players]++;
+			if ( source->player->pSkullBot )
+			{
+				source->player->pSkullBot->m_ulPlayerKilled = player - players;
+				if (( player - players ) == source->player->pSkullBot->m_ulPlayerEnemy )
+					source->player->pSkullBot->PostEvent( BOTEVENT_ENEMY_KILLED );
+			}
+
+			// [BC] Potentially get rid of some corpses. This isn't necessarily client-only.
+			CLIENT_RemoveCorpses( );
+
 			if (player == source->player)	// [RH] Cumulative frag count
 			{
-				char buff[256];
-
-				player->fragcount--;
-				if (deathmatch && player->spreecount >= 5 && cl_showsprees)
-				{
-					SexMessage (GStrings("SPREEKILLSELF"), buff,
-						player->userinfo.gender, player->userinfo.netname,
-						player->userinfo.netname);
-					StatusBar->AttachMessage (new DHUDMessageFadeOut (buff,
-							1.5f, 0.2f, 0, 0, CR_WHITE, 3.f, 0.5f), MAKE_ID('K','S','P','R'));
-				}
+				// [BC] Frags are server side.
+				if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+					PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );
 			}
 			else
 			{
-				++source->player->fragcount;
-				++source->player->spreecount;
+				// [BC] Don't award frags here in client mode.
+				if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				{
+					if ( bPossessedTerminatorArtifact )
+					{
+						// [BC] Player receives 10 frags for killing the terminator!
+						PLAYER_SetFragcount( source->player, source->player->fragcount + 10, true, true );
+
+						// [BC] Award the fragger with a "Termination!" medal.
+						MEDAL_GiveMedal( source->player - players, MEDAL_TERMINATION );
+
+						// [BC] Tell clients about the medal that been given.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_TERMINATION );
+					}
+					else
+					{
+						PLAYER_SetFragcount( source->player, source->player->fragcount + 1, true, true );
+					}
+				}
+
+				// [BC] Add this frag to the server's statistic module.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVER_STATISTIC_AddToTotalFrags( );
+
 				if (source->player->morphTics)
 				{ // Make a super chicken
 					source->GiveInventoryType (RUNTIME_CLASS(APowerWeaponLevel2));
 				}
-				if (deathmatch && cl_showsprees)
+
+				// [BC] Don't award Total/Domination or increment frags w/o death if this is a teammate.
+				if ( player->mo->IsTeammate( source ) == false )
 				{
-					const char *spreemsg;
-					char buff[256];
-
-					switch (source->player->spreecount)
+					// If this is a deathmatch game, and the "First frag!" medal hasn't been
+					// awarded yet, award it here.
+					if (( deathmatch ) &&
+						( lastmanstanding == false ) &&
+						( teamlms == false ) &&
+						( possession == false ) &&
+						( teampossession == false ) &&
+						(( duel == false ) || ( DUEL_GetState( ) == DS_INDUEL )) &&
+						( g_bFirstFragAwarded == false ))
 					{
-					case 5:
-						spreemsg = GStrings("SPREE5");
-						break;
-					case 10:
-						spreemsg = GStrings("SPREE10");
-						break;
-					case 15:
-						spreemsg = GStrings("SPREE15");
-						break;
-					case 20:
-						spreemsg = GStrings("SPREE20");
-						break;
-					case 25:
-						spreemsg = GStrings("SPREE25");
-						break;
-					default:
-						spreemsg = NULL;
-						break;
+						if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+							MEDAL_GiveMedal( source->player - players, MEDAL_FIRSTFRAG );
+
+						// Tell clients about the medal that been given.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_FIRSTFRAG );						
+
+						g_bFirstFragAwarded = true;
 					}
 
-					if (spreemsg == NULL && player->spreecount >= 5)
+					// [BC] Don't do this block in client mode.
+					if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 					{
-						if (!AnnounceSpreeLoss (this))
+						// [BC] Increment frags without death.
+						source->player->ulFragsWithoutDeath++;
+
+						// [BC] If the player has gotten 5 straight frags without dying, award a medal.
+						if (( source->player->ulFragsWithoutDeath % 5 ) == 0 )
 						{
-							SexMessage (GStrings("SPREEOVER"), buff, player->userinfo.gender,
-								player->userinfo.netname, source->player->userinfo.netname);
-							StatusBar->AttachMessage (new DHUDMessageFadeOut (buff,
-								1.5f, 0.2f, 0, 0, CR_WHITE, 3.f, 0.5f), MAKE_ID('K','S','P','R'));
+							if ( source->player->ulFragsWithoutDeath >= 10 )
+							{
+								// [BC] If the player gets 10+ straight frags without dying, award a "Total Domination" medal.
+								MEDAL_GiveMedal( source->player - players, MEDAL_TOTALDOMINATION );
+
+								// [BC] Tell clients about the medal that been given.
+								if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+									SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_TOTALDOMINATION );
+							}
+							else 
+							{
+								// [BC] Otherwise, award a "Domination" medal.
+								MEDAL_GiveMedal( source->player - players, MEDAL_DOMINATION );
+
+								// [BC] Tell clients about the medal that been given.
+								if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+									SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_DOMINATION );
+							}
 						}
 					}
-					else if (spreemsg != NULL)
+				}
+
+				// [BC] Don't do this block in client mode.
+				if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				{
+					// [BC] Reset deaths without frag.
+					source->player->ulDeathsWithoutFrag = 0;
+
+					// Don't award Excellent/Incredible if this is a teammate.
+					if ( player->mo->IsTeammate( source ) == false )
 					{
-						if (!AnnounceSpree (source))
+						// If the player killed him with this fist, award him a "Fisting!" medal.
+						if (( source->player->ReadyWeapon ) && ( source->player->ReadyWeapon->GetClass( ) == PClass::FindClass( "Fist" )))
 						{
-							SexMessage (spreemsg, buff, player->userinfo.gender,
-								player->userinfo.netname, source->player->userinfo.netname);
-							StatusBar->AttachMessage (new DHUDMessageFadeOut (buff,
-								1.5f, 0.2f, 0, 0, CR_WHITE, 3.f, 0.5f), MAKE_ID('K','S','P','R'));
+							// Award the medal.
+							MEDAL_GiveMedal( source->player - players, MEDAL_FISTING );
+
+							// Tell clients about the medal that been given.
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_FISTING );
 						}
+
+						// If this is the second frag this player has gotten THIS TICK with the
+						// BFG9000, award him a "SPAM!" medal.
+						if (( source->player->ReadyWeapon ) && ( source->player->ReadyWeapon->GetClass( ) == PClass::FindClass( "BFG9000" )))
+						{
+							if ( source->player->ulLastBFGFragTick == level.time )
+							{
+								// Award the medal.
+								MEDAL_GiveMedal( source->player - players, MEDAL_SPAM );
+
+								// Tell clients about the medal that been given.
+								if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+									SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_SPAM );
+
+								// Also, cancel out the possibility of getting an Excellent/Incredible medal.
+								source->player->ulLastExcellentTick = 0;
+								source->player->ulLastFragTick = 0;
+							}
+							else
+								source->player->ulLastBFGFragTick = level.time;
+						}
+
+						// If the player has gotten two Excelents within two seconds, award an "Incredible" medal.
+						if (( source->player->ulLastExcellentTick + ( 2 * TICRATE )) > level.time )
+						{
+							// Award the incredible.
+							MEDAL_GiveMedal( source->player - players, MEDAL_INCREDIBLE );
+
+							// Tell clients about the medal that been given.
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_INCREDIBLE );
+
+							source->player->ulLastExcellentTick = level.time;
+							source->player->ulLastFragTick = level.time;
+						}
+						// If this player has gotten two frags within two seconds, award an "Excellent" medal.
+						else if (( source->player->ulLastFragTick + ( 2 * TICRATE )) > level.time )
+						{
+							// Award the excellent.
+							MEDAL_GiveMedal( source->player - players, MEDAL_EXCELLENT );
+
+							// Tell clients about the medal that been given.
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_EXCELLENT );
+
+							source->player->ulLastExcellentTick = level.time;
+							source->player->ulLastFragTick = level.time;
+						}
+					}
+
+					// Bookmark the last time they got a frag.
+					source->player->ulLastFragTick = level.time;
+
+					// If the target player had been in the middle of typing, award a "llama" medal.
+					// Also do this if the killed player is lagging.
+					if ( player->bChatting || player->bLagging )
+					{
+						MEDAL_GiveMedal( source->player - players, MEDAL_LLAMA );
+
+						// Tell clients about the medal that been given.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_GivePlayerMedal( source->player - players, MEDAL_LLAMA );
 					}
 				}
 			}
 
-			// [RH] Multikills
-			source->player->multicount++;
-			if (source->player->lastkilltime > 0)
+			// Play announcer sounds for amount of frags remaining.
+			if (( lastmanstanding == false ) && ( teamlms == false ) && ( possession == false ) && ( teampossession == false ) && deathmatch && fraglimit )
 			{
-				if (source->player->lastkilltime < level.time - 3*TICRATE)
+				// [RH] Implement fraglimit
+				// [BC] Betterized!
+				if ( fraglimit <= D_GetFragCount( source->player ))
 				{
-					source->player->multicount = 1;
-				}
-
-				if (deathmatch &&
-					source->CheckLocalView (consoleplayer) &&
-					cl_showmultikills)
-				{
-					const char *multimsg;
-
-					switch (source->player->multicount)
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 					{
-					case 1:
-						multimsg = NULL;
-						break;
-					case 2:
-						multimsg = GStrings("MULTI2");
-						break;
-					case 3:
-						multimsg = GStrings("MULTI3");
-						break;
-					case 4:
-						multimsg = GStrings("MULTI4");
-						break;
-					default:
-						multimsg = GStrings("MULTI5");
-						break;
+						SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_FRAGLIMIT" ));
+						if ( teamplay && ( source->player->bOnTeam ))
+							SERVER_Printf( PRINT_HIGH, "%s \\c-wins!\n", TEAM_GetName( source->player->ulTeam ));
+						else
+							SERVER_Printf( PRINT_HIGH, "%s \\c-wins!\n", source->player->userinfo.netname );
 					}
-					if (multimsg != NULL)
+					else
 					{
-						char buff[256];
+						Printf( "%s\n", GStrings( "TXT_FRAGLIMIT" ));
+						if ( teamplay && ( source->player->bOnTeam ))
+							Printf( "%s \\c-wins!\n", TEAM_GetName( source->player->ulTeam ));
+						else
+							Printf( "%s \\c-wins!\n", source->player->userinfo.netname );
 
-						if (!AnnounceMultikill (source))
+						if (( duel == false ) && ( source->player - players == consoleplayer ))
+							ANNOUNCER_PlayEntry( cl_announcer, "YouWin" );
+					}
+
+					// Pause for five seconds for the win sequence.
+					if ( duel )
+					{
+						// Also, do the win sequence for the player.
+						DUEL_SetLoser( player - players );
+						DUEL_DoWinSequence( source->player - players );
+
+						// Give the winner a win.
+						PLAYER_SetWins( source->player, source->player->ulWins + 1 );
+
+						GAME_SetEndLevelDelay( 5 * TICRATE );
+					}
+					// End the level after five seconds.
+					else
+					{
+						char				szString[64];
+						DHUDMessageFadeOut	*pMsg;
+
+						// Just print "YOU WIN!" in single player.
+						if (( NETWORK_GetState( ) == NETSTATE_SINGLE_MULTIPLAYER ) && ( players[consoleplayer].mo->CheckLocalView( source->player - players )))
+							sprintf( szString, "\\cGYOU WIN!" );
+						else if (( teamplay ) && ( source->player->bOnTeam ))
 						{
-							SexMessage (multimsg, buff, player->userinfo.gender,
-								player->userinfo.netname, source->player->userinfo.netname);
-							StatusBar->AttachMessage (new DHUDMessageFadeOut (buff,
-								1.5f, 0.8f, 0, 0, CR_RED, 3.f, 0.5f), MAKE_ID('M','K','I','L'));
+							if ( source->player->ulTeam == TEAM_BLUE )
+								sprintf( szString, "\\cH%s wins!\n", TEAM_GetName( source->player->ulTeam ));
+							else
+								sprintf( szString, "\\cG%s wins!\n", TEAM_GetName( source->player->ulTeam ));
 						}
+						else
+							sprintf( szString, "%s \\cGWINS!", players[source->player - players].userinfo.netname );
+						V_ColorizeString( szString );
+
+						if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+						{
+							screen->SetFont( BigFont );
+
+							// Display "%s WINS!" HUD message.
+							pMsg = new DHUDMessageFadeOut( szString,
+								160.4f,
+								75.0f,
+								320,
+								200,
+								CR_WHITE,
+								3.0f,
+								2.0f );
+
+							StatusBar->AttachMessage( pMsg, 'CNTR' );
+							screen->SetFont( SmallFont );
+
+							szString[0] = 0;
+							pMsg = new DHUDMessageFadeOut( szString,
+								0.0f,
+								0.0f,
+								0,
+								0,
+								CR_RED,
+								3.0f,
+								2.0f );
+
+							StatusBar->AttachMessage( pMsg, 'FRAG' );
+
+							pMsg = new DHUDMessageFadeOut( szString,
+								0.0f,
+								0.0f,
+								0,
+								0,
+								CR_RED,
+								3.0f,
+								2.0f );
+
+							StatusBar->AttachMessage( pMsg, 'PLAC' );
+						}
+						else
+						{
+							SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 160.4f, 75.0f, 320, 200, CR_WHITE, 3.0f, 2.0f, "BigFont", 'CNTR' );
+							szString[0] = 0;
+							SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 0.0f, 0.0f, 0, 0, CR_WHITE, 3.0f, 2.0f, "BigFont", 'FRAG' );
+							SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 0.0f, 0.0f, 0, 0, CR_WHITE, 3.0f, 2.0f, "BigFont", 'PLAC' );
+						}
+
+						GAME_SetEndLevelDelay( 5 * TICRATE );
 					}
 				}
-			}
-			source->player->lastkilltime = level.time;
-
-			// [RH] Implement fraglimit
-			if (deathmatch && fraglimit &&
-				fraglimit == D_GetFragCount (source->player))
-			{
-				Printf ("%s\n", GStrings("TXT_FRAGLIMIT"));
-				G_ExitLevel (0, false);
 			}
 		}
+
+		// If the player got telefragged by a player trying to spawn, allow him to respawn.
+		if (( player ) && ( lastmanstanding || teamlms || survival ) && ( MeansOfDeath == MOD_SPAWNTELEFRAG ))
+			player->bSpawnTelefragged = true;
 	}
-	else if (!multiplayer && CountsAsKill())
+	else if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && (CountsAsKill()))
 	{
 		// count all monster deaths,
 		// even those caused by other monsters
-		players[0].killcount++;
+
+		// Why give player 0 credit? :P
+		// Meh, just do it in single player.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+			players[0].killcount++;
+		if ( invasion )
+		{
+			INVASION_SetNumMonstersLeft( INVASION_GetNumMonstersLeft( ) - 1 );
+
+			if ( GetClass( ) == RUNTIME_CLASS( AArchvile ))
+				INVASION_SetNumArchVilesLeft( INVASION_GetNumArchVilesLeft( ) - 1 );
+
+			// If we're the server, tell the client how many monsters are left.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetInvasionNumMonstersLeft( );
+		}
+
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+//			SERVER_PlayerKilledMonster( MAXPLAYERS );
+
+			// Also, update the scoreboard.
+			SERVERCONSOLE_UpdateScoreboard( );
+		}
 	}
 	
-	if (player)
+	// [BC] Don't do this block in client mode.
+	if (player && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
 	{
-		// [RH] Death messages
-		ClientObituary (this, inflictor, source);
+		// [BC] If this is a bot, tell it it died.
+		if ( player->pSkullBot )
+		{
+			if ( source && source->player )
+				player->pSkullBot->m_ulPlayerKilledBy = source->player - players;
+			else
+				player->pSkullBot->m_ulPlayerKilledBy = MAXPLAYERS;
+
+			if ( source && source->player )
+			{
+				if ( source->player == player )
+					player->pSkullBot->PostEvent( BOTEVENT_KILLED_BYSELF );
+				else if (( source->player - players ) == player->pSkullBot->m_ulPlayerEnemy )
+					player->pSkullBot->PostEvent( BOTEVENT_KILLED_BYENEMY );
+				else
+					player->pSkullBot->PostEvent( BOTEVENT_KILLED_BYPLAYER );
+			}
+			else
+				player->pSkullBot->PostEvent( BOTEVENT_KILLED_BYENVIORNMENT );
+		}
+
+		// [BC] Keep track of where we died for the "same spot respawn" dmflags.
+		player->SpawnX = x;
+		player->SpawnY = y;
+		player->SpawnAngle = angle;
+		player->bSpawnOkay = true;
 
 		// Death script execution, care of Skull Tag
 		FBehavior::StaticStartTypedScripts (SCRIPT_Death, this, true);
 
 		// [RH] Force a delay between death and respawn
-		player->respawn_time = level.time + TICRATE;
-
-		//Added by MC: Respawn bots
-		if (bglobal.botnum && consoleplayer == Net_Arbitrator && !demoplayback)
+		if (( i_compatflags & COMPATF_INSTANTRESPAWN ) == false )
 		{
-			if (player->isbot)
-				player->t_respawn = (pr_botrespawn()%15)+((bglobal.botnum-1)*2)+TICRATE+1;
+			player->respawn_time = level.time + TICRATE;
 
-			//Added by MC: Discard enemies.
-			for (int i = 0; i < MAXPLAYERS; i++)
-			{
-				if (players[i].isbot && this == players[i].enemy)
-				{
-					if (players[i].dest ==  players[i].enemy)
-						players[i].dest = NULL;
-					players[i].enemy = NULL;
-				}
-			}
-
-			player->spreecount = 0;
-			player->multicount = 0;
+			// [BC] Don't respawn quite so fast on forced respawn. It sounds weird when your
+			// scream isn't completed.
+			if ( dmflags & DF_FORCE_RESPAWN )
+				player->respawn_time += TICRATE/2;
 		}
 
 		// count environment kills against you
 		if (!source)
 		{
-			player->frags[player - players]++;
-			player->fragcount--;	// [RH] Cumulative frag count
+			PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );	// [RH] Cumulative frag count
+
+			// Spawning in nukage or getting crushed is NOT
+			// somewhere where you would want to be at when you respawn again
+			player->bSpawnOkay = false;
 		}
 						
+		// [BC] Increment deathcount.
+		if (
+			((( duel ) && ( DUEL_GetState( ) == DS_COUNTDOWN )) == false ) && 
+			((( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_COUNTDOWN )) == false )
+			)
+		{
+			player->ulDeathCount++;
+
+			// Increment deaths without frag.
+			player->ulDeathsWithoutFrag++;
+
+			// If the player dies TEN times without getting a frag, award a "Your skill is not enough" medal.
+			if (( player->ulDeathsWithoutFrag % 10 ) == 0 )
+			{
+				MEDAL_GiveMedal( player - players, MEDAL_YOURSKILLISNOTENOUGH );
+
+				// Tell clients about the medal that been given.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_GivePlayerMedal( player - players, MEDAL_YOURSKILLISNOTENOUGH );
+			}
+			// If the player dies five times without getting a frag, award a "You fail it" medal.
+			else if (( player->ulDeathsWithoutFrag % 5 ) == 0 )
+			{
+				MEDAL_GiveMedal( player - players, MEDAL_YOUFAILIT );
+
+				// Tell clients about the medal that been given.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_GivePlayerMedal( player - players, MEDAL_YOUFAILIT );
+			}
+
+			// Reset frags without death.
+			player->ulFragsWithoutDeath = 0;
+		}
+
+		// [BC] Increment team deathcount.
+		if (( teamplay || teampossession ) && ( player->bOnTeam ))
+			TEAM_SetDeathCount( player->ulTeam, TEAM_GetDeathCount( player->ulTeam ) + 1 );
+	}
+
+	// [BC] We can do this stuff in client mode.
+	if (player)
+	{
 		flags &= ~MF_SOLID;
 		player->playerstate = PST_DEAD;
+
 		P_DropWeapon (player);
+
 		if (this == players[consoleplayer].camera && automapactive)
 		{
 			// don't die in auto map, switch view prior to dying
@@ -672,6 +992,44 @@ void AActor::Die (AActor *source, AActor *inflictor)
 			}
 		}
 	}
+
+	// [BC] Tell clients that this thing died.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		// If there isn't a player attached to this object, treat it like a normal thing.
+		if ( player == NULL )
+			SERVERCOMMANDS_KillThing( this );
+		else
+			SERVERCOMMANDS_KillPlayer( ULONG( player - players ), source, inflictor, MeansOfDeath );
+	}
+
+	if (( deathmatch || teamgame ) &&
+		( NETWORK_GetState( ) != NETSTATE_SERVER ) &&
+		( NETWORK_GetState( ) != NETSTATE_CLIENT ) &&
+		( cl_showlargefragmessages ) &&
+		((( duel ) && (( DUEL_GetState( ) == DS_WINSEQUENCE ) || ( DUEL_GetState( ) == DS_COUNTDOWN ))) == false ) &&
+		((( lastmanstanding || teamlms ) && (( LASTMANSTANDING_GetState( ) == LMSS_WINSEQUENCE ) || ( LASTMANSTANDING_GetState( ) == LMSS_COUNTDOWN ))) == false ))
+	{
+		if (( player ) && ( source ) && ( source->player ) && ( player != source->player ) && ( MeansOfDeath != MOD_SPAWNTELEFRAG ))
+		{
+			if ((( deathmatch == false ) || (( fraglimit == 0 ) || ( source->player->fragcount < fraglimit ))) &&
+				(( lastmanstanding == false ) || (( winlimit == 0 ) || ( source->player->ulWins < winlimit ))) &&
+				(( teamlms == false ) || (( winlimit == 0 ) || ( TEAM_GetWinCount( source->player->ulTeam ) < winlimit ))))
+			{
+				// Display a large "You were fragged by <name>." message in the middle of the screen.
+				if (( player - players ) == consoleplayer )
+					SCOREBOARD_DisplayFraggedMessage( source->player );
+
+				// Display a large "You fragged <name>!" message in the middle of the screen.
+				else if (( source->player - players ) == consoleplayer )
+					SCOREBOARD_DisplayFragMessage( player );
+			}
+		}
+	}
+
+	// [RH] Death messages
+	if (( player ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+		ClientObituary (this, inflictor, source, MeansOfDeath);
 
 	tics -= pr_killmobj() & 3;
 	if (tics < 1)
@@ -803,6 +1161,10 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 	fixed_t thrust;
 	int temp;
 
+	// [BC] Game is currently in a suspended state; don't hurt anyone.
+	if ( GAME_GetEndLevelDelay( ))
+		return;
+
 	if (target == NULL || !(target->flags & MF_SHOOTABLE))
 	{ // Shouldn't happen
 		return;
@@ -913,6 +1275,20 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 	{
 		return;
 	}
+
+	// [BC] If the target player has the reflection rune, damage the source with 50% of the
+	// this player is being damaged with.
+	if ( target->player && ( target->player->Powers & PW_REFLECTION ) && source && ( mod != MOD_REFLECTION ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+	{
+		if ( target != source )
+		{
+			P_DamageMobj( source, NULL, target, (( damage * 3 ) / 4 ), MOD_REFLECTION );
+
+			// Reset means of death flag.
+			MeansOfDeath = mod;
+		}
+	}
+
 	// Push the target unless the source's weapon's kickback is 0.
 	// (i.e. Guantlets/Chainsaw)
 	if (inflictor && inflictor != target	// [RH] Not if hurting own self
@@ -978,12 +1354,6 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 			return;
 		}
 
-        //Added by MC: Lets bots look allround for enemies if they survive an ambush.
-        if (player->isbot)
-		{
-            player->allround = true;
-		}
-
 		// end of game hell hack
 		if ((target->Sector->special & 255) == dDamage_End
 			&& damage >= target->health)
@@ -1000,7 +1370,8 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 		// [RH] Avoid friendly fire if enabled
 		if (source != NULL && player != source->player && target->IsTeammate (source))
 		{
-			MeansOfDeath |= MOD_FRIENDLY_FIRE;
+			if ((( teamlms || survival ) && ( MeansOfDeath == MOD_SPAWNTELEFRAG )) == false )
+				MeansOfDeath |= MOD_FRIENDLY_FIRE;
 			if (damage < 1000000)
 			{ // Still allow telefragging :-(
 				damage = (int)((float)damage * teamdamage);
@@ -1017,6 +1388,16 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 			{
 				return;
 			}
+		}
+
+		// [BC] For the red armor's special fire resistance, potentially reduce the amount
+		// of damage taken AFTER the player's armor has been depleted.
+		if (( player->Powers & PW_FIRERESISTANT ) &&
+			(( mod == MOD_FIRE ) ||
+			( mod == MOD_GRENADE ) ||
+			( mod == MOD_ROCKET )))
+		{
+			damage /= 8;
 		}
 
 		if (damage >= player->health
@@ -1037,12 +1418,25 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 		{
 			player->health = 0;
 		}
+
+		if ( player->pSkullBot )
+		{
+			// Tell the bot he's been damaged by a player.
+			if ( source && source->player && ( source->player != player ))
+			{
+				player->pSkullBot->m_ulLastPlayerDamagedBy = source->player - players;
+				player->pSkullBot->PostEvent( BOTEVENT_DAMAGEDBY_PLAYER );
+			}
+		}
+
 		player->attacker = source;
 		player->damagecount += damage;	// add damage after armor / invuln
 		if (player->damagecount > 100)
 		{
 			player->damagecount = 100;	// teleport stomp does 10k points...
 		}
+		if ( player->damagecount < 0 )
+			player->damagecount = 0;
 		temp = damage < 100 ? damage : 100;
 		if (player == &players[consoleplayer])
 		{
@@ -1053,10 +1447,42 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 	{
 		target->health -= damage;	
 	}
-
+	
 	//
 	// the damage has been dealt; now deal with the consequences
 	//
+
+	// If the damaging player has the power of drain, give the player 50% of the damage
+	// done in health.
+	if ( source && source->player && ( source->player->Powers & PW_DRAIN ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+	{
+		if (( target->player == false ) || ( target->player != source->player ))
+		{
+			if ( P_GiveBody( source, damage / 2 ))
+			{
+				// [BC] If we're the server, send out the health change, and play the
+				// health sound.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				{
+					SERVERCOMMANDS_SetPlayerHealth( source->player - players );
+					SERVERCOMMANDS_SoundActor( source, CHAN_ITEM, "misc/i_pkup", 127, ATTN_NORM );
+				}
+
+				S_Sound( source, CHAN_ITEM, "misc/i_pkup", 1, ATTN_NORM );
+			}
+		}
+	}
+
+	// [BC] Tell clients that this thing was damaged.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		if ( player )
+			SERVERCOMMANDS_DamagePlayer( ULONG( player - players ));
+		else
+			// Is this even necessary?
+			SERVERCOMMANDS_DamageThing( target );
+	}
+
 	if (target->health <= 0)
 	{ // Death
 		target->special1 = damage;
@@ -1100,7 +1526,10 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 			// Always extreme death from fourth weapon
 			target->health = -target->GetDefault()->health * 3;
 		}
-		target->Die (source, inflictor);
+
+		// Deaths are server side.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			target->Die (source, inflictor);
 		return;
 	}
 	if (target->WoundState != NULL)
@@ -1114,7 +1543,8 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 		}
 	}
 	if ((pr_damagemobj() < target->PainChance) && target->PainState != NULL
-		 && !(target->flags & MF_SKULLFLY))
+		 && !(target->flags & MF_SKULLFLY) && 
+		 ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
 	{
 		if (inflictor && inflictor->IsKindOf (RUNTIME_CLASS(ALightning)))
 		{
@@ -1124,6 +1554,10 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 				if (target->PainState != NULL)
 				{
 					target->SetState (target->PainState);
+
+					// If we are the server, tell clients about the state change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( target, STATE_PAIN );
 				}
 			}
 			else
@@ -1138,7 +1572,12 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 		else
 		{
 			target->flags |= MF_JUSTHIT; // fight back!
-			target->SetState (target->PainState);
+			target->SetState (target->PainState);	
+
+			// If we are the server, tell clients about the state change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingState( target, STATE_PAIN );
+
 			if (inflictor && inflictor->IsKindOf (RUNTIME_CLASS(APoisonCloud)))
 			{
 				if ((target->flags3 & MF3_ISMONSTER) && pr_poison() < 128)
@@ -1148,6 +1587,11 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 			}
 		}
 	}
+
+	// Nothing more to do!
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	target->reactiontime = 0;			// we're awake now...	
 	if (source)
 	{
@@ -1178,6 +1622,10 @@ void P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 			if (target->state == target->SpawnState && target->SeeState != NULL)
 			{
 				target->SetState (target->SeeState);
+
+				// If we are the server, tell clients about the state change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetThingState( target, STATE_SEE );
 			}
 		}
 	}
@@ -1215,7 +1663,8 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 	{ // [RH] Friendlies don't target other friendlies
 		return false;
 	}
-	if ((gameinfo.gametype == GAME_Strife || infighting < 0) &&
+	// [BC] No infighting during invasion mode.
+	if ((gameinfo.gametype == GAME_Strife || infighting < 0 || invasion ) &&
 		other->player == NULL && !IsHostile (other))
 	{
 		return false;	// Strife & infighting off: Non-friendlies don't target other non-friendlies
@@ -1240,6 +1689,10 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 
 void P_PoisonPlayer (player_t *player, AActor *poisoner, AActor *source, int poison)
 {
+	// This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if((player->cheats&CF_GODMODE) || (player->mo->flags2 & MF2_INVULNERABLE))
 	{
 		return;
@@ -1333,6 +1786,10 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	if (!(level.time&63) && playPainSound && target->PainState != NULL)
 	{
 		target->SetState (target->PainState);
+
+		// If we are the server, tell clients about the state change.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingState( target, STATE_PAIN );
 	}
 /*
 	if((P_Random() < target->info->painchance)
@@ -1346,8 +1803,578 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 
 bool CheckCheatmode ();
 
+//*****************************************************************************
+//
+void PLAYER_SetFragcount( player_s *pPlayer, LONG lFragCount, bool bAnnounce, bool bUpdateTeamFrags )
+{
+	// Don't bother with fragcount during warm-ups.
+	if ((( duel ) && ( DUEL_GetState( ) == DS_COUNTDOWN )) ||
+		(( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_COUNTDOWN )))
+	{
+		return;
+	}
+
+	// Don't announce events related to frag changes during teamplay, LMS,
+	// or possession games.
+	if (( bAnnounce ) &&
+		( deathmatch ) &&
+		( teamplay == false ) &&
+		( lastmanstanding == false ) &&
+		( teamlms == false ) &&
+		( possession == false ) &&
+		( teampossession == false ))
+	{
+		ANNOUNCER_PlayFragSounds( pPlayer - players, pPlayer->fragcount, lFragCount );
+	}
+
+	// If this is a teamplay deathmatch, update the team frags.
+	if ( bUpdateTeamFrags )
+	{
+		if (( teamplay || teamlms || teamgame || teampossession ) && ( pPlayer->bOnTeam ))
+			TEAM_SetFragCount( pPlayer->ulTeam, TEAM_GetFragCount( pPlayer->ulTeam ) + ( lFragCount - pPlayer->fragcount ), bAnnounce );
+	}
+
+	// Set the player's fragcount.
+	pPlayer->fragcount = lFragCount;
+
+	// If we're the server, notify the clients of the fragcount change.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_SetPlayerFrags( pPlayer - players );
+
+		// Also, update the scoreboard.
+		SERVERCONSOLE_UpdatePlayerInfo( pPlayer - players, UDF_FRAGS );
+		SERVERCONSOLE_UpdateScoreboard( );
+	}
+
+	// Refresh the HUD since a score has changed.
+	SCOREBOARD_RefreshHUD( );
+}
+
+//*****************************************************************************
+//
+void PLAYER_ResetAllPlayersFragcount( void )
+{
+	ULONG	ulIdx;
+
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playeringame[ulIdx] == false )
+			continue;
+
+		players[ulIdx].fragcount = 0;
+
+		// If we're the server, 
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCONSOLE_UpdatePlayerInfo( ulIdx, UDF_FRAGS );
+			SERVERCONSOLE_UpdateScoreboard( );
+		}
+	}
+
+	// Refresh the HUD since a score has changed.
+	SCOREBOARD_RefreshHUD( );
+}
+
+//*****************************************************************************
+//
+void PLAYER_GivePossessionPoint( player_s *pPlayer )
+{
+	char				szString[64];
+	DHUDMessageFadeOut	*pMsg;
+
+//	if ( possession )
+//		ANNOUNCER_PlayScoreSounds( pPlayer - players, pPlayer->lPointCount, pPlayer->lPointCount + 1 );
+
+	// If we're in possession mode, give the player a point. Also, determine if the player's lead
+	// state changed. If it did, announce it.
+	if ( possession )
+	{
+		pPlayer->lPointCount++;
+
+		// If we're the server, notify the clients of the pointcount change.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerPoints( pPlayer - players );
+	}
+	// If this is team possession, also give the player's team a point.
+	else if ( teampossession && pPlayer->bOnTeam )
+	{
+		TEAM_SetScore( pPlayer->ulTeam, TEAM_GetScore( pPlayer->ulTeam ) + 1, true );
+
+		pPlayer->lPointCount++;
+
+		// If we're the server, notify the clients of the pointcount change.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerPoints( pPlayer - players );
+	}
+	else
+		return;
+
+	SCOREBOARD_RefreshHUD( );
+
+	// If a pointlimit has been set, determine if the game has been won.
+	if ( pointlimit )
+	{
+		if ( possession && ( pPlayer->lPointCount >= pointlimit ))
+		{
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVER_Printf( PRINT_HIGH, "Pointlimit hit.\n" );
+				SERVER_Printf( PRINT_HIGH, "%s \\c-wins!\n", pPlayer->userinfo.netname );
+			}
+			else
+			{
+				Printf( "Pointlimit hit.\n" );
+				Printf( "%s \\c-wins!\n", pPlayer->userinfo.netname );
+
+				if ( pPlayer->mo->CheckLocalView( consoleplayer ))
+					ANNOUNCER_PlayEntry( cl_announcer, "YouWin" );
+			}
+
+			// Just print "YOU WIN!" in single player.
+			if (( NETWORK_GetState( ) == NETSTATE_SINGLE_MULTIPLAYER ) && ( pPlayer->mo->CheckLocalView( consoleplayer )))
+				sprintf( szString, "YOU WIN!" );
+			else
+				sprintf( szString, "%s \\c-WINS!", pPlayer->userinfo.netname );
+			V_ColorizeString( szString );
+
+			if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+			{
+				screen->SetFont( BigFont );
+
+				// Display "%s WINS!" HUD message.
+				pMsg = new DHUDMessageFadeOut( szString,
+					160.4f,
+					75.0f,
+					320,
+					200,
+					CR_RED,
+					3.0f,
+					2.0f );
+
+				StatusBar->AttachMessage( pMsg, 'CNTR' );
+				screen->SetFont( SmallFont );
+			}
+			else
+			{
+				SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 160.4f, 75.0f, 320, 200, CR_RED, 3.0f, 2.0f, "BigFont", 'CNTR' );
+			}
+
+			// End the level after five seconds.
+			GAME_SetEndLevelDelay( 5 * TICRATE );
+		}
+		else if ( teampossession && ( TEAM_GetScore( pPlayer->ulTeam ) >= pointlimit ))
+		{
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVER_Printf( PRINT_HIGH, "Pointlimit hit.\n" );
+				SERVER_Printf( PRINT_HIGH, "%s \\c-wins!\n", TEAM_GetName( pPlayer->ulTeam ));
+			}
+			else
+			{
+				Printf( "Pointlimit hit.\n" );
+				Printf( "%s \\c-wins!\n", TEAM_GetName( pPlayer->ulTeam ));
+
+				if ( pPlayer->mo->IsTeammate( players[consoleplayer].camera ))
+					ANNOUNCER_PlayEntry( cl_announcer, "YouWin" );
+			}
+
+			if ( pPlayer->ulTeam == TEAM_BLUE )
+				sprintf( szString, "\\chBLUE WINS!" );
+			else
+				sprintf( szString, "\\cgRED WINS!" );
+			V_ColorizeString( szString );
+
+			if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+			{
+				screen->SetFont( BigFont );
+
+				// Display "%s WINS!" HUD message.
+				pMsg = new DHUDMessageFadeOut( szString,
+					1.5f,
+					0.375f,
+					320,
+					200,
+					CR_RED,
+					3.0f,
+					2.0f );
+
+				StatusBar->AttachMessage( pMsg, 'CNTR' );
+				screen->SetFont( SmallFont );
+			}
+			else
+			{
+				SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 1.5f, 0.375f, 320, 200, CR_RED, 3.0f, 2.0f, "BigFont", 'CNTR' );
+			}
+
+			// End the level after five seconds.
+			GAME_SetEndLevelDelay( 5 * TICRATE );
+		}
+	}
+}
+
+//*****************************************************************************
+//
+void PLAYER_SetTeam( player_s *pPlayer, ULONG ulTeam, bool bNoBroadcast )
+{
+	bool	bBroadcastChange = false;
+
+	if (
+		// Player was removed from a team.
+		( pPlayer->bOnTeam && ulTeam == NUM_TEAMS ) || 
+
+		// Player was put on a team after not being on one.
+		( pPlayer->bOnTeam == false && ulTeam < NUM_TEAMS ) ||
+		
+		// Player is on a team, but is being put on a different team.
+		( pPlayer->bOnTeam && ( ulTeam < NUM_TEAMS ) && ( ulTeam != pPlayer->ulTeam ))
+		)
+	{
+		bBroadcastChange = true;
+	}
+
+	// We don't want to broadcast a print message.
+	if ( bNoBroadcast )
+		bBroadcastChange = false;
+
+	// Set whether or not this player is on a team.
+	if ( ulTeam == NUM_TEAMS )
+		pPlayer->bOnTeam = false;
+	else
+		pPlayer->bOnTeam = true;
+
+	// Set the team.
+	pPlayer->ulTeam = ulTeam;
+
+	// If we're the server, tell clients about this team change.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_SetPlayerTeam( pPlayer - players );
+
+		// Player has changed his team! Tell clients.
+		if ( bBroadcastChange )
+		{
+			if ( ulTeam == TEAM_BLUE )
+				SERVER_Printf( PRINT_HIGH, "%s \\c-joined the \\ch%s \\c-team.\n", pPlayer->userinfo.netname, TEAM_GetName( ulTeam )); 
+			else
+				SERVER_Printf( PRINT_HIGH, "%s \\c-joined the \\cg%s \\c-team.\n", pPlayer->userinfo.netname, TEAM_GetName( ulTeam )); 
+		}		
+	}
+
+	// Finally, update the player's color.
+	R_BuildPlayerTranslation( pPlayer - players );
+	if ( StatusBar && ( pPlayer->mo->CheckLocalView( consoleplayer )))
+		StatusBar->AttachToPlayer( pPlayer );
+
+	// Update this player's info on the scoreboard.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCONSOLE_UpdatePlayerInfo( pPlayer - players, UDF_FRAGS );
+}
+
+//*****************************************************************************
+//
+void PLAYER_SetSpectator( player_s *pPlayer, bool bBroadcast, bool bDeadSpectator )
+{
+	// Already a spectator. Check if their spectating state is changing.
+	if ( pPlayer->bSpectating == true )
+	{
+		// If they're becoming a true spectator after being a dead spectator, do all the
+		// special spectator stuff we didn't do before.
+		if (( bDeadSpectator == false ) && ( pPlayer->bDeadSpectator ))
+		{
+			pPlayer->bDeadSpectator = false;
+
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			{
+				// Tell the join queue module that a player is leaving the game.
+				JOINQUEUE_PlayerLeftGame( true );
+			}
+
+			pPlayer->health = pPlayer->mo->health = deh.StartHealth;
+
+			if ( bBroadcast )
+			{
+				// Send out a message saying this player joined the spectators.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVER_Printf( PRINT_HIGH, "%s \\c-joined the spectators.\n", pPlayer->userinfo.netname );
+				else
+					Printf( "%s \\c-joined the spectators.\n", pPlayer->userinfo.netname );
+			}
+		}
+
+		// This player no longer has a team affiliation.
+		pPlayer->bOnTeam = false;
+
+		if (( pPlayer->fragcount > 0 ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+			PLAYER_SetFragcount( pPlayer, 0, false, false );
+
+		return;
+	}
+
+	// Flag this player as being a spectator.
+	pPlayer->bSpectating = true;
+	pPlayer->bDeadSpectator = bDeadSpectator;
+
+	// If this player was eligible to get an assist, cancel that.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		if ( TEAM_GetAssistPlayer( TEAM_BLUE ) == pPlayer - players )
+			TEAM_SetAssistPlayer( TEAM_BLUE, MAXPLAYERS );
+		if ( TEAM_GetAssistPlayer( TEAM_RED ) == pPlayer - players )
+			TEAM_SetAssistPlayer( TEAM_RED, MAXPLAYERS );
+	}
+
+	if ( pPlayer->mo )
+	{
+		// Before we start fucking with the player's body, drop important items
+		// like flags, etc.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			pPlayer->mo->DropImportantItems( false );
+
+		// Is this player tagged as a dead spectator, give him life.
+		pPlayer->playerstate = PST_LIVE;
+		if ( bDeadSpectator == false )
+			pPlayer->health = pPlayer->mo->health = deh.StartHealth;
+
+		// Make the player unshootable, etc.
+		pPlayer->mo->flags2 |= (MF2_CANNOTPUSH);
+		pPlayer->mo->flags &= ~(MF_SOLID|MF_SHOOTABLE|MF_PICKUP);
+		pPlayer->mo->flags2 &= ~(MF2_PASSMOBJ);
+		pPlayer->mo->RenderStyle = STYLE_None;
+
+		// Make the player flat, so he can travel under doors and such.
+		pPlayer->mo->height = 0;
+
+		// Make monsters unable to "see" this player.
+		pPlayer->cheats |= CF_NOTARGET;
+
+		// Take away all of the player's inventory.
+		pPlayer->mo->DestroyAllInventory( );
+
+		// Reset a bunch of other stuff.
+		pPlayer->extralight = 0;
+		pPlayer->fixedcolormap = 0;
+		pPlayer->damagecount = 0;
+		pPlayer->bonuscount = 0;
+		pPlayer->poisoncount = 0;
+		pPlayer->inventorytics = 0;
+
+		if (( bDeadSpectator == false ) && bBroadcast )
+		{
+			// Send out a message saying this player joined the spectators.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVER_Printf( PRINT_HIGH, "%s \\c-joined the spectators.\n", pPlayer->userinfo.netname );
+			else
+				Printf( "%s \\c-joined the spectators.\n", pPlayer->userinfo.netname );
+		}
+	}
+
+	// This player no longer has a team affiliation.
+	if ( bDeadSpectator == false )
+		pPlayer->bOnTeam = false;
+
+	// Player's lose all their frags when they become a spectator.
+	if ( bDeadSpectator == false )
+	{
+		if (( pPlayer->fragcount > 0 ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+			PLAYER_SetFragcount( pPlayer, 0, false, false );
+
+		// Also, tell the joinqueue module that a player has left the game.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		{
+			// Tell the join queue module that a player is leaving the game.
+			JOINQUEUE_PlayerLeftGame( true );
+		}
+
+		if ( pPlayer->pSkullBot )
+			pPlayer->pSkullBot->PostEvent( BOTEVENT_SPECTATING );
+	}
+
+	// Player's also lose all of their wins in duel mode.
+	if (( duel || ( lastmanstanding && ( bDeadSpectator == false ))) && ( pPlayer->ulWins > 0 ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+		PLAYER_SetWins( pPlayer, 0 );
+
+	// Update this player's info on the scoreboard.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCONSOLE_UpdatePlayerInfo( pPlayer - players, UDF_FRAGS );
+}
+
+//*****************************************************************************
+//
+void PLAYER_SetWins( player_s *pPlayer, ULONG ulWins )
+{
+	// Set the player's fragcount.
+	pPlayer->ulWins = ulWins;
+
+	// Refresh the HUD since a score has changed.
+	SCOREBOARD_RefreshHUD( );
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		// If we're the server, notify the clients of the win count change.
+		SERVERCOMMANDS_SetPlayerWins( pPlayer - players );
+
+		// Also, update the scoreboard.
+		SERVERCONSOLE_UpdatePlayerInfo( pPlayer - players, UDF_FRAGS );
+		SERVERCONSOLE_UpdateScoreboard( );
+	}
+}
+
+//*****************************************************************************
+//
+void PLAYER_GetName( player_s *pPlayer, char *pszOutBuf )
+{
+	// Build the buffer, which has a "remove color code" tag at the end of it.
+	sprintf( pszOutBuf, "%s\\c-", pPlayer->userinfo.netname );
+}
+
+//*****************************************************************************
+//
+bool PLAYER_IsTrueSpectator( player_s *pPlayer )
+{
+	if ( lastmanstanding || teamlms || survival )
+		return (( pPlayer->bSpectating ) && ( pPlayer->bDeadSpectator == false ));
+
+	return ( pPlayer->bSpectating );
+}
+
+//*****************************************************************************
+//
+void PLAYER_StruckPlayer( player_s *pPlayer )
+{
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	pPlayer->ulConsecutiveHits++;
+
+	// If the player has made 5 straight consecutive hits with a weapon, award a medal.
+	if (( pPlayer->ulConsecutiveHits % 5 ) == 0 )
+	{
+		// If this player has made 10+ consecuvite hits, award a "Precision" medal.
+		if ( pPlayer->ulConsecutiveHits >= 10 )
+		{
+			MEDAL_GiveMedal( pPlayer - players, MEDAL_PRECISION );
+
+			// Tell clients about the medal that been given.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_GivePlayerMedal( pPlayer - players, MEDAL_PRECISION );
+		}
+		// Otherwise, award an "Accuracy" medal.
+		else
+		{
+			MEDAL_GiveMedal( pPlayer - players, MEDAL_ACCURACY );
+
+			// Tell clients about the medal that been given.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_GivePlayerMedal( pPlayer - players, MEDAL_ACCURACY );
+		}
+	}
+
+	// Reset the struck player flag.
+	pPlayer->bStruckPlayer = false;
+}
+
+//*****************************************************************************
+//
+bool PLAYER_ShouldSpawnAsSpectator( player_s *pPlayer )
+{
+	UCVarValue	Val;
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		// If there's a join password, the player should start as a spectator.
+		Val = sv_joinpassword.GetGenericRep( CVAR_String );
+		if (( sv_forcejoinpassword ) && ( strlen( Val.String )))
+			return ( true );
+
+		// If the number of players in the game exceeds sv_maxplayers, spawn as a spectator.
+		Val = sv_maxplayers.GetGenericRep( CVAR_Int );
+		if ( SERVER_CalcNumNonSpectatingPlayers( pPlayer - players ) >= Val.Int )
+			return ( true );
+	}
+
+	// If an LMS game is in progress, the player should start as a spectator.
+	if (( lastmanstanding || teamlms ) &&
+		(( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ) || ( LASTMANSTANDING_GetState( ) == LMSS_WINSEQUENCE )) &&
+		( gameaction != ga_worlddone ))
+	{
+		return ( true );
+	}
+
+	// If the duel isn't in the "waiting for players" state, the player should start as a spectator.
+	if ( duel )
+	{
+		if (( DUEL_GetState( ) != DS_WAITINGFORPLAYERS ) ||
+			( SERVER_CalcNumNonSpectatingPlayers( pPlayer - players ) >= 2 ))
+		{
+			return ( true );
+		}
+	}
+
+	// If a survival game is in progress, the player should start as a spectator.
+	if (( survival ) &&
+		(( SURVIVAL_GetState( ) == SURVS_INPROGRESS ) || ( SURVIVAL_GetState( ) == SURVS_MISSIONFAILED )) &&
+		( gameaction != ga_worlddone ))
+	{
+		return ( true );
+	}
+
+	// Players entering a teamplay game must choose a team first before joining the fray.
+	if (( pPlayer->bOnTeam == false ) || ( playeringame[pPlayer - players] == false ))
+	{
+		if (( teamplay && (( dmflags2 & DF2_NO_TEAM_SELECT ) == false )) ||
+			( teamlms && (( dmflags2 & DF2_NO_TEAM_SELECT ) == false )) ||
+			( teampossession && (( dmflags2 & DF2_NO_TEAM_SELECT ) == false )) ||
+			( teamgame && (( dmflags2 & DF2_NO_TEAM_SELECT ) == false ) && ( TemporaryTeamStarts.Size( ) == 0 )))
+		{
+			return ( true );
+		}
+	}
+
+	// Passed all checks!
+	return ( false );
+}
+
+//*****************************************************************************
+//
+bool PLAYER_Taunt( player_s *pPlayer )
+{
+	// Don't taunt if we're not in a level!
+	if ( gamestate != GS_LEVEL )
+		return ( false );
+
+	// Spectators or dead people can't taunt!
+	if (( pPlayer->bSpectating ) ||
+		( pPlayer->health <= 0 ) ||
+		( pPlayer->mo == NULL ) ||
+		( i_compatflags & COMPATF_DISABLETAUNTS ))
+	{
+		return ( false );
+	}
+
+	if ( cl_taunts )
+		S_Sound( pPlayer->mo, CHAN_VOICE, "*taunt", 1, ATTN_NORM );
+
+	return ( true );
+}
+
 CCMD (kill)
 {
+	// Only allow it in a level.
+	if ( gamestate != GS_LEVEL )
+		return;
+
+	// [BC] Don't let spectators kill themselves.
+	if ( players[consoleplayer].bSpectating == true )
+		return;
+
+	// [BC] Don't allow suiciding during a duel.
+	if ( duel && ( DUEL_GetState( ) == DS_INDUEL ))
+	{
+		Printf( "You cannot suicide during a duel.\n" );
+		return;
+	}
+
 	if (argv.argc() > 1)
 	{
 		if (!stricmp (argv[1], "monsters"))
@@ -1367,8 +2394,24 @@ CCMD (kill)
 	}
 	else
 	{
+		// [BC] Tell the server we wish to suicide.
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( players[consoleplayer].bSpectating == false ))
+			CLIENTCOMMANDS_Suicide( );
+
 		// Kill the player
 		Net_WriteByte (DEM_SUICIDE);
 	}
 	C_HideConsole ();
+}
+
+//*****************************************************************************
+//
+CCMD( taunt )
+{
+	if ( PLAYER_Taunt( &players[consoleplayer] ))
+	{
+		// Tell the server we taunted!
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			CLIENTCOMMANDS_Taunt( );
+	}
 }

@@ -45,6 +45,7 @@
 #include "s_sndseq.h"
 #include "v_palette.h"
 #include "a_sharedglobal.h"
+#include "deathmatch.h"
 
 static void CopyPlayer (player_t *dst, player_t *src, const char *name);
 static void ReadOnePlayer (FArchive &arc);
@@ -228,24 +229,7 @@ static void CopyPlayer (player_t *dst, player_t *src, const char *name)
 	*dst = *src;
 	dst->cheats |= chasecam;
 
-	if (dst->isbot)
-	{
-		botinfo_t *thebot = bglobal.botinfo;
-		while (thebot && stricmp (name, thebot->name))
-		{
-			thebot = thebot->next;
-		}
-		if (thebot)
-		{
-			thebot->inuse = true;
-		}
-		bglobal.botnum++;
-		bglobal.botingame[dst - players] = true;
-	}
-	else
-	{
-		dst->userinfo = uibackup;
-	}
+	dst->userinfo = uibackup;
 }
 
 static void SpawnExtraPlayers ()
@@ -264,7 +248,7 @@ static void SpawnExtraPlayers ()
 		if (playeringame[i] && players[i].mo == NULL)
 		{
 			players[i].playerstate = PST_ENTER;
-			P_SpawnPlayer (&playerstarts[i]);
+			P_SpawnPlayer (&playerstarts[i], false, &players[i]);
 		}
 	}
 }

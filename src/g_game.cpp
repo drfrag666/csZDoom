@@ -61,22 +61,42 @@
 #include "s_sound.h"
 #include "gstrings.h"
 #include "r_data.h"
+#include "r_main.h"
 #include "r_sky.h"
 #include "r_draw.h"
 #include "g_game.h"
 #include "g_level.h"
-#include "b_bot.h"			//Added by MC:
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
 #include "gi.h"
 #include "a_keys.h"
 #include "a_artifacts.h"
+#include "chat.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "team.h"
+#include "a_doomglobal.h"
+#include "sv_commands.h"
+#include "medal.h"
+#include "cl_main.h"
+#include "browser.h"
+#include "lastmanstanding.h"
+#include "campaign.h"
+#include "callvote.h"
+#include "cooperative.h"
+#include "invasion.h"
+#include "scoreboard.h"
+#include "survival.h"
+#include "announcer.h"
+#include "p_acs.h"
+#include "cl_commands.h"
+#include "possession.h"
+#include "gl_main.h"
 
 #include <zlib.h>
 
 #include "g_hub.h"
-
 
 static FRandom pr_dmspawn ("DMSpawn");
 
@@ -100,7 +120,6 @@ void	G_DoSaveGame (bool okForQuicksave);
 void	G_DoAutoSave ();
 
 FIntCVar gameskill ("skill", 2, CVAR_SERVERINFO|CVAR_LATCH);
-CVAR (Int, deathmatch, 0, CVAR_SERVERINFO|CVAR_LATCH);
 CVAR (Bool, chasedemo, false, 0);
 CVAR (Bool, storesavepic, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
@@ -121,8 +140,6 @@ bool 			noblit; 				// for comparative timing purposes
 
 bool	 		viewactive;
 
-bool 			netgame;				// only true if packets are broadcast 
-bool			multiplayer;
 player_t		players[MAXPLAYERS];
 bool			playeringame[MAXPLAYERS];
 
@@ -200,9 +217,16 @@ FString BackupSaveName;
 bool SendLand;
 const AInventory *SendItemUse, *SendItemDrop;
 
-EXTERN_CVAR (Int, team)
+// [BC] How many ticks of the end level delay remain?
+static	ULONG	g_ulEndLevelDelay = 0;
 
-CVAR (Bool, teamplay, false, CVAR_SERVERINFO)
+// [BC] How many ticks until we announce various messages?
+static	ULONG	g_ulLevelIntroTicks = 0;
+
+// [BC] Is the game frozen?
+static	bool	g_bFreezeMode = false;
+
+EXTERN_CVAR (Int, team)
 
 // [RH] Allow turbo setting anytime during game
 CUSTOM_CVAR (Float, turbo, 100.f, 0)
@@ -265,13 +289,32 @@ CCMD (slot)
 		if (slot < NUM_WEAPON_SLOTS)
 		{
 			SendItemUse = LocalWeapons.Slots[slot].PickWeapon (&players[consoleplayer]);
+
+			// [BC] This can be NULL if we're a spectator.
+			if ( SendItemUse == NULL )
+				return;
+
+			// [BC] If we're the client, switch to this weapon right now, since the whole
+			// DEM_, etc. network code isn't ever executed.
+			if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+				( CLIENT_GetConnectionState( ) == CTS_ACTIVE ))
+			{
+				players[consoleplayer].mo->UseInventory( (AInventory *)SendItemUse );
+			}
 		}
 	}
 }
 
 CCMD (centerview)
 {
-	Net_WriteByte (DEM_CENTERVIEW);
+	// [BC] Only write this byte if we're recording a demo. Otherwise, just do it!
+	if ( demorecording )
+		Net_WriteByte (DEM_CENTERVIEW);
+	else
+	{
+		if ( players[consoleplayer].mo )
+			players[consoleplayer].mo->pitch = 0;
+	}
 }
 
 CCMD(crouch)
@@ -294,14 +337,83 @@ CCMD (turn180)
 	sendturn180 = true;
 }
 
+// [BC] New cvar that shows the name of the weapon we're cycling to.
+CVAR( Bool, cl_showweapnameoncycle, true, CVAR_ARCHIVE )
+
 CCMD (weapnext)
 {
 	SendItemUse = PickNextWeapon (&players[consoleplayer]);
+
+	// [BC] This can be NULL if we're a spectator.
+	if ( SendItemUse == NULL )
+		return;
+
+	// [BC] If we're the client, switch to this weapon right now, since the whole
+	// DEM_, etc. network code isn't ever executed.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+		( CLIENT_GetConnectionState( ) == CTS_ACTIVE ))
+	{
+		players[consoleplayer].mo->UseInventory( (AInventory *)SendItemUse );
+	}
+
+	// [BC] Option to display the name of the weapon being cycled to.
+	if ( cl_showweapnameoncycle )
+	{
+		char				szString[64];
+		DHUDMessageFadeOut	*pMsg;
+		
+		// Build the string and text color;
+		sprintf( szString, "%s", SendItemUse->GetClass( )->TypeName.GetChars( ));
+
+		pMsg = new DHUDMessageFadeOut( szString,
+			1.5f,
+			gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f,
+			0,
+			0,
+			CR_GOLD,
+			2.f,
+			0.35f );
+
+		StatusBar->AttachMessage( pMsg, MAKE_ID( 'P', 'N', 'A', 'M' ));
+	}
 }
 
 CCMD (weapprev)
 {
 	SendItemUse = PickPrevWeapon (&players[consoleplayer]);
+
+	// [BC] This can be NULL if we're a spectator.
+	if ( SendItemUse == NULL )
+		return;
+
+	// [BC] If we're the client, switch to this weapon right now, since the whole
+	// DEM_, etc. network code isn't ever executed.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+		( CLIENT_GetConnectionState( ) == CTS_ACTIVE ))
+	{
+		players[consoleplayer].mo->UseInventory( (AInventory *)SendItemUse );
+	}
+
+	// [BC] Option to display the name of the weapon being cycled to.
+	if ( cl_showweapnameoncycle )
+	{
+		char				szString[64];
+		DHUDMessageFadeOut	*pMsg;
+		
+		// Build the string and text color;
+		sprintf( szString, "%s", SendItemUse->GetClass( )->TypeName.GetChars( ));
+
+		pMsg = new DHUDMessageFadeOut( szString,
+			1.5f,
+			gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f,
+			0,
+			0,
+			CR_GOLD,
+			2.f,
+			0.35f );
+
+		StatusBar->AttachMessage( pMsg, MAKE_ID( 'P', 'N', 'A', 'M' ));
+	}
 }
 
 CCMD (invnext)
@@ -674,10 +786,12 @@ void G_AddViewAngle (int yaw)
 	}
 }
 
-CVAR (Bool, bot_allowspy, false, 0)
+EXTERN_CVAR( Bool, sv_cheats );
 
 // [RH] Spy mode has been separated into two console commands.
 //		One goes forward; the other goes backward.
+// [BC] Prototype for new function.
+static void FinishChangeSpy( int pnum );
 static void ChangeSpy (bool forward)
 {
 	// If you're not in a level, then you can't spy.
@@ -693,30 +807,164 @@ static void ChangeSpy (bool forward)
 		return;
 	}
 
+	// [BC] Check a wide array of conditions to see if this is legal.
+	if (( demoplayback == false ) &&
+		( players[consoleplayer].bSpectating == false ) &&
+		( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+		( teamgame == false ) &&
+		( teamlms == false ) &&
+		( teamplay == false ) &&
+		( teampossession == false ) &&
+		((( deathmatch == false ) && ( teamgame == false )) == false ) &&
+		( sv_cheats == false ))
+	{
+		return;
+	}
+
 	// Otherwise, cycle to the next player.
-	bool checkTeam = !demoplayback && deathmatch;
 	int pnum = players[consoleplayer].camera->player - players;
 	int step = forward ? 1 : -1;
 
-	do
+	// [BC] Special conditions for team LMS.
+	if (( teamlms ) && (( lmsspectatorsettings & LMS_SPF_VIEW ) == false ))
 	{
-		pnum += step;
-		pnum &= MAXPLAYERS-1;
-		if (playeringame[pnum] &&
-			(!checkTeam || players[pnum].mo->IsTeammate (players[consoleplayer].mo) ||
-			(bot_allowspy && players[pnum].isbot)))
+		// If this player is a true spectator (aka not on a team), don't allow him to change spy.
+		if ( PLAYER_IsTrueSpectator( &players[consoleplayer] ))
 		{
-			break;
+			players[consoleplayer].camera = players[consoleplayer].mo;
+			FinishChangeSpy( consoleplayer );
+			return;
 		}
-	} while (pnum != consoleplayer);
 
+		// Break if the player isn't on a team.
+		if ( players[consoleplayer].bOnTeam == false )
+		{
+			players[consoleplayer].camera = players[consoleplayer].mo;
+			FinishChangeSpy( consoleplayer );
+			return;
+		}
+
+		// Loop through all the players, and stop when we find one that's on our team.
+		do
+		{
+			pnum += step;
+			pnum &= MAXPLAYERS-1;
+
+			// Skip players not in the game.
+			if ( playeringame[pnum] == false )
+				continue;
+
+			// Skip other spectators.
+			if ( players[pnum].bSpectating )
+				continue;
+
+			// Skip players not on our team.
+			if (( players[pnum].bOnTeam == false ) || ( players[pnum].ulTeam != players[consoleplayer].ulTeam ))
+				continue;
+
+			break;
+		} while ( pnum != consoleplayer );
+
+		players[consoleplayer].camera = players[pnum].mo;
+		FinishChangeSpy( pnum );
+		return;
+	}
+
+	// [BC] Don't allow spynext in LMS when the spectator settings forbid it.
+	if (( lastmanstanding ) && (( lmsspectatorsettings & LMS_SPF_VIEW ) == false ))
+	{
+		players[consoleplayer].camera = players[consoleplayer].mo;
+		FinishChangeSpy( consoleplayer );
+		return;
+	}
+
+	// [BC] Always allow spectator spying.
+	if ( players[consoleplayer].bSpectating )
+	{
+		// Loop through all the players, and stop when we find one.
+		do
+		{
+			pnum += step;
+			pnum &= MAXPLAYERS-1;
+
+			// Skip players not in the game.
+			if ( playeringame[pnum] == false )
+				continue;
+
+			// Skip other spectators.
+			if ( players[pnum].bSpectating )
+				continue;
+
+			break;
+		} while ( pnum != consoleplayer );
+
+		FinishChangeSpy( pnum );
+		return;
+	}
+
+	// [BC] Allow view switch to players on our team.
+	if ( teamgame || teamplay || teamlms || teampossession )
+	{
+		// Break if the player isn't on a team.
+		if ( players[consoleplayer].bOnTeam == false )
+			return;
+
+		// Loop through all the players, and stop when we find one that's on our team.
+		do
+		{
+			pnum += step;
+			pnum &= MAXPLAYERS - 1;
+
+			// Skip players not in the game.
+			if ( playeringame[pnum] == false )
+				continue;
+
+			// Skip other spectators.
+			if ( players[pnum].bSpectating )
+				continue;
+
+			// Skip players not on our team.
+			if (( players[pnum].bOnTeam == false ) || ( players[pnum].ulTeam != players[consoleplayer].ulTeam ))
+				continue;
+
+			break;
+		} while ( pnum != consoleplayer );
+	}
+	// Deathmatch and co-op.
+	else
+	{
+		// Loop through all the players, and stop when we find one that's on our team.
+		while ( 1 )
+		{
+			pnum += step;
+			pnum &= MAXPLAYERS-1;
+
+			if ( playeringame[pnum] )
+				break;
+		}
+	}
+
+	// [BC] When we're all done, put the camera in the display player's body, etc.
+	FinishChangeSpy( pnum );
+}
+
+// [BC] Split this out of ChangeSpy() so it can be called from within that function.
+static void FinishChangeSpy( int pnum )
+{
 	players[consoleplayer].camera = players[pnum].mo;
 	S_UpdateSounds(players[consoleplayer].camera);
 	StatusBar->AttachToPlayer (&players[pnum]);
-	if (demoplayback || multiplayer)
+	if (demoplayback || ( NETWORK_GetState( ) != NETSTATE_SINGLE ))
 	{
 		StatusBar->ShowPlayerName ();
 	}
+
+	// [BC] If we're a client, tell the server that we're switching our displayplayer.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_ChangeDisplayPlayer( pnum );
+
+	// [BC] Also, refresh the HUD since the display player is changing.
+	SCOREBOARD_RefreshHUD( );
 }
 
 CCMD (spynext)
@@ -775,11 +1023,19 @@ bool G_Responder (event_t *ev)
 		return false;
 	}
 
-	if (CT_Responder (ev))
-		return true;			// chat ate the event
+	// Handle chat input at the level and intermission screens.
+	if ( gamestate == GS_LEVEL || gamestate == GS_INTERMISSION )
+	{
+		if ( CHAT_Input( ev )) 
+			return ( true );
+	}
 
 	if (gamestate == GS_LEVEL)
 	{
+		// Player function ate it.
+		if ( PLAYER_Responder( ev ))
+			return ( true );
+
 		if (ST_Responder (ev))
 			return true;		// status window ate it
 		if (!viewactive && AM_Responder (ev))
@@ -819,6 +1075,9 @@ bool G_Responder (event_t *ev)
 			ev->type == EV_Mouse);
 }
 
+#ifdef	_DEBUG
+CVAR( Bool, cl_emulatepacketloss, false, 0 )
+#endif
 
 
 //
@@ -832,14 +1091,27 @@ void G_Ticker ()
 {
 	int i;
 	gamestate_t	oldgamestate;
-
-	// do player reborns if needed
-	for (i = 0; i < MAXPLAYERS; i++)
+	int			buf;
+	ticcmd_t*	cmd;
+	LONG		lSize;
+#ifdef	_DEBUG
+	static	ULONG	s_ulEmulatingPacketLoss;
+#endif
+	// Client's don't spawn players until instructed by the server.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 	{
-		if (playeringame[i] &&
-			(players[i].playerstate == PST_REBORN || players[i].playerstate == PST_ENTER))
+		// do player reborns if needed
+		for (i = 0; i < MAXPLAYERS; i++)
 		{
-			G_DoReborn (i, false);
+			// [BC] PST_REBORNNOINVENTORY, PST_ENTERNOINVENTORY
+			if (playeringame[i] &&
+				(players[i].playerstate == PST_REBORN ||
+				players[i].playerstate == PST_REBORNNOINVENTORY ||
+				players[i].playerstate == PST_ENTER ||
+				players[i].playerstate == PST_ENTERNOINVENTORY))
+			{
+				G_DoReborn (i, false);
+			}
 		}
 	}
 
@@ -921,63 +1193,240 @@ void G_Ticker ()
 	}
 
 	// get commands, check consistancy, and build new consistancy check
-	int buf = (gametic/ticdup)%BACKUPTICS;
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		buf = gametic % MAXSAVETICS;
+	else
+		buf = (gametic/ticdup)%BACKUPTICS;
 
-	// [RH] Include some random seeds and player stuff in the consistancy
-	// check, not just the player's x position like BOOM.
-	DWORD rngsum = FRandom::StaticSumSeeds ();
-
-	for (i = 0; i < MAXPLAYERS; i++)
+	// If we're the client, attempt to read in packets from the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 	{
-		if (playeringame[i])
-		{
-			ticcmd_t *cmd = &players[i].cmd;
-			ticcmd_t *newcmd = &netcmds[i][buf];
+		cmd = &players[consoleplayer].cmd;
+//		memcpy( cmd, &netcmds[consoleplayer][buf], sizeof( ticcmd_t ));
+		memcpy( cmd, &netcmds[0][buf], sizeof( ticcmd_t ));
+	}
 
-			if ((gametic % ticdup) == 0)
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		while (( lSize = NETWORK_GetPackets( )) > 0 )
+		{
+			UCVarValue	Val;
+			netadr_t	MasterAddress;
+			char		*pszMasterPort;
+
+			Val = cl_masterip.GetGenericRep( CVAR_String );
+			NETWORK_StringToAddress( Val.String, &MasterAddress );
+
+			// Allow the user to specify which port the master server is on.
+			pszMasterPort = Args.CheckValue( "-masterport" );
+			if ( pszMasterPort )
+			   MasterAddress.port = NETWORK_ntohs( atoi( pszMasterPort ));
+			else 
+			   MasterAddress.port = NETWORK_ntohs( DEFAULT_MASTER_PORT );
+
+			// If we're a client and receiving a message from the server...
+			if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
+				( NETWORK_CompareAddress( g_AddressFrom, CLIENT_GetServerAddress( ), false )))
 			{
-				RunNetSpecs (i, buf);
-			}
-			if (demorecording)
-			{
-				G_WriteDemoTiccmd (newcmd, i, buf);
-			}
-			// If the user alt-tabbed away, paused gets set to -1. In this case,
-			// we do not want to read more demo commands until paused is no
-			// longer negative.
-			if (demoplayback && paused >= 0)
-			{
-				G_ReadDemoTiccmd (cmd, i);
+				// Statistics.
+				CLIENT_AddBytesReceived( lSize );
+
+#ifdef	_DEBUG
+				// Emulate packet loss for debugging.
+				if (( cl_emulatepacketloss ) && gamestate == GS_LEVEL )
+				{
+					if ( s_ulEmulatingPacketLoss )
+					{
+						--s_ulEmulatingPacketLoss;
+						break;
+					}
+
+					// Should activate once every two/three seconds or so.
+					if ( M_Random( ) < 4 )
+					{
+						// This should give a range anywhere from 1 to 128 ticks.
+						s_ulEmulatingPacketLoss = ( M_Random( ) / 4 );
+					}
+
+//					if (( M_Random( ) < 170 ) && gamestate == GS_LEVEL )
+//						break;
+				}
+#endif
+				// We've gotten a packet! Now figure out what it's saying.
+				if ( CLIENT_ReadPacketHeader( ))
+					CLIENT_ParsePacket( false );
+				else
+				{
+					while ( CLIENT_GetNextPacket( ))
+					{
+						CLIENT_ParsePacket( true );
+
+						// Don't continue parsing if we've exited the network game.
+						if ( CLIENT_GetConnectionState( ) == CTS_DISCONNECTED )
+							break;
+					}
+				}
+
+				// We've heard from the server; don't time out!
+				CLIENT_SetLastServerTick( gametic );
+				CLIENT_SetServerLagging( false );
 			}
 			else
 			{
-				memcpy (cmd, newcmd, sizeof(ticcmd_t));
-			}
+				char		*pszPrefix1 = "127.0.0.1";
+				char		*pszPrefix2 = "10.";
+				char		*pszPrefix3 = "172.16.";
+				char		*pszPrefix4 = "192.168.";
+				char		*pszAddressBuf;
+				netadr_t	AddressFrom;
+				LONG		lCommand;
+				
+				pszAddressBuf = NETWORK_AddressToString( g_AddressFrom );
 
-			// check for turbo cheats
-			if (cmd->ucmd.forwardmove > TURBOTHRESHOLD &&
-				!(gametic&31) && ((gametic>>5)&(MAXPLAYERS-1)) == i )
-			{
-				Printf ("%s is turbo!\n", players[i].userinfo.netname);
-			}
-
-			if (netgame && !players[i].isbot && !netdemo && (gametic%ticdup) == 0)
-			{
-				//players[i].inconsistant = 0;
-				if (gametic > BACKUPTICS*ticdup && consistancy[i][buf] != cmd->consistancy)
+				// Skulltag is receiving a message from something on the LAN.
+				if (( strncmp( pszAddressBuf, pszPrefix1, 9 ) == 0 ) || 
+					( strncmp( pszAddressBuf, pszPrefix2, 3 ) == 0 ) ||
+					( strncmp( pszAddressBuf, pszPrefix3, 7 ) == 0 ) ||
+					( strncmp( pszAddressBuf, pszPrefix4, 8 ) == 0 ))
 				{
-					players[i].inconsistant = gametic - BACKUPTICS*ticdup;
+					AddressFrom = MasterAddress;
+
+					// Keep the same port as the from address.
+					AddressFrom.port = g_AddressFrom.port;
 				}
-				if (players[i].mo)
+				else
+					AddressFrom = g_AddressFrom;
+
+				// If we're receiving info from the master server...
+				if ( NETWORK_CompareAddress( AddressFrom, MasterAddress, false ))
 				{
-					DWORD sum = rngsum + players[i].mo->x + players[i].mo->y + players[i].mo->z
-						+ players[i].mo->angle + players[i].mo->pitch;
-					sum ^= players[i].health;
-					consistancy[i][buf] = sum;
+					lCommand = NETWORK_ReadLong( );
+					switch ( lCommand )
+					{
+					case MSC_BEGINSERVERLIST:
+
+						// Get the list of servers.
+						BROWSER_GetServerList( );
+
+						// Now, query all the servers on the list.
+						BROWSER_QueryAllServers( );
+
+						// Finally, clear the server list. Server slots will be reactivated when
+						// they come in.
+						BROWSER_DeactivateAllServers( );
+						break;
+					default:
+
+						Printf( "Unknown command from master server: %d\n", lCommand );
+						break;
+					}
+				}
+				// Perhaps it's a message from a server we're queried.
+				else
+				{
+					lCommand = NETWORK_ReadLong( );
+					if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
+						BROWSER_ParseServerQuery( false );
+					else if ( lCommand == SERVER_LAUNCHER_IGNORING )
+						Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
+//					else
+//						Printf( "Unknown network message from %s.\n", NETWORK_AddressToString( g_AddressFrom ));
+				}
+			}
+		}
+
+		while (( lSize = NETWORK_GetLANPackets( )) > 0 )
+		{
+			LONG	lCommand;
+
+			lCommand = NETWORK_ReadLong( );
+			if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
+				BROWSER_ParseServerQuery( true );
+		}
+
+		// Now that we're done parsing the multiple packets the server has sent our way, check
+		// to see if any packets are missing.
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) >= CTS_CONNECTED ))
+			CLIENT_CheckForMissingPackets( );
+	}
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		// Check if either us or the server is lagging.
+		CLIENT_WaitForServer( );
+
+		// If all is good, send our commands.
+		if ( CLIENT_GetServerLagging( ) == false )
+			CLIENT_SendCmd( );
+	}
+
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT && NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		// [RH] Include some random seeds and player stuff in the consistancy
+		// check, not just the player's x position like BOOM.
+		DWORD rngsum = FRandom::StaticSumSeeds ();
+
+		for (i = 0; i < MAXPLAYERS; i++)
+		{
+			if (playeringame[i])
+			{
+				ticcmd_t *cmd = &players[i].cmd;
+				ticcmd_t *newcmd = &netcmds[i][buf];
+
+				if ((gametic % ticdup) == 0)
+				{
+					RunNetSpecs (i, buf);
+				}
+				if (demorecording)
+				{
+					G_WriteDemoTiccmd (newcmd, i, buf);
+				}
+				// If the user alt-tabbed away, paused gets set to -1. In this case,
+				// we do not want to read more demo commands until paused is no
+				// longer negative.
+				if (demoplayback && paused >= 0)
+				{
+					G_ReadDemoTiccmd (cmd, i);
 				}
 				else
 				{
-					consistancy[i][buf] = rngsum;
+					memcpy (cmd, newcmd, sizeof(ticcmd_t));
+				}
+
+				// check for turbo cheats
+				if (cmd->ucmd.forwardmove > TURBOTHRESHOLD &&
+					!(gametic&31) && ((gametic>>5)&(MAXPLAYERS-1)) == i )
+				{
+					Printf ("%s is turbo!\n", players[i].userinfo.netname);
+				}
+			}
+		}
+	}
+
+	// Check if the players are moving faster than they should.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( sv_cheats == false ))
+	{
+		for ( i = 0; i < MAXPLAYERS; i++ )
+		{
+			if ( playeringame[i] )
+			{
+				LONG		lMaxThreshold;
+				ticcmd_t	*cmd = &players[i].cmd;
+
+				lMaxThreshold = TURBOTHRESHOLD;
+				if ( players[i].Powers & PW_SPEED25 )
+					lMaxThreshold *= 2;
+				if ( players[i].Powers & PW_SPEED )
+					lMaxThreshold *= 4;
+
+				// Check for turbo cheats.
+				if (( cmd->ucmd.forwardmove > lMaxThreshold ) ||
+					( cmd->ucmd.forwardmove < -lMaxThreshold ) ||
+					( cmd->ucmd.sidemove > lMaxThreshold ) ||
+					( cmd->ucmd.sidemove < -lMaxThreshold ))
+				{
+					// If the player was moving faster than he was allowed to, kick him!
+					SERVER_KickPlayer( i, "Speed exceeds that allowed (turbo cheat)." );
 				}
 			}
 		}
@@ -987,8 +1436,209 @@ void G_Ticker ()
 	switch (gamestate)
 	{
 	case GS_LEVEL:
+
+		// [BC] Tick these modules, but only if the ticker should run.
+		if (( paused == false ) &&
+			( P_CheckTickerPaused( ) == false ))
+		{
+			// Update some general bot stuff.
+			BOTS_Tick( );
+
+			// Tick the duel module.
+			DUEL_Tick( );
+
+			// Tick the LMS module.
+			LASTMANSTANDING_Tick( );
+
+			// Tick the possession module.
+			POSSESSION_Tick( );
+
+			// Tick the survival module.
+			SURVIVAL_Tick( );
+
+			// Tick the invasion module.
+			INVASION_Tick( );
+
+			// Reset the bot cycles counter before we tick their logic.
+			BOTS_ResetCyclesCounter( );
+
+			// Tick the callvote module.
+			CALLVOTE_Tick( );
+		}
+
 		P_Ticker ();
 		AM_Ticker ();
+
+		// Tick the medal system.
+		MEDAL_Tick( );
+
+		// Play "Welcome" sounds for teamgame modes.
+		if ( g_ulLevelIntroTicks < TICRATE )
+		{
+			g_ulLevelIntroTicks++;
+			if ( g_ulLevelIntroTicks == TICRATE )
+			{
+				if ( oneflagctf )
+					ANNOUNCER_PlayEntry( cl_announcer, "WelcomeToOneFlagCTF" );
+				else if ( ctf )
+					ANNOUNCER_PlayEntry( cl_announcer, "WelcomeToCTF" );
+				else if ( skulltag )
+					ANNOUNCER_PlayEntry( cl_announcer, "WelcomeToST" );
+			}
+		}
+
+		// Apply end level delay.
+		if ( g_ulEndLevelDelay && NETWORK_GetState( ) != NETSTATE_CLIENT )
+		{
+			if ( --g_ulEndLevelDelay == 0 )
+			{
+				// Tell the clients about the expired end level delay.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetGameEndLevelDelay( g_ulEndLevelDelay );
+
+				// If we're in a duel, set up the next duel.
+				if ( duel )
+				{
+					// If the player must win all duels, and lost this one, then he's DONE!
+					if (( DUEL_GetLoser( ) == consoleplayer ) && ( CAMPAIGN_InCampaign( )) && ( CAMPAIGN_GetCampaignInfo( level.mapname )->bMustWinAllDuels ))
+					{
+						// Tell the player he loses!
+						Printf( "You lose!\n" );
+
+						// End the level.
+						G_ExitLevel( 0, false );
+
+						// When the level loads, start the next duel.
+						DUEL_SetStartNextDuelOnLevelLoad( true );
+					}
+					// If we've reached the duel limit, exit the level.
+					else if (( duellimit > 0 ) && ( DUEL_GetNumDuels( ) >= duellimit ))
+					{
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVER_Printf( PRINT_HIGH, "Duellimit hit.\n" );
+						else
+							Printf( "Duellimit hit.\n" );
+						G_ExitLevel( 0, false );
+
+						// When the level loads, start the next duel.
+						DUEL_SetStartNextDuelOnLevelLoad( true );
+					}
+					else
+					{
+						// Send the loser back to the spectators! Doing so will automatically set up
+						// the next duel.
+						DUEL_SendLoserToSpectators( );
+					}
+				}
+				else if ( lastmanstanding || teamlms )
+				{
+					bool	bLimitHit = false;
+
+					if ( winlimit > 0 )
+					{
+						if ( lastmanstanding )
+						{
+							ULONG	ulIdx;
+							
+							for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+							{
+								if (( playeringame[ulIdx] == false ) || ( PLAYER_IsTrueSpectator( &players[ulIdx] )))
+									continue;
+
+								if ( players[ulIdx].ulWins >= winlimit )
+								{
+									bLimitHit = true;
+									break;
+								}
+							}
+						}
+						else
+						{
+							if (( TEAM_GetWinCount( TEAM_BLUE ) >= winlimit ) || ( TEAM_GetWinCount( TEAM_RED ) >= winlimit ))
+								bLimitHit = true;
+						}
+
+						if ( bLimitHit )
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "Winlimit hit.\n" );
+							else
+								Printf( "Winlimit hit.\n" );
+							G_ExitLevel( 0, false );
+
+							// When the level loads, start the next match.
+//							LASTMANSTANDING_SetStartNextMatchOnLevelLoad( true );
+						}
+						else
+						{
+							LASTMANSTANDING_SetState( LMSS_WAITINGFORPLAYERS );
+							LASTMANSTANDING_Tick( );
+						}
+					}
+					else
+					{
+						LASTMANSTANDING_SetState( LMSS_WAITINGFORPLAYERS );
+						LASTMANSTANDING_Tick( );
+					}
+				}
+				else if ( possession || teampossession )
+				{
+					bool	bLimitHit = false;
+
+					if ( pointlimit > 0 )
+					{
+						if ( possession )
+						{
+							ULONG	ulIdx;
+							
+							for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+							{
+								if (( playeringame[ulIdx] == false ) || ( PLAYER_IsTrueSpectator( &players[ulIdx] )))
+									continue;
+
+								if ( players[ulIdx].lPointCount >= pointlimit )
+								{
+									bLimitHit = true;
+									break;
+								}
+							}
+						}
+						else
+						{
+							if (( TEAM_GetScore( TEAM_BLUE ) >= pointlimit ) || ( TEAM_GetScore( TEAM_RED ) >= pointlimit ))
+								bLimitHit = true;
+						}
+
+						if ( bLimitHit )
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "Winlimit hit.\n" );
+							else
+								Printf( "Winlimit hit.\n" );
+							G_ExitLevel( 0, false );
+						}
+						else
+						{
+							POSSESSION_SetState( PSNS_PRENEXTROUNDCOUNTDOWN );
+							POSSESSION_Tick( );
+						}
+					}
+					else
+					{
+						POSSESSION_SetState( PSNS_PRENEXTROUNDCOUNTDOWN );
+						POSSESSION_Tick( );
+					}
+				}
+				else if ( survival )
+				{
+					SURVIVAL_SetState( SURVS_WAITINGFORPLAYERS );
+					SURVIVAL_Tick( );
+				}
+				else
+					G_ExitLevel( 0, false );
+			}
+		}
+
 		break;
 
 	case GS_TITLELEVEL:
@@ -996,6 +1646,24 @@ void G_Ticker ()
 		break;
 
 	case GS_INTERMISSION:
+
+		// Make sure bots are ticked during intermission.
+		{
+			ULONG	ulIdx;
+
+			// Reset the bot cycles counter before we tick their logic.
+			BOTS_ResetCyclesCounter( );
+
+			for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+			{
+				if ( playeringame[ulIdx] == false )
+					continue;
+
+				if ( players[ulIdx].pSkullBot )
+					players[ulIdx].pSkullBot->Tick( );
+			}
+		}
+
 		WI_Ticker ();
 		break;
 
@@ -1099,6 +1767,20 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, bool resetinventory
 		P_UndoPlayerMorph (p, true);
 	}
 
+	// [BC] Reset a bunch of other Skulltag stuff.
+	p->ulConsecutiveHits = 0;
+	p->ulConsecutiveRailgunHits = 0;
+	p->ulDeathsWithoutFrag = 0;
+	p->ulFragsWithoutDeath = 0;
+	p->ulLastExcellentTick = 0;
+	p->ulLastFragTick = 0;
+	p->ulLastBFGFragTick = 0;
+	if ( p->pIcon )
+	{
+		p->pIcon->Destroy( );
+		p->pIcon = NULL;
+	}
+
 	// Clears the entire inventory and gives back the defaults for starting a game
 	if (resetinventory)
 	{
@@ -1126,7 +1808,6 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, bool resetinventory
 	}
 }
 
-
 //
 // G_PlayerReborn
 // Called after a player dies
@@ -1135,7 +1816,6 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, bool resetinventory
 void G_PlayerReborn (int player)
 {
 	player_t*	p;
-	int 		frags[MAXPLAYERS];
 	int			fragcount;	// [RH] Cumulative frags
 	int 		killcount;
 	int 		itemcount;
@@ -1143,31 +1823,58 @@ void G_PlayerReborn (int player)
 	int			chasecam;
 	BYTE		currclass;
 	userinfo_t  userinfo;	// [RH] Save userinfo
-	botskill_t  b_skill;//Added by MC:
 	APlayerPawn *actor;
 	const PClass *cls;
 	FString		log;
+	bool		bOnTeam;
+	bool		bSpectating;
+	bool		bDeadSpectator;
+	ULONG		ulTeam;
+	LONG		lPointCount;
+	ULONG		ulDeathCount;
+	ULONG		ulConsecutiveHits;
+	ULONG		ulConsecutiveRailgunHits;
+	ULONG		ulDeathsWithoutFrag;
+	ULONG		ulMedalCount[NUM_MEDALS];
+	CSkullBot	*pSkullBot;
+	ULONG		ulPing;
+	ULONG		ulWins;
+	ULONG		ulTime;
+	LONG		lCheats;
 
 	p = &players[player];
 
-	memcpy (frags, p->frags, sizeof(frags));
 	fragcount = p->fragcount;
 	killcount = p->killcount;
 	itemcount = p->itemcount;
 	secretcount = p->secretcount;
 	currclass = p->CurrentPlayerClass;
-    b_skill = p->skill;    //Added by MC:
 	memcpy (&userinfo, &p->userinfo, sizeof(userinfo));
 	actor = p->mo;
 	cls = p->cls;
 	log = p->LogText;
 	chasecam = p->cheats & CF_CHASECAM;
 
+	bOnTeam = p->bOnTeam;
+	bSpectating = p->bSpectating;
+	bDeadSpectator = p->bDeadSpectator;
+	ulTeam = p->ulTeam;
+	lPointCount = p->lPointCount;
+	ulDeathCount = p->ulDeathCount;
+	ulConsecutiveHits = p->ulConsecutiveHits;
+	ulConsecutiveRailgunHits = p->ulConsecutiveRailgunHits;
+	ulDeathsWithoutFrag = p->ulDeathsWithoutFrag;
+	memcpy( &ulMedalCount, &p->ulMedalCount, sizeof( ulMedalCount ));
+	pSkullBot = p->pSkullBot;
+	ulPing = p->ulPing;
+	ulWins = p->ulWins;
+	ulTime = p->ulTime;
+	lCheats = p->cheats;
+
 	// Reset player structure to its defaults
 	p->~player_t();
 	::new(p) player_t;
 
-	memcpy (p->frags, frags, sizeof(p->frags));
 	p->fragcount = fragcount;
 	p->killcount = killcount;
 	p->itemcount = itemcount;
@@ -1179,9 +1886,27 @@ void G_PlayerReborn (int player)
 	p->LogText = log;
 	p->cheats |= chasecam;
 
-    p->skill = b_skill;	//Added by MC:
-
 	p->oldbuttons = 255, p->attackdown = true;	// don't do anything immediately
+
+	p->bOnTeam = bOnTeam;
+	p->bSpectating = bSpectating;
+	p->bDeadSpectator = bDeadSpectator;
+	p->ulTeam = ulTeam;
+	p->lPointCount = lPointCount;
+	p->ulDeathCount = ulDeathCount;
+	p->ulConsecutiveHits = ulConsecutiveHits;
+	p->ulConsecutiveRailgunHits = ulConsecutiveRailgunHits;
+	p->ulDeathsWithoutFrag = ulDeathsWithoutFrag;
+	memcpy( &p->ulMedalCount, &ulMedalCount, sizeof( ulMedalCount ));
+	p->pSkullBot = pSkullBot;
+	p->ulPing = ulPing;
+	p->ulWins = ulWins;
+	p->ulTime = ulTime;
+	if ( lCheats & CF_FREEZE )
+		p->cheats |= CF_FREEZE;
+
+	p->bIsBot = p->pSkullBot ? true : false;
+
 	p->playerstate = PST_LIVE;
 
 	if (gamestate != GS_TITLELEVEL)
@@ -1190,19 +1915,36 @@ void G_PlayerReborn (int player)
 		p->ReadyWeapon = p->PendingWeapon;
 	}
 
-    //Added by MC: Init bot structure.
-    if (bglobal.botingame[player])
-        bglobal.CleanBotstuff (p);
-    else
-		p->isbot = false;
-
-	// [BC] Handle temporary invulnerability when respawned
-	if ((dmflags2 & DF2_YES_INVUL) && (deathmatch || alwaysapplydmflags))
+	// [BC] Apply temporary invulnerability when respawned.
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) &&
+		(( dmflags2 & DF2_NO_RESPAWN_INVUL ) == false ) &&
+		( deathmatch || teamgame || alwaysapplydmflags ) &&
+		( p->bSpectating == false ))
 	{
 		APowerup *invul = static_cast<APowerup*>(actor->GiveInventoryType (RUNTIME_CLASS(APowerInvulnerable)));
 		invul->EffectTics = 2*TICRATE;
 		invul->BlendColor = 0;				// don't mess with the view
-		actor->effects |= FX_RESPAWNINVUL;	// [RH] special effect
+/*
+		AInventory	*pInventory;
+
+		// If we're the server, send the powerup update to clients.
+		pInventory = actor->FindInventory( RUNTIME_CLASS( APowerInvulnerable ));
+		if (( pInventory ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+			SERVERCOMMANDS_GiveInventory( p - players, pInventory );
+*/
+		// Apply respawn invulnerability effect.
+		switch ( cl_respawninvuleffect )
+		{
+		case 1:
+
+			actor->RenderStyle = STYLE_Translucent;
+			actor->effects |= FX_VISIBILITYFLICKER;
+			break;
+		case 2:
+
+			actor->effects |= FX_RESPAWNINVUL;	// [RH] special effect
+			break;
+		}
 	}
 }
 
@@ -1283,8 +2025,36 @@ static fixed_t PlayersRangeFromSpot (mapthing2_t *spot)
 	return closest;
 }
 
+// Returns the average distance this spot is from all the enemies of ulPlayer.
+static fixed_t TeamLMSPlayersRangeFromSpot( ULONG ulPlayer, mapthing2_t *spot )
+{
+	ULONG	ulNumSpots;
+	fixed_t	distance = INT_MAX;
+	int i;
+
+	ulNumSpots = 0;
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		if (!playeringame[i] || !players[i].mo || players[i].health <= 0)
+			continue;
+
+		// Ignore players on our team.
+		if (( players[ulPlayer].bOnTeam ) && ( players[i].bOnTeam ) && ( players[ulPlayer].ulTeam == players[i].ulTeam ))
+			continue;
+
+		ulNumSpots++;
+		distance += P_AproxDistance (players[i].mo->x - spot->x * FRACUNIT,
+									players[i].mo->y - spot->y * FRACUNIT);
+	}
+
+	if ( ulNumSpots )
+		return ( distance / ulNumSpots );
+	else
+		return ( distance );
+}
+
 // [RH] Select the deathmatch spawn spot farthest from everyone.
-static mapthing2_t *SelectFarthestDeathmatchSpot (size_t selections)
+static mapthing2_t *SelectFarthestDeathmatchSpot( ULONG ulPlayer, size_t selections )
 {
 	fixed_t bestdistance = 0;
 	mapthing2_t *bestspot = NULL;
@@ -1294,6 +2064,13 @@ static mapthing2_t *SelectFarthestDeathmatchSpot (size_t selections)
 	{
 		fixed_t distance = PlayersRangeFromSpot (&deathmatchstarts[i]);
 
+		// Did not find a spot.
+		if ( distance == INT_MAX )
+			continue;
+
+		if ( G_CheckSpot( ulPlayer, &deathmatchstarts[i] ) == false )
+			continue;
+
 		if (distance > bestdistance)
 		{
 			bestdistance = distance;
@@ -1302,6 +2079,38 @@ static mapthing2_t *SelectFarthestDeathmatchSpot (size_t selections)
 	}
 
 	return bestspot;
+}
+
+
+// Try to find a deathmatch spawn spot farthest from our enemies.
+static mapthing2_t *SelectBestTeamLMSSpot( ULONG ulPlayer, size_t selections )
+{
+	ULONG		ulIdx;
+	fixed_t		Distance;
+	fixed_t		BestDistance;
+	mapthing2_t	*pBestSpot;
+
+	pBestSpot = NULL;
+	BestDistance = 0;
+	for ( ulIdx = 0; ulIdx < selections; ulIdx++ )
+	{
+		Distance = TeamLMSPlayersRangeFromSpot( ulPlayer, &deathmatchstarts[ulIdx] );
+
+		// Did not find a spot.
+		if ( Distance == INT_MAX )
+			continue;
+
+		if ( G_CheckSpot( ulPlayer, &deathmatchstarts[ulIdx] ) == false )
+			continue;
+
+		if ( Distance > BestDistance )
+		{
+			BestDistance = Distance;
+			pBestSpot = &deathmatchstarts[ulIdx];
+		}
+	}
+
+	return ( pBestSpot );
 }
 
 // [RH] Select a deathmatch spawn spot at random (original mechanism)
@@ -1322,39 +2131,246 @@ static mapthing2_t *SelectRandomDeathmatchSpot (int playernum, unsigned int sele
 	return &deathmatchstarts[i];
 }
 
-void G_DeathMatchSpawnPlayer (int playernum)
+// Select a temporary team spawn spot at random.
+static mapthing2_t *SelectTemporaryTeamSpot( USHORT usPlayer, ULONG ulNumSelections )
+{
+	ULONG	ulNumAttempts;
+	ULONG	ulSelection;
+
+	// Try up to 20 times to find a valid spot.
+	for ( ulNumAttempts = 0; ulNumAttempts < 20; ulNumAttempts++ )
+	{
+		ulSelection = ( pr_dmspawn( ) % ulNumSelections );
+		if ( G_CheckSpot( usPlayer, &TemporaryTeamStarts[ulSelection] ))
+			return ( &TemporaryTeamStarts[ulSelection] );
+	}
+
+	// Return a spot anyway, since we allow telefragging when a player spawns.
+	return ( &TemporaryTeamStarts[ulSelection] );
+}
+
+// Select a blue team spawn spot at random.
+static mapthing2_t *SelectRandomBlueTeamSpot( USHORT usPlayer, ULONG ulNumSelections )
+{
+	ULONG	ulNumAttempts;
+	ULONG	ulSelection;
+
+	// Try up to 20 times to find a valid spot.
+	for ( ulNumAttempts = 0; ulNumAttempts < 20; ulNumAttempts++ )
+	{
+		ulSelection = ( pr_dmspawn( ) % ulNumSelections );
+		if ( G_CheckSpot( usPlayer, &BlueTeamStarts[ulSelection] ))
+			return ( &BlueTeamStarts[ulSelection] );
+	}
+
+	// Return a spot anyway, since we allow telefragging when a player spawns.
+	return ( &BlueTeamStarts[ulSelection] );
+}
+
+// Select a blue team spawn spot at random.
+static mapthing2_t *SelectRandomRedTeamSpot( USHORT usPlayer, ULONG ulNumSelections )
+{
+	ULONG	ulNumAttempts;
+	ULONG	ulSelection;
+
+	// Try up to 20 times to find a valid spot.
+	for ( ulNumAttempts = 0; ulNumAttempts < 20; ulNumAttempts++ )
+	{
+		ulSelection = ( pr_dmspawn( ) % ulNumSelections );
+		if ( G_CheckSpot( usPlayer, &RedTeamStarts[ulSelection] ))
+			return ( &RedTeamStarts[ulSelection] );
+	}
+
+	// Return a spot anyway, since we allow telefragging when a player spawns.
+	return ( &RedTeamStarts[ulSelection] );
+}
+
+// Select a cooperative spawn spot at random.
+static mapthing2_t *SelectRandomCooperativeSpot( ULONG ulPlayer, ULONG ulNumSelections )
+{
+	ULONG		ulNumAttempts;
+	ULONG		ulSelection;
+	ULONG		ulIdx;
+
+	// Try up to 20 times to find a valid spot.
+	for ( ulNumAttempts = 0; ulNumAttempts < 20; ulNumAttempts++ )
+	{
+		ulIdx = 0;
+		while (( playerstarts[ulIdx].type == 0 ) && ( ulIdx < MAXPLAYERS ))
+			ulIdx++;
+
+		ulSelection = ( pr_dmspawn( ) % ulNumSelections );
+		while ( ulSelection > 0 )
+		{
+			ulSelection--;
+			while (( playerstarts[ulIdx].type == 0 ) && ( ulIdx < MAXPLAYERS ))
+				ulIdx++;
+		}
+
+		if ( G_CheckSpot( ulPlayer, &playerstarts[ulIdx] ))
+			return ( &playerstarts[ulIdx] );
+	}
+
+	// Return a spot anyway, since we allow telefragging when a player spawns.
+	return ( &playerstarts[ulIdx] );
+}
+
+void G_DeathMatchSpawnPlayer( int playernum, bool bClientUpdate )
 {
 	unsigned int selections;
 	mapthing2_t *spot;
 
+	// [BC] Spawning players is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	selections = deathmatchstarts.Size ();
 	// [RH] We can get by with just 1 deathmatch start
 	if (selections < 1)
-		I_Error ("No deathmatch starts");
+		I_Error( "No deathmatch starts!" );
 
-	// At level start, none of the players have mobjs attached to them,
-	// so we always use the random deathmatch spawn. During the game,
-	// though, we use whatever dmflags specifies.
-	if ((dmflags & DF_SPAWN_FARTHEST) && players[playernum].mo)
-		spot = SelectFarthestDeathmatchSpot (selections);
+	if ( teamlms && ( players[playernum].bOnTeam ))
+	{
+		// If we didn't find a valid spot, just pick one at random.
+		if (( spot = SelectBestTeamLMSSpot( playernum, selections )) == NULL )
+			spot = SelectRandomDeathmatchSpot( playernum, selections );
+	}
+	else if ( dmflags & DF_SPAWN_FARTHEST )
+	{
+		// If we didn't find a valid spot, just pick one at random.
+		if (( spot = SelectFarthestDeathmatchSpot( playernum, selections )) == NULL )
+			spot = SelectRandomDeathmatchSpot( playernum, selections );
+	}
 	else
 		spot = SelectRandomDeathmatchSpot (playernum, selections);
 
-	if (!spot)
-	{ // no good spot, so the player will probably get stuck
-		spot = &playerstarts[playernum];
+	if ( spot == NULL )
+		I_Error( "Could not find a valid deathmatch spot! (this should not happen)" );
+
+	P_SpawnPlayer( spot, bClientUpdate, &players[playernum] );
+}
+
+void G_TemporaryTeamSpawnPlayer( ULONG ulPlayer, bool bClientUpdate )
+{
+	ULONG		ulNumSelections;
+	mapthing2_t	*pSpot;
+
+	// Spawning players is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	ulNumSelections = TemporaryTeamStarts.Size( );
+
+	// If there aren't any temporary starts, just spawn them at a random team location.
+	if ( ulNumSelections < 1 )
+	{
+		bool	bCanUseRedStarts = false;
+		bool	bCanUseBlueStarts = false;
+		LONG	lTeam;
+
+		bCanUseRedStarts = RedTeamStarts.Size( ) > 0;
+		bCanUseBlueStarts = BlueTeamStarts.Size( ) > 0;
+
+		if ( bCanUseRedStarts && bCanUseBlueStarts )
+		{
+			FRandom	TeamSeed( "TeamSeed" );
+
+			lTeam = TeamSeed.Random( ) % 2;
+		}
+		else if ( bCanUseRedStarts )
+			lTeam = TEAM_RED;
+		else if ( bCanUseBlueStarts )
+			lTeam = TEAM_BLUE;
+		else
+			lTeam = NUM_TEAMS;
+
+		if ( lTeam == NUM_TEAMS )
+			I_Error( "No teamgame starts!" );
+
+		G_TeamgameSpawnPlayer( ulPlayer, lTeam, bClientUpdate );
+		return;
+	}
+
+	// SelectTemporaryTeamSpot should always return a valid spot. If not, we have a problem.
+	pSpot = SelectTemporaryTeamSpot( ulPlayer, ulNumSelections );
+
+	// ANAMOLOUS HAPPENING!!!
+	if ( pSpot == NULL )
+		I_Error( "Could not find a valid temporary spot! (this should not happen)" );
+
+	P_SpawnPlayer( pSpot, bClientUpdate, &players[ulPlayer] );
+}
+
+void G_TeamgameSpawnPlayer( ULONG ulPlayer, ULONG ulTeam, bool bClientUpdate )
+{
+	ULONG		ulNumSelections;
+	mapthing2_t	*pSpot;
+
+	// Spawning players is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	if ( ulTeam == TEAM_BLUE )
+	{
+		ulNumSelections = BlueTeamStarts.Size( );
+		if ( ulNumSelections < 1 )
+			I_Error( "No blue team starts!" );
+
+		// SelectBlueTeamSpot should always return a valid spot. If not, we have a problem.
+		pSpot = SelectRandomBlueTeamSpot( ulPlayer, ulNumSelections );
 	}
 	else
 	{
-		if (playernum < 4)
-			spot->type = playernum+1;
-		else if (gameinfo.gametype != GAME_Hexen)
-			spot->type = playernum+4001-4;	// [RH] > 4 players
-		else
-			spot->type = playernum+9100-4;
+		ulNumSelections = RedTeamStarts.Size( );
+		if ( ulNumSelections < 1 )
+			I_Error( "No red team starts!" );
+
+		// SelectRedTeamSpot should always return a valid spot. If not, we have a problem.
+		pSpot = SelectRandomRedTeamSpot( ulPlayer, ulNumSelections );
 	}
 
-	P_SpawnPlayer (spot);
+	// ANAMOLOUS HAPPENING!!!
+	if ( pSpot == NULL )
+		I_Error( "Could not find a valid temporary spot! (this should not happen)" );
+
+	P_SpawnPlayer( pSpot, bClientUpdate, &players[ulPlayer] );
+}
+
+void G_CooperativeSpawnPlayer( ULONG ulPlayer, bool bClientUpdate )
+{
+	ULONG		ulNumSpots;
+	ULONG		ulIdx;
+	mapthing2_t	*pSpot;
+
+	// Spawning players is server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	// If there's a valid start for this player, spawn him there.
+	if (( playerstarts[ulPlayer].type != 0 ) && ( G_CheckSpot( ulPlayer, &playerstarts[ulPlayer] )))
+	{
+		P_SpawnPlayer( &playerstarts[ulPlayer], bClientUpdate, NULL );
+		return;
+	}
+
+	ulNumSpots = 0;
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playerstarts[ulIdx].type != 0 )
+			ulNumSpots++;
+	}
+
+	if ( ulNumSpots < 1 )
+		I_Error( "No cooperative starts!" );
+
+	// Now, try to find a valid cooperative start.
+	pSpot = SelectRandomCooperativeSpot( ulPlayer, ulNumSpots );
+
+	// ANAMOLOUS HAPPENING!!!
+	if ( pSpot == NULL )
+		I_Error( "Could not find a valid deathmatch spot! (this should not happen)" );
+
+	P_SpawnPlayer( pSpot, bClientUpdate, &players[ulPlayer] );
 }
 
 //
@@ -1364,6 +2380,9 @@ static void G_QueueBody (AActor *body)
 {
 	// flush an old corpse if needed
 	int modslot = bodyqueslot%BODYQUESIZE;
+
+	// [BC] Skulltag has its own system.
+	return;
 
 	if (bodyqueslot >= BODYQUESIZE && bodyque[modslot] != NULL)
 	{
@@ -1384,7 +2403,13 @@ static void G_QueueBody (AActor *body)
 //
 void G_DoReborn (int playernum, bool freshbot)
 {
-	if (!multiplayer)
+//	int i;
+	AActor	*pOldBody;
+
+	// All of this is done remotely.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+	else if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 	{
 		if (BackupSaveName.Len() > 0 && FileExists (BackupSaveName.GetChars()))
 		{ // Load game from the last point it was saved
@@ -1403,63 +2428,1001 @@ void G_DoReborn (int playernum, bool freshbot)
 	else
 	{
 		// respawn at the start
-		int i;
+//		int i;
 
 		// first disassociate the corpse
-		if (players[playernum].mo)
+		pOldBody = players[playernum].mo;
+		if ( players[playernum].mo )
 		{
 			G_QueueBody (players[playernum].mo);
 			players[playernum].mo->player = NULL;
 		}
 
 		// spawn at random spot if in death match
-		if (deathmatch)
+		if ( deathmatch )
 		{
-			G_DeathMatchSpawnPlayer (playernum);
+			G_DeathMatchSpawnPlayer( playernum, true );
+
+			// If the player fired a missile before he died, update its target so he gets
+			// credit if it kills someone.
+			if ( pOldBody )
+			{
+				AActor						*pActor;
+				TThinkerIterator<AActor>	Iterator;
+				
+				while ( pActor = Iterator.Next( ))
+				{
+					if ( pActor->target == pOldBody )
+						pActor->target = players[playernum].mo;
+				}
+			}
 			return;
 		}
 
-		if (G_CheckSpot (playernum, &playerstarts[playernum]) )
+		// Spawn the player at their appropriate team start.
+		if ( teamgame )
 		{
-			P_SpawnPlayer (&playerstarts[playernum]);
-		}
-		else
-		{
-			// try to spawn at one of the other players' spots
-			for (i = 0; i < MAXPLAYERS; i++)
-			{
-				if (G_CheckSpot (playernum, &playerstarts[i]) )
-				{
-					int oldtype = playerstarts[i].type;
+			if ( players[playernum].bOnTeam )
+				G_TeamgameSpawnPlayer( playernum, players[playernum].ulTeam, true );
+			else
+				G_TemporaryTeamSpawnPlayer( playernum, true );
 
-					// fake as other player
-					// [RH] These numbers should be common across all games. Or better yet, not
-					// used at all outside P_SpawnMapThing().
-					if (playernum < 4 || gameinfo.gametype == GAME_Strife)
-					{
-						playerstarts[i].type = playernum + 1;
-					}
-					else if (gameinfo.gametype == GAME_Hexen)
-					{
-						playerstarts[i].type = playernum + 9100 - 4;
-					}
-					else
-					{
-						playerstarts[i].type = playernum + 4001 - 4;
-					}
-					P_SpawnPlayer (&playerstarts[i]);
-					playerstarts[i].type = oldtype; 			// restore 
-					return;
+			// If the player fired a missile before he died, update its target so he gets
+			// credit if it kills someone.
+			if ( pOldBody )
+			{
+				AActor						*pActor;
+				TThinkerIterator<AActor>	Iterator;
+				
+				while ( pActor = Iterator.Next( ))
+				{
+					if ( pActor->target == pOldBody )
+						pActor->target = players[playernum].mo;
 				}
-				// he's going to be inside something.  Too bad.
 			}
-			P_SpawnPlayer (&playerstarts[playernum]);
+			return;
+		}
+
+		G_CooperativeSpawnPlayer( playernum, true );
+
+		// If the player fired a missile before he died, update its target so he gets
+		// credit if it kills someone.
+		if ( pOldBody )
+		{
+			AActor						*pActor;
+			TThinkerIterator<AActor>	Iterator;
+			
+			while ( pActor = Iterator.Next( ))
+			{
+				if ( pActor->target == pOldBody )
+					pActor->target = players[playernum].mo;
+			}
 		}
 	}
 }
 
+// Determine is a level is a deathmatch, CTF, etc. level by items that are placed on it.
+void GAME_CheckMode( void )
+{
+	ULONG						ulFlags = (ULONG)dmflags;
+	ULONG						ulFlags2 = (ULONG)dmflags2;
+	UCVarValue					Val;
+	ULONG						ulIdx;
+	ULONG						ulNumFlags;
+	ULONG						ulNumSkulls;
+	bool						bPlayerStarts = false;
+	AActor						*pActor;
+	AActor						*pNewSkull;
+	TThinkerIterator<AActor>	iterator;
+
+	// Clients can't change flags/modes!
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	// By default, we're in regular CTF/ST mode.
+	TEAM_SetSimpleCTFMode( false );
+	TEAM_SetSimpleSTMode( false );
+
+	// Also, reset the team module.
+	TEAM_Reset( );
+
+	// First, we need to count the number of real single/coop player starts.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if ( playerstarts[ulIdx].type > 0 )
+		{
+			bPlayerStarts = true;
+			break;
+		}
+	}
+
+	// We have deathmatch starts, but nothing else.
+	if (( deathmatchstarts.Size( ) > 0 ) && 
+		( TemporaryTeamStarts.Size( ) == 0 ) && ( BlueTeamStarts.Size( ) == 0 ) && ( RedTeamStarts.Size( ) == 0 ) &&
+		 bPlayerStarts == false )
+	{
+		// Since we only have deathmatch starts, enable deathmatch, and disable teamgame/coop.
+		Val.Bool = true;
+		deathmatch.ForceSet( Val, CVAR_Bool );
+		Val.Bool = false;
+		teamgame.ForceSet( Val, CVAR_Bool );
+
+		// Allow the server to use their own dmflags.
+		if ( sv_defaultdmflags )
+		{
+			// Don't do "spawn farthest" for duels.
+			if ( duel )
+				ulFlags |= DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS | DF_NO_CROUCH;
+			else
+				ulFlags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS | DF_NO_CROUCH;
+			ulFlags2 |= DF2_YES_DOUBLEAMMO;
+		}
+	}
+
+	// We have team starts, but nothing else.
+	if ((( TemporaryTeamStarts.Size( ) > 0 ) || ( BlueTeamStarts.Size( ) > 0 ) || ( RedTeamStarts.Size( ) > 0 )) &&
+		( deathmatchstarts.Size( ) == 0 ) &&
+		bPlayerStarts == false )
+	{
+		// Since we only have teamgame starts, enable teamgame, and disable deathmatch/coop.
+		Val.Bool = true;
+		teamgame.ForceSet( Val, CVAR_Bool );
+		Val.Bool = false;
+		deathmatch.ForceSet( Val, CVAR_Bool );
+
+		// Allow the server to use their own dmflags.
+		if ( sv_defaultdmflags )
+		{
+			ulFlags |= DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS | DF_NO_CROUCH;
+			ulFlags2 |= DF2_YES_DOUBLEAMMO;
+		}
+
+		// Furthermore, we can determine between a ST and CTF level by whether or not
+		// there are skulls or flags placed on the level.
+//		if ( oneflagctf == false )
+		{
+			TThinkerIterator<AActor>	iterator;
+
+			ulNumFlags = 0;
+			ulNumSkulls = 0;
+			while ( pActor = iterator.Next( ))
+			{
+				if ( pActor->IsKindOf( PClass::FindClass( "BlueSkull" )))
+					ulNumSkulls++;
+
+				if ( pActor->IsKindOf( PClass::FindClass( "RedSkull" )))
+					ulNumSkulls++;
+
+				if ( pActor->IsKindOf( PClass::FindClass( "BlueFlag" )))
+					ulNumFlags++;
+
+				if ( pActor->IsKindOf( PClass::FindClass( "RedFlag" )))
+					ulNumFlags++;
+			}
+
+			// We found flags but no skulls. Set CTF mode.
+			if ( ulNumFlags && ( ulNumSkulls == 0 ))
+			{
+				Val.Bool = true;
+
+				if ( oneflagctf == false )
+					ctf.ForceSet( Val, CVAR_Bool );
+			}
+
+			// We found skulls but no flags. Set Skulltag mode.
+			else if ( ulNumSkulls && ( ulNumFlags == 0 ))
+			{
+				Val.Bool = true;
+
+				skulltag.ForceSet( Val, CVAR_Bool );
+			}
+		}
+	}
+
+	// We have single player starts, but nothing else.
+	if ( bPlayerStarts == true &&
+		( TemporaryTeamStarts.Size( ) == 0 ) && ( BlueTeamStarts.Size( ) == 0 ) && ( RedTeamStarts.Size( ) == 0 ) &&
+		( deathmatchstarts.Size( ) == 0 ))
+	{
+/*
+		// Ugh, this is messy... tired and don't feel like explaning why this is needed...
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) || deathmatch || teamgame )
+		{
+			for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+			{
+				if ( playeringame[ulIdx] == false )
+					continue;
+
+				P_SpawnPlayer( &playerstarts[ulIdx], false, NULL );
+			}
+		}
+*/
+		// Since we only have single player starts, disable deathmatch and teamgame.
+		Val.Bool = false;
+		deathmatch.ForceSet( Val, CVAR_Bool );
+		teamgame.ForceSet( Val, CVAR_Bool );
+
+		// Allow the server to use their own dmflags.
+		if ( sv_defaultdmflags )
+		{
+			ulFlags &= ~DF_WEAPONS_STAY | ~DF_ITEMS_RESPAWN | ~DF_NO_MONSTERS | ~DF_NO_CROUCH;
+			ulFlags2 &= ~DF2_YES_DOUBLEAMMO;
+		}
+
+		// If invasion starts are present, load the map in invasion mode.
+		if ( GenericInvasionStarts.Size( ) > 0 )
+		{
+			Val.Bool = true;
+			invasion.ForceSet( Val, CVAR_Bool );
+		}
+		else
+		{
+			Val.Bool = false;
+			invasion.ForceSet( Val, CVAR_Bool );
+		}
+	}
+
+	if ( cooperative && ( GenericInvasionStarts.Size( ) == 0 ))
+	{
+		Val.Bool = false;
+		invasion.ForceSet( Val, CVAR_Bool );
+	}
+
+	// In a campaign, just use whatever dmflags are assigned.
+	if ( CAMPAIGN_InCampaign( ) == false )
+	{
+		if ( dmflags != ulFlags )
+			dmflags = ulFlags;
+		if ( dmflags2 != ulFlags2 )
+			dmflags2 = ulFlags2;
+	}
+
+	// If there aren't any pickup, blue return, or red return scripts, then use the
+	// simplified, hardcoded version of the CTF or ST modes.
+	if (( FBehavior::StaticCountTypedScripts( SCRIPT_Pickup ) == 0 ) ||
+		( FBehavior::StaticCountTypedScripts( SCRIPT_BlueReturn ) == 0 ) ||
+		( FBehavior::StaticCountTypedScripts( SCRIPT_RedReturn ) == 0 ))
+	{
+		if ( ctf || oneflagctf )
+		{
+			TEAM_SetSimpleCTFMode( true );
+
+			while ( pActor = iterator.Next( ))
+			{
+				if ( pActor->IsKindOf( PClass::FindClass( "BlueFlag" )))
+				{
+					POS_t	Origin;
+
+					Origin.x = pActor->x;
+					Origin.y = pActor->y;
+					Origin.z = pActor->z;
+
+					TEAM_SetBlueFlagOrigin( Origin );
+				}
+
+				if ( pActor->IsKindOf( PClass::FindClass( "RedFlag" )))
+				{
+					POS_t	Origin;
+
+					Origin.x = pActor->x;
+					Origin.y = pActor->y;
+					Origin.z = pActor->z;
+
+					TEAM_SetRedFlagOrigin( Origin );
+				}
+
+				if ( pActor->IsKindOf( PClass::FindClass( "WhiteFlag" )))
+				{
+					POS_t	Origin;
+
+					Origin.x = pActor->x;
+					Origin.y = pActor->y;
+					Origin.z = pActor->z;
+
+					TEAM_SetWhiteFlagOrigin( Origin );
+				}
+			}
+		}
+		// We found skulls but no flags. Set Skulltag mode.
+		else if ( skulltag )
+		{
+			TEAM_SetSimpleSTMode( true );
+
+			while ( pActor = iterator.Next( ))
+			{
+				if ( pActor->IsKindOf( PClass::FindClass( "BlueSkull" )))
+				{
+					POS_t	Origin;
+
+					// Replace this skull with skulltag mode's version of the skull.
+					pNewSkull = Spawn( PClass::FindClass( "BlueSkullST" ), pActor->x, pActor->y, pActor->z, NO_REPLACE );
+					if ( pNewSkull )
+						pNewSkull->flags &= ~MF_DROPPED;
+
+					Origin.x = pActor->x;
+					Origin.y = pActor->y;
+					Origin.z = pActor->z;
+
+					TEAM_SetBlueSkullOrigin( Origin );
+					pActor->Destroy( );
+				}
+
+				if ( pActor->IsKindOf( PClass::FindClass( "RedSkull" )))
+				{
+					POS_t	Origin;
+
+					// Replace this skull with skulltag mode's version of the skull.
+					pNewSkull = Spawn( PClass::FindClass( "RedSkullST" ), pActor->x, pActor->y, pActor->z, NO_REPLACE );
+					if ( pNewSkull )
+						pNewSkull->flags &= ~MF_DROPPED;
+
+					Origin.x = pActor->x;
+					Origin.y = pActor->y;
+					Origin.z = pActor->z;
+
+					TEAM_SetRedSkullOrigin( Origin );
+					pActor->Destroy( );
+				}
+			}
+		}
+	}
+
+	// Reset the status bar.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		delete ( StatusBar );
+
+		if ( gamestate == GS_TITLELEVEL )
+			StatusBar = new FBaseStatusBar( 0 );
+		else if ( gameinfo.gametype == GAME_Doom )
+			StatusBar = CreateDoomStatusBar( );
+		else if ( gameinfo.gametype == GAME_Heretic )
+			StatusBar = CreateHereticStatusBar( );
+		else if ( gameinfo.gametype == GAME_Hexen )
+			StatusBar = CreateHexenStatusBar( );
+		else if ( gameinfo.gametype == GAME_Strife )
+			StatusBar = CreateStrifeStatusBar( );
+		else
+			StatusBar = new FBaseStatusBar( 0 );
+
+		StatusBar->AttachToPlayer( &players[consoleplayer] );
+		StatusBar->NewGame( );
+	}
+}
+
+//*****************************************************************************
+//
+bool GAME_ZPositionMatchesOriginal( AActor *pActor )
+{
+	fixed_t		Space;
+
+	// Determine the Z position to spawn this actor in.
+	if ( pActor->flags & MF_SPAWNCEILING )
+		return ( pActor->z == ( pActor->Sector->ceilingplane.ZatPoint( pActor->x, pActor->y ) - pActor->height - ( pActor->SpawnPoint[2] << FRACBITS )));
+	else if ( pActor->flags2 & MF2_SPAWNFLOAT )
+	{
+		Space = pActor->Sector->ceilingplane.ZatPoint( pActor->x, pActor->y ) - pActor->height - pActor->Sector->floorplane.ZatPoint( pActor->x, pActor->y );
+		if ( Space > ( 48 * FRACUNIT ))
+		{
+			Space -= ( 40 * FRACUNIT );
+			if (( pActor->z >= MulScale8( Space, 0 ) + ( pActor->Sector->floorplane.ZatPoint( pActor->x, pActor->y ) + 40 * FRACUNIT )) ||
+				( pActor->z <= MulScale8( Space, INT_MAX ) + ( pActor->Sector->floorplane.ZatPoint( pActor->x, pActor->y ) + 40 * FRACUNIT )))
+			{
+				return ( true );
+			}
+			return ( false );
+		}
+		else
+			return ( pActor->z == pActor->Sector->floorplane.ZatPoint( pActor->x, pActor->y ));
+	}
+	else if ( pActor->flags2 & MF2_FLOATBOB )
+		return ( pActor->z == ( pActor->SpawnPoint[2] << FRACBITS ));
+	else
+		return ( pActor->z == ( pActor->Sector->floorplane.ZatPoint( pActor->x, pActor->y ) + ( pActor->SpawnPoint[2] << FRACBITS )));
+}
+
+//*****************************************************************************
+//
+bool GAME_DormantStatusMatchesOriginal( AActor *pActor )
+{
+	// For objects that have just spawned, assume that their dormant status is fine.
+	if ( pActor->ObjectFlags & OF_JustSpawned )
+		return ( true );
+
+	if (( pActor->flags3 & MF3_ISMONSTER ) &&
+		(( pActor->health > 0 ) || ( pActor->flags & MF_ICECORPSE )))
+	{
+		if ( pActor->flags2 & MF2_DORMANT )
+			return !!( pActor->SpawnFlags & MTF_DORMANT );
+		else
+			return (( pActor->SpawnFlags & MTF_DORMANT ) == false );
+	}
+
+	if ( pActor->GetClass( )->IsDescendantOf( PClass::FindClass( "ParticleFountain" )))
+	{
+		if (( pActor->effects & ( pActor->health << FX_FOUNTAINSHIFT )) == false )
+			return !!( pActor->SpawnFlags & MTF_DORMANT );
+		else
+			return (( pActor->SpawnFlags & MTF_DORMANT ) == false );
+	}
+
+	return ( true );
+}
+
+//*****************************************************************************
+//
+// Ugh.
+void P_LoadBehavior( MapData *pMap );
+void GAME_ResetMap( void )
+{
+	ULONG							ulIdx;
+	MapData							*pMap;
+	level_info_t					*pLevelInfo;
+	bool							bSendSkyUpdate;
+//	sector_t						*pSector;
+//	fixed_t							Space;
+	AActor							*pActor;
+	AActor							*pNewActor;
+	AActor							*pActorInfo;
+	fixed_t							X;
+	fixed_t							Y;
+	fixed_t							Z;
+	TThinkerIterator<AActor>		ActorIterator;
+
+	for ( ulIdx = 0; ulIdx < (ULONG)numlines; ulIdx++ )
+	{
+		// Reset the specials for lines that do not have a repeatable special.
+		if ( lines[ulIdx].special == 0 )
+			lines[ulIdx].special = lines[ulIdx].SavedSpecial;
+
+		// Also, restore any changed textures.
+		if ( lines[ulIdx].ulTexChangeFlags != 0 )
+		{
+			if ( lines[ulIdx].sidenum[0] != 0xffff )
+			{
+				sides[lines[ulIdx].sidenum[0]].toptexture = sides[lines[ulIdx].sidenum[0]].SavedTopTexture;
+				sides[lines[ulIdx].sidenum[0]].midtexture = sides[lines[ulIdx].sidenum[0]].SavedMidTexture;
+				sides[lines[ulIdx].sidenum[0]].bottomtexture = sides[lines[ulIdx].sidenum[0]].SavedBottomTexture;
+			}
+
+			if ( lines[ulIdx].sidenum[1] != NO_INDEX )
+			{
+				sides[lines[ulIdx].sidenum[1]].toptexture = sides[lines[ulIdx].sidenum[1]].SavedTopTexture;
+				sides[lines[ulIdx].sidenum[1]].midtexture = sides[lines[ulIdx].sidenum[1]].SavedMidTexture;
+				sides[lines[ulIdx].sidenum[1]].bottomtexture = sides[lines[ulIdx].sidenum[1]].SavedBottomTexture;
+			}
+
+			// If we're the server, tell clients about this texture change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetLineTexture( ulIdx );
+
+			// Mark the texture as no being changed.
+			lines[ulIdx].ulTexChangeFlags = 0;
+		}
+
+		// Restore the line's alpha if it changed.
+		if ( lines[ulIdx].alpha != lines[ulIdx].SavedAlpha )
+		{
+			lines[ulIdx].alpha = lines[ulIdx].SavedAlpha;
+
+			// If we're the server, tell clients about this alpha change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetLineAlpha( ulIdx );
+		}
+
+		// Restore the line's blocking status.
+		if ( lines[ulIdx].flags != lines[ulIdx].SavedFlags )
+		{
+			lines[ulIdx].flags = lines[ulIdx].SavedFlags;
+
+			// If we're the server, tell clients about this blocking change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetLineBlocking( ulIdx );
+		}
+	}
+
+	// Restore sector heights, flat changes, and light changes.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].bCeilingHeightChange )
+		{
+			sectors[ulIdx].ceilingplane = sectors[ulIdx].SavedCeilingPlane;
+			sectors[ulIdx].ceilingtexz = sectors[ulIdx].SavedCeilingTexZ;
+			sectors[ulIdx].bCeilingHeightChange = false;
+
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorCeilingPlane( ulIdx );
+		}
+
+		if ( sectors[ulIdx].bFloorHeightChange )
+		{
+			sectors[ulIdx].floorplane = sectors[ulIdx].SavedFloorPlane;
+			sectors[ulIdx].floortexz = sectors[ulIdx].SavedFloorTexZ;
+			sectors[ulIdx].bFloorHeightChange = false;
+
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorFloorPlane( ulIdx );
+		}
+
+		if ( sectors[ulIdx].bFlatChange )
+		{
+			sectors[ulIdx].floorpic = sectors[ulIdx].SavedFloorPic;
+			sectors[ulIdx].ceilingpic = sectors[ulIdx].SavedCeilingPic;
+			sectors[ulIdx].bFlatChange = false;
+
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorFlat( ulIdx );
+		}
+
+		if ( sectors[ulIdx].bLightChange )
+		{
+			sectors[ulIdx].lightlevel = sectors[ulIdx].SavedLightLevel;
+			sectors[ulIdx].bLightChange = false;
+
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorLightLevel( ulIdx );
+		}
+	}
+
+	// Reset the sky properties of the map.
+	pLevelInfo = level.info;//FindLevelInfo( level.mapname );
+	if ( pLevelInfo )
+	{
+		bSendSkyUpdate = false;
+		if (( stricmp( level.skypic1, pLevelInfo->skypic1 ) != 0 ) ||
+			( stricmp( level.skypic2, pLevelInfo->skypic2 ) != 0 ))
+		{
+			bSendSkyUpdate = true;
+		}
+
+		strncpy( level.skypic1, pLevelInfo->skypic1, 8 );
+		strncpy( level.skypic2, pLevelInfo->skypic2, 8 );
+		if ( level.skypic2[0] == 0 )
+			strncpy( level.skypic2, level.skypic1, 8 );
+
+		sky1texture = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		sky2texture = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		
+		R_InitSkyMap( );
+
+		// If we're the server, tell clients to update their sky.
+		if (( bSendSkyUpdate ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+			SERVERCOMMANDS_SetMapSky( );
+	}
+	
+	// Reset the number of monsters killed,  items picked up, and found secrets on the level.
+	level.killed_monsters = 0;
+	level.found_items = 0;
+	level.found_secrets = 0;
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_SetMapNumKilledMonsters( );
+		SERVERCOMMANDS_SetMapNumFoundItems( );
+		SERVERCOMMANDS_SetMapNumFoundSecrets( );
+	}
+
+	// Reload the actors on this level.
+	while (( pActor = ActorIterator.Next( )) != NULL )
+	{
+		// Don't reload players.
+		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			continue;
+
+		// If this object belongs to someone's inventory, and it originally spawned on the
+		// level, respawn the item in its original location, but don't take it out of the
+		// player's inventory.
+		if (( pActor->IsKindOf( RUNTIME_CLASS( AInventory ))) && 
+			( static_cast<AInventory *>( pActor )->Owner ))
+		{
+			if ( pActor->ulSTFlags & STFL_LEVELSPAWNED )
+			{
+				// Get the default information for this actor, so we can determine how to
+				// respawn it.
+				pActorInfo = pActor->GetDefault( );
+
+				// Spawn the new actor.
+				X = pActor->SpawnPoint[0] << FRACBITS;
+				Y = pActor->SpawnPoint[1] << FRACBITS;
+
+				// Determine the Z point based on its flags.
+				if ( pActorInfo->flags & MF_SPAWNCEILING )
+					Z = ONCEILINGZ;
+				else if ( pActorInfo->flags2 & MF2_SPAWNFLOAT )
+					Z = FLOATRANDZ;
+				else if ( pActorInfo->flags2 & MF2_FLOATBOB )
+					Z = pActor->SpawnPoint[2] << FRACBITS;
+				else
+					Z = ONFLOORZ;
+
+				pNewActor = Spawn( RUNTIME_TYPE( pActor ), X, Y, Z, NO_REPLACE );
+
+				// Adjust the Z position after it's spawned.
+				if ( Z == ONFLOORZ )
+					pNewActor->z += pActor->SpawnPoint[2] << FRACBITS;
+				else if ( Z == ONCEILINGZ )
+					pNewActor->z -= pActor->SpawnPoint[2] << FRACBITS;
+/*
+				pSector = R_PointInSubsector( X, Y )->sector;
+				pNewActor->z = pSector->floorplane.ZatPoint( X, Y );
+
+				// Determine the Z position to spawn this actor in.
+				if ( pActorInfo->flags & MF_SPAWNCEILING )
+					pNewActor->z = pNewActor->ceilingz - pNewActor->height - ( pActor->SpawnPoint[2] << FRACBITS );
+				else if ( pActorInfo->flags2 & MF2_SPAWNFLOAT )
+				{
+					Space = pNewActor->ceilingz - pNewActor->height - pNewActor->floorz;
+					if ( Space > 48*FRACUNIT )
+					{
+						Space -= 40*FRACUNIT;
+						pNewActor->z = (( Space * M_Random( )) >>8 ) + pNewActor->floorz + ( 40 * FRACUNIT );
+					}
+					else
+					{
+						pNewActor->z = pNewActor->floorz;
+					}
+				}
+				else if ( pActorInfo->flags2 & MF2_FLOATBOB )
+					pNewActor->z = pActor->SpawnPoint[2] << FRACBITS;
+*/
+				// Inherit attributes from the old actor.
+				pNewActor->SpawnPoint[0] = pActor->SpawnPoint[0];
+				pNewActor->SpawnPoint[1] = pActor->SpawnPoint[1];
+				pNewActor->SpawnPoint[2] = pActor->SpawnPoint[2];
+				pNewActor->SpawnAngle = pActor->SpawnAngle;
+				pNewActor->SpawnFlags = pActor->SpawnFlags;
+				pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+				pNewActor->tid = pActor->tid;
+				pNewActor->AddToHash( );
+
+				pNewActor->ulSTFlags |= STFL_LEVELSPAWNED;
+
+				// Handle the spawn flags of the item.
+				pNewActor->HandleSpawnFlags( );
+
+				// Spawn the new actor.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SpawnThing( pNewActor );
+			}
+
+			continue;
+		}
+
+		// Destroy any actor not present when the map loaded.
+		if (( pActor->ulSTFlags & STFL_LEVELSPAWNED ) == false )
+		{
+			// If this is a monster, decrement the total number of monsters on the level.
+			if ( pActor->CountsAsKill( ))
+				level.total_monsters--;
+
+			// If this is an item, decrement the total number of item on the level.
+			if ( pActor->flags & MF_COUNTITEM )
+				level.total_items--;
+
+			// If we're the server, tell clients to delete the actor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_DestroyThing( pActor );
+
+			pActor->Destroy( );
+			continue;
+		}
+
+		// Get the default information for this actor, so we can determine how to
+		// respawn it.
+		pActorInfo =	 pActor->GetDefault( );
+
+		// This item appears to be untouched; no need to respawn it.
+		if (( pActor->x == pActor->SpawnPoint[0] << FRACBITS ) &&
+			( pActor->y == pActor->SpawnPoint[1] << FRACBITS ) &&
+			( GAME_ZPositionMatchesOriginal( pActor )) &&
+			( pActor->state == pActor->SpawnState ) &&
+			( GAME_DormantStatusMatchesOriginal( pActor )) &&
+			( pActor->health == pActorInfo->health ))
+		{
+			continue;
+		}
+
+		// Spawn the new actor.
+		X = pActor->SpawnPoint[0] << FRACBITS;
+		Y = pActor->SpawnPoint[1] << FRACBITS;
+
+		// Determine the Z point based on its flags.
+		if ( pActorInfo->flags & MF_SPAWNCEILING )
+			Z = ONCEILINGZ;
+		else if ( pActorInfo->flags2 & MF2_SPAWNFLOAT )
+			Z = FLOATRANDZ;
+		else if ( pActorInfo->flags2 & MF2_FLOATBOB )
+			Z = pActor->SpawnPoint[2] << FRACBITS;
+		else
+			Z = ONFLOORZ;
+
+		pNewActor = Spawn( RUNTIME_TYPE( pActor ), X, Y, Z, NO_REPLACE );
+
+		// Adjust the Z position after it's spawned.
+		if ( Z == ONFLOORZ )
+			pNewActor->z += pActor->SpawnPoint[2] << FRACBITS;
+		else if ( Z == ONCEILINGZ )
+			pNewActor->z -= pActor->SpawnPoint[2] << FRACBITS;
+/*
+		pSector = R_PointInSubsector( X, Y )->sector;
+		pNewActor->z = pSector->floorplane.ZatPoint( X, Y );
+
+		// Determine the Z position to spawn this actor in.
+		if ( pActorInfo->flags & MF_SPAWNCEILING )
+			pNewActor->z = pNewActor->ceilingz - pNewActor->height - ( pActor->SpawnPoint[2] << FRACBITS );
+		else if ( pActorInfo->flags2 & MF2_SPAWNFLOAT )
+		{
+			Space = pNewActor->ceilingz - pNewActor->height - pNewActor->floorz;
+			if ( Space > 48*FRACUNIT )
+			{
+				Space -= 40*FRACUNIT;
+				pNewActor->z = (( Space * M_Random( )) >>8 ) + pNewActor->floorz + ( 40 * FRACUNIT );
+			}
+			else
+			{
+				pNewActor->z = pNewActor->floorz;
+			}
+		}
+		else if ( pActorInfo->flags2 & MF2_FLOATBOB )
+			pNewActor->z = pActor->SpawnPoint[2] << FRACBITS;
+*/
+		// Inherit attributes from the old actor.
+		pNewActor->SpawnPoint[0] = pActor->SpawnPoint[0];
+		pNewActor->SpawnPoint[1] = pActor->SpawnPoint[1];
+		pNewActor->SpawnPoint[2] = pActor->SpawnPoint[2];
+		pNewActor->SpawnAngle = pActor->SpawnAngle;
+		pNewActor->SpawnFlags = pActor->SpawnFlags;
+		pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+		pNewActor->tid = pActor->tid;
+		pNewActor->AddToHash( );
+
+		// Just do this stuff for monsters.
+		if ( pActor->flags & MF_COUNTKILL )
+		{
+			if ( pActor->SpawnFlags & MTF_AMBUSH )
+				pNewActor->flags |= MF_AMBUSH;
+
+			pNewActor->reactiontime = 18;
+
+			pNewActor->TIDtoHate = pActor->TIDtoHate;
+			pNewActor->LastLook = pActor->LastLook;
+			pNewActor->flags3 |= pActor->flags3 & MF3_HUNTPLAYERS;
+			pNewActor->flags4 |= pActor->flags4 & MF4_NOHATEPLAYERS;
+		}
+
+		pNewActor->flags &= ~MF_DROPPED;
+		pNewActor->ulSTFlags |= STFL_LEVELSPAWNED;
+
+		// Handle the spawn flags of the item.
+		pNewActor->HandleSpawnFlags( );
+
+		// If the old actor counts as a kill, remove it from the total monster count
+		// since it's being deleted.
+		if ( pActor->CountsAsKill( ))
+			level.total_monsters--;
+
+		// If the old actor counts as an item, remove it from the total item count
+		// since it's being deleted.
+		if ( pActor->flags & MF_COUNTITEM )
+			level.total_items--;
+
+		// Remove the old actor.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DestroyThing( pActor );
+
+		pActor->Destroy( );
+
+		// Tell clients to spawn the new actor.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnThing( pNewActor );
+	}
+
+	// If we're the server, tell clients the new number of total items/monsters.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_SetMapNumTotalMonsters( );
+		SERVERCOMMANDS_SetMapNumTotalItems( );
+	}
+
+	// Also, delete all floors, plats, etc. that are in progress.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].ceilingdata )
+		{
+			sectors[ulIdx].ceilingdata->Destroy( );
+			sectors[ulIdx].ceilingdata = NULL;
+		}
+		if ( sectors[ulIdx].floordata )
+		{
+			sectors[ulIdx].floordata->Destroy( );
+			sectors[ulIdx].floordata = NULL;
+		}
+	}
+
+	// If we're the server, tell clients to delete all their ceiling/floor movers.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_DestroyAllSectorMovers( );
+
+	// Unload the ACS scripts so we can reload them.
+	FBehavior::StaticUnloadModules( );
+	delete ( DACSThinker::ActiveThinker );
+	DACSThinker::ActiveThinker = NULL;
+
+	// Open the current map and load its BEHAVIOR lump.
+	pMap = P_OpenMapData( level.mapname );
+	if ( pMap == NULL )
+		I_Error( "GAME_ResetMap: Unable to open map '%s'\n", level.mapname );
+	else if ( pMap->HasBehavior )
+		P_LoadBehavior( pMap );
+
+	// Run any default scripts that needed to be run.
+	FBehavior::StaticLoadDefaultModules( );
+
+	// Restart running any open scripts on this map, since we just destroyed them all!
+	FBehavior::StaticStartTypedScripts( SCRIPT_Open, NULL, false );
+
+	delete ( pMap );
+}
+
+//*****************************************************************************
+//
+void GAME_SpawnTerminatorArtifact( void )
+{
+	ULONG		ulIdx;
+	AActor		*pTerminatorBall;
+	ULONG		ulNumSelections;
+	mapthing2_t	*pSpot;
+
+	ulNumSelections = deathmatchstarts.Size( );
+	if ( ulNumSelections < 1 )
+		return;
+
+	// Find a random deathmatch spot to spawn the ball at.
+	pSpot = SelectRandomDeathmatchSpot( 0, ulNumSelections );
+	
+	// Since G_CheckSpot() clears players' MF_SOLID flag for whatever reason, we have
+	// to restore it manually here.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] ) && ( players[ulIdx].mo ))
+			players[ulIdx].mo->flags |= MF_SOLID;
+	}
+
+	if ( pSpot == NULL )
+		return;
+
+	// Spawn the ball.
+	pTerminatorBall = Spawn( PClass::FindClass( "Terminator" ), pSpot->x << FRACBITS, pSpot->y << FRACBITS, ONFLOORZ, NO_REPLACE );
+
+	// If we're the server, tell clients to spawn the new ball.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnThing( pTerminatorBall );
+}
+
+//*****************************************************************************
+//
+void GAME_SpawnPossessionArtifact( void )
+{
+	ULONG		ulIdx;
+	AActor		*pPossessionStone;
+	ULONG		ulNumSelections;
+	mapthing2_t	*pSpot;
+
+	ulNumSelections = deathmatchstarts.Size( );
+	if ( ulNumSelections < 1 )
+		return;
+
+	// Find a random deathmatch spot to spawn the ball at.
+	pSpot = SelectRandomDeathmatchSpot( 0, ulNumSelections );
+
+	// Since G_CheckSpot() clears players' MF_SOLID flag for whatever reason, we have
+	// to restore it manually here.
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] ) && ( players[ulIdx].mo ))
+			players[ulIdx].mo->flags |= MF_SOLID;
+	}
+
+	if ( pSpot == NULL )
+		return;
+
+	// Spawn the ball.
+	pPossessionStone = Spawn( PClass::FindClass( "PossessionStone" ), pSpot->x << FRACBITS, pSpot->y << FRACBITS, ONFLOORZ, NO_REPLACE );
+
+	// If we're the server, tell clients to spawn the possession stone.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnThing( pPossessionStone );
+}
+
+//*****************************************************************************
+//
+void GAME_SetEndLevelDelay( ULONG ulTicks )
+{
+	g_ulEndLevelDelay = ulTicks;
+
+	// Tell the clients about the end level delay.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetGameEndLevelDelay( g_ulEndLevelDelay );
+}
+
+//*****************************************************************************
+//
+ULONG GAME_GetEndLevelDelay( void )
+{
+	return ( g_ulEndLevelDelay );
+}
+
+//*****************************************************************************
+//
+void GAME_SetLevelIntroTicks( USHORT usTicks )
+{
+	g_ulLevelIntroTicks = usTicks;
+}
+
+//*****************************************************************************
+//
+USHORT GAME_GetLevelIntroTicks( void )
+{
+	return ( g_ulLevelIntroTicks );
+}
+
+//*****************************************************************************
+//
+void GAME_SetFreezeMode( bool bFreeze )
+{
+	g_bFreezeMode = bFreeze;
+}
+
+//*****************************************************************************
+//
+bool GAME_GetFreezeMode( void )
+{
+	return ( g_bFreezeMode );
+}
+
+//*****************************************************************************
+//
+LONG GAME_GetGameType( void )
+{
+	LONG	lGameType;
+
+	lGameType = GAMETYPE_COOPERATIVE;
+	if ( survival )
+		lGameType = GAMETYPE_SURVIVAL;
+	if ( invasion )
+		lGameType = GAMETYPE_INVASION;
+	if ( deathmatch )
+		lGameType = GAMETYPE_DEATHMATCH;
+	if ( teamplay )
+		lGameType = GAMETYPE_TEAMPLAY;
+	if ( duel )
+		lGameType = GAMETYPE_DUEL;
+	if ( terminator )
+		lGameType = GAMETYPE_TERMINATOR;
+	if ( lastmanstanding )
+		lGameType = GAMETYPE_LASTMANSTANDING;
+	if ( teamlms )
+		lGameType = GAMETYPE_TEAMLMS;
+	if ( possession )
+		lGameType = GAMETYPE_POSSESSION;
+	if ( teampossession )
+		lGameType = GAMETYPE_TEAMPOSSESSION;
+	if ( teamgame )
+		lGameType = GAMETYPE_TEAMGAME;
+	if ( ctf )
+		lGameType = GAMETYPE_CTF;
+	if ( oneflagctf )
+		lGameType = GAMETYPE_ONEFLAGCTF;
+	if ( skulltag )
+		lGameType = GAMETYPE_SKULLTAG;
+
+	return ( lGameType );
+}
+
 void G_ScreenShot (char *filename)
 {
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	shotfile = filename;
 	gameaction = ga_screenshot;
 }
@@ -1670,8 +3633,6 @@ void G_DoLoadGame ()
 	// Read intermission data for hubs
 	G_ReadHubInfo(png);
 
-	bglobal.RemoveAllBots (true);
-
 	text = M_GetPNGText (png, "Important CVARs");
 	if (text != NULL)
 	{
@@ -1711,6 +3672,10 @@ void G_DoLoadGame ()
 	ReadArrayVars (png, ACS_WorldArrays, NUM_WORLDVARS, MAKE_ID('w','a','R','r'));
 	ReadArrayVars (png, ACS_GlobalArrays, NUM_GLOBALVARS, MAKE_ID('g','a','R','r'));
 
+	// [BC] Read the invasion state, etc.
+	if ( invasion )
+		INVASION_ReadSaveInfo( png );
+
 	NextSkill = -1;
 	if (M_FindPNGChunk (png, MAKE_ID('s','n','X','t')) == 1)
 	{
@@ -1729,6 +3694,10 @@ void G_DoLoadGame ()
 
 	delete png;
 	fclose (stdfile);
+
+	// [BC] In invasion mode, reasign the spawner pointers for various items on the map.
+	if ( invasion )
+		INVASION_RestoreSpawnerPointers( );
 }
 
 
@@ -1885,8 +3854,13 @@ static void PutSavePic (FILE *file, int width, int height)
 
 		// Take a snapshot of the player's view
 		pic->Lock ();
-		P_CheckPlayerSprites();
-		R_RenderViewToCanvas (players[consoleplayer].mo, pic, 0, 0, width, height);
+
+		P_CheckPlayerSprites ();
+		if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+			GL_RenderViewToCanvas(pic, 0, 0, width, height);
+		else
+			R_RenderViewToCanvas (players[consoleplayer].mo, pic, 0, 0, width, height);
+
 		screen->GetFlashedPalette (palette);
 		M_CreatePNG (file, pic, palette);
 		pic->Unlock ();
@@ -1962,6 +3936,12 @@ void G_DoSaveGame (bool okForQuicksave)
 		savegamefile = G_BuildSaveName ("demosave.zds", -1);
 	}
 
+	// [BC] In invasion mode, come up with spawner IDs for each of the spawners. Then, convert
+	// the pointers in each actor's pPickupInvasionSpot to this ID, so that when the save
+	// game is restored, the pointer can be correctly restored.
+	if ( invasion )
+		INVASION_SetupSpawnerIDs( );
+
 	insave = true;
 	G_SnapshotLevel ();
 
@@ -2011,6 +3991,10 @@ void G_DoSaveGame (bool okForQuicksave)
 	WriteVars (stdfile, ACS_GlobalVars, NUM_GLOBALVARS, MAKE_ID('g','v','A','r'));
 	WriteArrayVars (stdfile, ACS_WorldArrays, NUM_WORLDVARS, MAKE_ID('w','a','R','r'));
 	WriteArrayVars (stdfile, ACS_GlobalArrays, NUM_GLOBALVARS, MAKE_ID('g','a','R','r'));
+
+	// [BC] Write the invasion state, etc.
+	if ( invasion )
+		INVASION_WriteSaveInfo( stdfile );
 
 	if (NextSkill != -1)
 	{
@@ -2120,10 +4104,14 @@ void G_WriteDemoTiccmd (ticcmd_t *cmd, int player, int buf)
 	BYTE *specdata;
 	int speclen;
 
+	// Not in multiplayer.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (stoprecording)
 	{ // use "stop" console command to end demo recording
 		G_CheckDemoStatus ();
-		if (!netgame)
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 		{
 			gameaction = ga_fullconsole;
 		}
@@ -2199,7 +4187,7 @@ void G_BeginRecording (const char *startmap)
 
 	// Write header chunk
 	StartChunk (ZDHD_ID, &demo_p);
-	WriteWord (DEMOGAMEVERSION, &demo_p);	// Write ZDoom version
+	WriteWord (DEMOGAMEVERSION, &demo_p);			// Write ZDoom version
 	*demo_p++ = 2;							// Write minimum version needed to use this demo.
 	*demo_p++ = 3;							// (Useful?)
 	for (i = 0; i < 8; i++)					// Write name of map demo was recorded on.
@@ -2225,7 +4213,7 @@ void G_BeginRecording (const char *startmap)
 	// It is possible to start a "multiplayer" game with only one player,
 	// so checking the number of players when playing back the demo is not
 	// enough.
-	if (multiplayer)
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
 		StartChunk (NETD_ID, &demo_p);
 		FinishChunk (&demo_p);
@@ -2359,7 +4347,8 @@ bool G_ProcessIFFDemo (char *mapname)
 			break;
 
 		case NETD_ID:
-			multiplayer = true;
+
+			NETWORK_SetState( NETSTATE_SINGLE_MULTIPLAYER );
 			break;
 
 		case BODY_ID:
@@ -2390,7 +4379,7 @@ bool G_ProcessIFFDemo (char *mapname)
 	}
 
 	if (numPlayers > 1)
-		multiplayer = netgame = netdemo = true;
+		NETWORK_SetState( NETSTATE_SINGLE_MULTIPLAYER );
 
 	if (uncompSize > 0)
 	{
@@ -2516,8 +4505,8 @@ bool G_CheckDemoStatus (void)
 		delete[] demobuffer;
 		demoplayback = false;
 		netdemo = false;
-		netgame = false;
-		multiplayer = false;
+//		netgame = false;
+//		multiplayer = false;
 		singletics = false;
 		{
 			int i;
@@ -2593,4 +4582,24 @@ bool G_CheckDemoStatus (void)
 	}
 
 	return false; 
+}
+
+// [BC] New console command that freezes all actors (except the player
+// who activated the cheat).
+
+//*****************************************************************************
+//
+CCMD( freeze )
+{
+	if (( NETWORK_GetState( ) == NETSTATE_SINGLE ) || ( NETWORK_GetState( ) == NETSTATE_SINGLE_MULTIPLAYER ))
+	{
+		// Toggle the freeze mode.
+		g_bFreezeMode = !g_bFreezeMode;
+		Printf( "Freeze mode %s\n", ( g_bFreezeMode ) ? "ON" : "OFF" );
+
+		if ( g_bFreezeMode )
+			players[consoleplayer].cheats |= CF_FREEZE;
+		else
+			players[consoleplayer].cheats &= ~CF_FREEZE;
+	}
 }

@@ -4,6 +4,7 @@
 #include "dobject.h"
 #include "info.h"
 #include "actor.h"
+#include "a_pickups.h"
 
 class FDecalTemplate;
 struct vertex_s;
@@ -126,6 +127,7 @@ public:
 	void Tick ();
 	void Activate (AActor *activator);
 	void Deactivate (AActor *activator);
+	bool GetActive( );
 
 protected:
 	bool bActive;
@@ -156,6 +158,7 @@ public:
 	bool bAlways;
 	ASkyViewpoint *Mate;
 	fixed_t PlaneAlpha;
+	unsigned int refmask; // [ZDoomGL] index/stencil mask
 };
 
 class DFlashFader : public DThinker
@@ -180,6 +183,19 @@ protected:
 
 	void SetBlend (float time);
 	DFlashFader ();
+};
+
+class AFloatyIcon : public AActor
+{
+	DECLARE_ACTOR( AFloatyIcon, AActor )
+public:
+	void		BeginPlay( );
+	void		Tick( );
+	void		Destroy( );
+
+	void		SetTracer( AActor *pTracer );
+
+	LONG		lTick;
 };
 
 class DEarthquake : public DThinker
@@ -236,6 +252,28 @@ public:
 	void BeginPlay ();
 	void Activate (AActor *activator);
 	void Deactivate (AActor *activator);
+};
+
+// [BC] Moved here so the OpenGL renderer can use it.
+class ADecal : public AActor
+{
+	DECLARE_STATELESS_ACTOR (ADecal, AActor);
+public:
+	void BeginPlay ();
+};
+
+// [BC] Cooperative backpacks.
+class ACooperativeBackpack : public AInventory
+{
+	DECLARE_ACTOR( ACooperativeBackpack, AInventory )
+public:
+
+	virtual bool TryPickup( AActor *pToucher );
+	void FillBackpack( player_s *pPlayer );
+protected:
+
+	virtual const char *PickupMessage( );
+	virtual bool ShouldRespawn( );
 };
 
 #endif //__A_SHAREDGLOBAL_H__

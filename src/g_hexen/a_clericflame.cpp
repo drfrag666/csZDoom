@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 const fixed_t FLAMESPEED	= fixed_t(0.45*FRACUNIT);
 const fixed_t CFLAMERANGE	= 12*64*FRACUNIT;
@@ -86,7 +87,6 @@ IMPLEMENT_ACTOR (ACWeapFlame, Hexen, 8009, 0)
 	PROP_Weapon_HoldAtkState (S_CFLAMEATK)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (10)
-	PROP_Weapon_MoveCombatDist (27000000)
 	PROP_Weapon_AmmoType1 ("Mana2")
 	PROP_Weapon_ProjectileType ("CFlameMissile")
 	PROP_Inventory_PickupMessage("$TXT_WEAPON_C3")
@@ -391,6 +391,11 @@ void A_CFlameAttack (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (actor, RUNTIME_CLASS(ACFlameMissile));
 	S_Sound (actor, CHAN_WEAPON, "ClericFlameFire", 1, ATTN_NORM);
 }

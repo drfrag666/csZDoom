@@ -51,6 +51,7 @@ public:
 	void AddAutoexec (DArgs *list, const char *gamename);
 	FString GetConfigPath (bool tryProg);
 	void ReadNetVars ();
+	void ReadRevealedBotsAndSkins ();
 
 protected:
 	void WriteCommentHeader (FILE *file) const;

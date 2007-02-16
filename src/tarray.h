@@ -70,6 +70,7 @@ public:
 		Most = max;
 		Count = 0;
 		Array = (T *)M_Malloc (sizeof(T)*max);
+		memset(Array, 0, sizeof(T) * max); // [ZDoomGL] - initialize the array to 0
 	}
 	TArray (const TArray<T> &other)
 	{
@@ -106,6 +107,11 @@ public:
 		}
 	}
 	T &operator[] (unsigned int index) const
+	{
+		return Array[index];
+	}
+	// [ZDoomGL] - don't have to dereference pointers to access array now
+	T &Item (size_t index) const
 	{
 		return Array[index];
 	}
@@ -184,6 +190,7 @@ public:
 		{
 			const unsigned int choicea = Count + amount;
 			const unsigned int choiceb = Most = (Most >= 16) ? Most + Most / 2 : 16;
+	        const unsigned int base = Most;	// [ZDoomGL]
 			Most = (choicea > choiceb ? choicea : choiceb);
 			DoResize ();
 		}
@@ -232,7 +239,8 @@ public:
 			Count = 0;
 		}
 	}
-private:
+//private: // [ZDoomGL] make this protected so subclasses can have access
+protected:
 	T *Array;
 	unsigned int Most;
 	unsigned int Count;

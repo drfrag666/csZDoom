@@ -119,6 +119,9 @@ public:
 	DWORD FirstLump;
 	DWORD LastLump;
 
+	// [BC] Was this wad loaded automatically?
+	bool	bLoadedAutomatically;
+
 };
 
 
@@ -236,7 +239,8 @@ void FWadCollection::InitMultipleFiles (wadlist_t **filenames)
 		FixPathSeperator (name);
 		DefaultExtension (name, ".wad");
 
-		AddFile (name);
+		// [BC] Added the "loaded automatically" parameter.
+		AddFile (name, NULL, -1, (*filenames)->bLoadedAutomatically);
 		free (*filenames);
 		*filenames = next;
 
@@ -367,7 +371,8 @@ int STACK_ARGS FWadCollection::lumpcmp(const void * a, const void * b)
 }
 
 
-void FWadCollection::AddFile (const char *filename, const char * data, int length)
+// [BC] Edited a little.
+void FWadCollection::AddFile (const char *filename, const char * data, int length, bool bLoadedAutomatically)
 {
 	WadFileRecord	*wadinfo;
 	MergedHeader	header;
@@ -412,6 +417,9 @@ void FWadCollection::AddFile (const char *filename, const char * data, int lengt
 	}
 
 	wadinfo->Name = copystring (filename);
+
+	// [BC] Mark whether or not the wad was loaded automatically.
+	wadinfo->bLoadedAutomatically = bLoadedAutomatically;
 
 	if (header.magic[0] == IWAD_ID || header.magic[0] == PWAD_ID)
 	{ // This is a WAD file
@@ -1904,6 +1912,25 @@ const char *FWadCollection::GetWadFullName (int wadnum) const
 	return Wads[wadnum]->Name;
 }
 
+
+//==========================================================================
+//
+// [BC] W_GetLoadedAutomatically
+//
+// Returns true if the wad was loaded automatically from being placed
+// in a certain autoload subdirectory (such as "/skins").
+//
+//==========================================================================
+
+bool FWadCollection::GetLoadedAutomatically( int wadnum ) const
+{
+	if ( (DWORD)wadnum >= Wads.Size( ))
+	{
+		return ( false );
+	}
+
+	return ( Wads[wadnum]->bLoadedAutomatically );
+}
 
 //==========================================================================
 //

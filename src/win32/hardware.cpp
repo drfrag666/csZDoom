@@ -44,6 +44,11 @@
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "v_text.h"
+#include "network.h"
+
+// [ZDoomGL]
+#include "OpenGLVideo.h"
+#include "gl_main.h"
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -55,6 +60,38 @@ IVideo *Video;
 //static IKeyboard *Keyboard;
 //static IMouse *Mouse;
 //static IJoystick *Joystick;
+
+// [ZDoomGL]
+static bool initialized = false;
+extern int NewWidth, NewHeight, NewBits, DisplayBits;
+extern BOOL vidactive;
+extern bool UsingGLNodes;
+bool V_DoModeSetup (int width, int height, int bits);
+bool changerenderer;
+
+void I_RestartRenderer()
+{
+   FFont *font;
+
+   font = screen->Font;
+   I_ShutdownHardware();
+   I_InitHardware();
+   V_DoModeSetup(NewWidth, NewHeight, 8);
+   screen->SetFont(font);
+
+   if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && gamestate == GS_LEVEL)
+   {
+	   if ( UsingGLNodes == false )
+		   P_LoadGLNodes( Wads.GetNumForName( level.mapname ));
+
+	   GL_GenerateLevelGeometry();
+   }
+
+   if ( OPENGL_GetCurrentRenderer( ) == RENDERER_SOFTWARE )
+   {
+      C_GetConback(NewWidth, NewHeight);
+   }
+}
 
 void I_ShutdownHardware ()
 {
@@ -70,13 +107,23 @@ void I_InitHardware ()
 
 	val.Bool = !!Args.CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
-	Video = new Win32Video (0);
+	
+	if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+		Video = new OpenGLVideo( );
+	else
+		Video = new Win32Video (0);
+
 	if (Video == NULL)
 		I_FatalError ("Failed to initialize display");
 
-	atterm (I_ShutdownHardware);
+	if (!initialized) // [ZDoomGL]
+   {
+	   atterm (I_ShutdownHardware);
+   }
 
 	Video->SetWindowedScale (vid_winscale);
+
+   initialized = true; // [ZDoomGL]
 }
 
 /** Remaining code is common to Win32 and Linux **/
@@ -190,8 +237,11 @@ DCanvas *I_NewStaticCanvas (int width, int height)
 
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
 
-CUSTOM_CVAR (Bool, fullscreen, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 {
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (Video->FullscreenChanged (self))
 	{
 		NewWidth = screen->GetWidth();
@@ -246,3 +296,37 @@ CCMD (vid_currentmode)
 	Printf ("%dx%dx%d\n", DisplayWidth, DisplayHeight, DisplayBits);
 }
 
+CUSTOM_CVAR( Int, vid_renderer, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL )
+{
+	if ( self != OPENGL_GetCurrentRenderer( ))
+	{
+		switch (self)
+		{
+		case RENDERER_SOFTWARE:
+        
+			Printf( "Switching to software renderer...\n" );
+			break;
+		case RENDERER_OPENGL:
+			
+			Printf( "Switching to OpenGL renderer...\n" );
+			break;
+		default:
+			
+			Printf( "Unknown renderer: %d! Falling back to software renderer...\n", vid_renderer );
+			
+			// Set this back to the software renderer.
+			self = RENDERER_SOFTWARE;
+			break;
+		}
+
+		// This can be different if we were in software mode, and tried to change to an invalid
+		// renderer.
+		if ( self != OPENGL_GetCurrentRenderer( ))
+			changerenderer = true;
+   }
+}
+
+CCMD (vid_restart)
+{
+	changerenderer = true;
+}

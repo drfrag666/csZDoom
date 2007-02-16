@@ -51,6 +51,8 @@
 #include "gi.h"
 #include "templates.h"
 #include "zstring.h"
+#include "deathmatch.h"
+#include "network.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -149,6 +151,8 @@ static FString	 LastSong;			// last music that was played
 static BYTE		*SoundCurve;
 static int		nextcleanup;
 static FPlayList *PlayList;
+static bool		g_bNewSoundCurve;
+static BYTE		*g_aOriginalSoundCurve;
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
@@ -279,17 +283,30 @@ void S_Init ()
 	int i;
 	int curvelump;
 
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	Printf ("S_Init\n");
 	atterm (S_Shutdown);
 
 	// remove old data (S_Init can be called multiple times!)
 	LastLocalSndInfo = LastLocalSndSeq = "";
 	if (SoundCurve) delete [] SoundCurve;
+	if ( g_aOriginalSoundCurve )
+		delete [] ( g_aOriginalSoundCurve );
+
+	g_bNewSoundCurve = false;
+	SoundCurve = NULL;
+	g_aOriginalSoundCurve = NULL;
 
 	// Heretic and Hexen have sound curve lookup tables. Doom does not.
 	curvelump = Wads.CheckNumForName ("SNDCURVE");
 	if (curvelump >= 0)
 	{
+		// We have a new custom sound curve.
+		g_bNewSoundCurve = true;
+
 		MAX_SND_DIST = Wads.LumpLength (curvelump);
 		SoundCurve = new BYTE[MAX_SND_DIST];
 		Wads.ReadLump (curvelump, SoundCurve);
@@ -302,13 +319,13 @@ void S_Init ()
 		}
 	}
 	else
-	{
 		MAX_SND_DIST = S_CLIPPING_DIST;
-		SoundCurve = new BYTE[S_CLIPPING_DIST];
-		for (i = 0; i < S_CLIPPING_DIST; ++i)
-		{
-			SoundCurve[i] = MIN (255, (S_CLIPPING_DIST - i) * 255 / S_ATTENUATOR);
-		}
+
+	// Also, initialize the original sound curve.
+	g_aOriginalSoundCurve = new BYTE[S_CLIPPING_DIST];
+	for (i = 0; i < S_CLIPPING_DIST; ++i)
+	{
+		g_aOriginalSoundCurve[i] = MIN (255, (S_CLIPPING_DIST - i) * 255 / S_ATTENUATOR);
 	}
 
 	// [RH] Read in sound sequences
@@ -364,6 +381,11 @@ void S_Shutdown ()
 	{
 		delete PlayList;
 		PlayList = NULL;
+	}
+	if ( g_aOriginalSoundCurve )
+	{
+		delete[] ( g_aOriginalSoundCurve );
+		g_aOriginalSoundCurve = NULL;
 	}
 }
 
@@ -438,13 +460,24 @@ void S_Start ()
 	MusicPaused = false;
 	SoundPaused = false;
 
-	// [RH] This is a lot simpler now.
-	if (!savegamerestore)
+	// [BC] In client mode, let the server tell us what music to play.
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) || ( level.music == NULL ))
 	{
-		if (level.cdtrack == 0 || !S_ChangeCDMusic (level.cdtrack, level.cdid))
-			S_ChangeMusic (level.music, level.musicorder);
+		// [RH] This is a lot simpler now.
+		if (!savegamerestore)
+		{
+			if (level.cdtrack == 0 || !S_ChangeCDMusic (level.cdtrack, level.cdid))
+			{
+				S_ChangeMusic (level.music, level.musicorder);
+
+				// [BC] If we're the server, save this music selection so we can tell clients
+				// what music to play when they connect.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVER_SetMapMusic( level.music );
+			}
+		}
 	}
-	
+
 	nextcleanup = 15;
 }
 
@@ -591,6 +624,10 @@ static void S_StartSound (fixed_t *pt, AActor *mover, int channel,
 	static int sndcount = 0;
 	int chan;
 
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (sound_id <= 0 || volume <= 0 || GSnd == NULL)
 		return;
 
@@ -645,12 +682,35 @@ static void S_StartSound (fixed_t *pt, AActor *mover, int channel,
 	}
 	else
 	{
-		// calculate the distance before other stuff so we can throw out
-		// sounds that are beyond the hearing range.
-		dist = (int)(FIXED2FLOAT
-				(P_AproxDistance2 (players[consoleplayer].camera, x, y))
-				* attenuation);
-		if (dist >= MAX_SND_DIST)
+		ULONG	ulMaxSoundDistance;
+
+		// doom2.exe clipped sounds > 1200 units away. The following code is based on prBoom code.
+		if ( i_compatflags & COMPATF_ORIGINALSOUNDCURVE )
+		{
+			fixed_t		AbsoluteDistanceX;
+			fixed_t		AbsoluteDistanceY;
+
+			ulMaxSoundDistance = 1200;
+
+			AbsoluteDistanceX = abs( players[consoleplayer].camera->x - x );
+			AbsoluteDistanceY = abs( players[consoleplayer].camera->y - y );
+
+			// From _GG1_ p.428. Appox. eucledian distance fast.
+			dist = AbsoluteDistanceX + AbsoluteDistanceY - ((( AbsoluteDistanceX < AbsoluteDistanceY ) ? AbsoluteDistanceX : AbsoluteDistanceY ) >> 1 );
+			dist >>= FRACBITS;
+		}
+		else
+		{
+			ulMaxSoundDistance = MAX_SND_DIST;
+
+			// calculate the distance before other stuff so we can throw out
+			// sounds that are beyond the hearing range.
+			dist = (int)(FIXED2FLOAT
+					(P_AproxDistance2 (players[consoleplayer].camera, x, y))
+					* attenuation);
+		}
+
+		if ( dist >= ulMaxSoundDistance )
 		{
 			return;	// sound is beyond the hearing range...
 		}
@@ -812,7 +872,11 @@ static void S_StartSound (fixed_t *pt, AActor *mover, int channel,
 		}
 	}
 
-	vol = (int)(SoundCurve[dist]*volume);
+	// See if we should use the original sound curve.
+	if (( g_bNewSoundCurve == false ) || ( i_compatflags & COMPATF_ORIGINALSOUNDCURVE ))
+		vol = (int)(g_aOriginalSoundCurve[dist]*volume);
+	else
+		vol = (int)(SoundCurve[dist]*volume);
 	if (sep == -3)
 	{
 		AActor *listener = players[consoleplayer].camera;
@@ -970,6 +1034,10 @@ void S_StartNamedSound (AActor *ent, fixed_t *pt, int channel,
 {
 	int sfx_id;
 	
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (name == NULL ||
 		(ent != NULL && ent->Sector->MoreFlags & SECF_SILENT))
 	{
@@ -1226,6 +1294,10 @@ bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 
 void S_PauseSound (bool notmusic)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (!notmusic && mus_playing.handle && !MusicPaused)
 	{
 		I_PauseSong (mus_playing.handle);
@@ -1247,6 +1319,10 @@ void S_PauseSound (bool notmusic)
 
 void S_ResumeSound ()
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (mus_playing.handle && MusicPaused)
 	{
 		I_ResumeSong (mus_playing.handle);
@@ -1273,6 +1349,10 @@ void S_UpdateSounds (void *listener_p)
 	int i, dist, vol;
 	angle_t angle;
 	int sep;
+
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
 
 	if (GSnd == NULL)
 		return;
@@ -1305,6 +1385,8 @@ void S_UpdateSounds (void *listener_p)
 		}
 		else
 		{
+			ULONG	ulMaxSoundDistance;
+
 			if (!Channel[i].pt)
 			{
 				x = Channel[i].x;
@@ -1315,9 +1397,32 @@ void S_UpdateSounds (void *listener_p)
 				x = Channel[i].pt[0];
 				y = Channel[i].pt[1];
 			}
-			dist = (int)(FIXED2FLOAT(P_AproxDistance2 (listener, x, y))
-					* Channel[i].attenuation);
-			if (dist >= MAX_SND_DIST)
+
+			// doom2.exe clipped sounds > 1200 units away. The following code is based on prBoom code.
+			if ( i_compatflags & COMPATF_ORIGINALSOUNDCURVE )
+			{
+				fixed_t		AbsoluteDistanceX;
+				fixed_t		AbsoluteDistanceY;
+
+				ulMaxSoundDistance = 1200;
+
+				AbsoluteDistanceX = abs( players[consoleplayer].camera->x - x );
+				AbsoluteDistanceY = abs( players[consoleplayer].camera->y - y );
+
+				// From _GG1_ p.428. Appox. eucledian distance fast.
+				dist = AbsoluteDistanceX + AbsoluteDistanceY - ((( AbsoluteDistanceX < AbsoluteDistanceY ) ? AbsoluteDistanceX : AbsoluteDistanceY ) >> 1 );
+				dist >>= FRACBITS;
+			}
+			else
+			{
+				ulMaxSoundDistance = MAX_SND_DIST;
+
+
+				dist = (int)(FIXED2FLOAT(P_AproxDistance2 (listener, x, y))
+						* Channel[i].attenuation);
+			}
+
+			if (dist >= ulMaxSoundDistance)
 			{
 				S_StopChannel (i);
 				continue;
@@ -1326,7 +1431,13 @@ void S_UpdateSounds (void *listener_p)
 			{
 				dist = 0;
 			}
-			vol = (int)(SoundCurve[dist]*Channel[i].volume);
+
+			// See if we should use the original sound curve.
+			if (( g_bNewSoundCurve == false ) || ( i_compatflags & COMPATF_ORIGINALSOUNDCURVE ))
+				vol = (int)(g_aOriginalSoundCurve[dist]*Channel[i].volume);
+			else
+				vol = (int)(SoundCurve[dist]*Channel[i].volume);
+
 			if (dist > 0)
 			{
 				angle = R_PointToAngle2(listener[0], listener[1], x, y);
@@ -1390,6 +1501,10 @@ void S_ActivatePlayList (bool goBack)
 {
 	int startpos, pos;
 
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	startpos = pos = PlayList->GetPosition ();
 	S_StopMusic (true);
 	while (!S_ChangeMusic (PlayList->GetSong (pos), 0, false, true))
@@ -1415,6 +1530,10 @@ void S_ActivatePlayList (bool goBack)
 bool S_ChangeCDMusic (int track, unsigned int id, bool looping)
 {
 	char temp[32];
+
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return ( false );
 
 	if (id)
 	{
@@ -1454,6 +1573,10 @@ TArray<char> musiccache;
 
 bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return ( false );
+
 	if (!force && PlayList)
 	{ // Don't change if a playlist is active
 		return false;
@@ -1574,6 +1697,10 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 
 void S_RestartMusic ()
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (!LastSong.IsEmpty())
 	{
 		S_ChangeMusic (LastSong, mus_playing.baseorder, mus_playing.loop, true);
@@ -1590,6 +1717,10 @@ void S_RestartMusic ()
 int S_GetMusic (char **name)
 {
 	int order;
+
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return ( 0 );
 
 	if (mus_playing.name)
 	{
@@ -1612,6 +1743,10 @@ int S_GetMusic (char **name)
 
 void S_StopMusic (bool force)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	// [RH] Don't stop if a playlist is active.
 	if ((force || PlayList == NULL) && !mus_playing.name.IsEmpty())
 	{
@@ -1638,6 +1773,10 @@ static void S_StopChannel (int cnum)
 
 //	int 		i;
 	channel_t*	c = &Channel[cnum];
+
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
 
 	if (c->sfxinfo)
 	{
@@ -1769,6 +1908,10 @@ CCMD (cd_play)
 {
 	char musname[16];
 
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (argv.argc() == 1)
 		strcpy (musname, ",CD,");
 	else
@@ -1784,6 +1927,10 @@ CCMD (cd_play)
 
 CCMD (cd_stop)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	CD_Stop ();
 }
 
@@ -1795,6 +1942,10 @@ CCMD (cd_stop)
 
 CCMD (cd_eject)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	CD_Eject ();
 }
 
@@ -1806,6 +1957,10 @@ CCMD (cd_eject)
 
 CCMD (cd_close)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	CD_UnEject ();
 }
 
@@ -1817,6 +1972,10 @@ CCMD (cd_close)
 
 CCMD (cd_pause)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	CD_Pause ();
 }
 
@@ -1828,6 +1987,10 @@ CCMD (cd_pause)
 
 CCMD (cd_resume)
 {
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	CD_Resume ();
 }
 
@@ -1840,6 +2003,10 @@ CCMD (cd_resume)
 CCMD (playlist)
 {
 	int argc = argv.argc();
+
+	// [BC] Server doesn't use music/sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
 
 	if (argc < 2 || argc > 3)
 	{

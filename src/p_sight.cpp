@@ -498,7 +498,7 @@ sightcounts[0]++;
 		 (t2->RenderStyle >= STYLE_Translucent && t2->alpha == 0) ||
 		 (t2->renderflags & RF_INVISIBLE)))
 	{ // small chance of an attack being made anyway
-		if ((bglobal.m_Thinking ? pr_botchecksight() : pr_checksight()) > 50)
+		if (pr_checksight() > 50)
 		{
 			res = false;
 			goto done;
@@ -546,10 +546,10 @@ done:
 ADD_STAT (sight)
 {
 	FString out;
-	out.Format ("%04.1f ms (%04.1f max), %5d %2d%4d%4d%4d%4d\n",
+	out.Format ("%04.1f ms (%04.1f max), %5d %2d%4d%4d%4d%4d%4d\n",
 		(double)SightCycles * 1000 * SecondsPerCycle,
 		(double)MaxSightCycles * 1000 * SecondsPerCycle,
-		sightcounts[3], sightcounts[0], sightcounts[1], sightcounts[2], sightcounts[4], sightcounts[5]);
+		sightcounts[3], sightcounts[0], sightcounts[1], sightcounts[2], sightcounts[3], sightcounts[4], sightcounts[5]);
 	return out;
 }
 

@@ -218,6 +218,8 @@ public:
 #define PROP_PlayerPawn_SoundClass(x)	ADD_STRING_PROP(ADEF_PlayerPawn_SoundClass,"\26",x)
 #define PROP_PlayerPawn_ScoreIcon(x)	ADD_STRING_PROP(ADEF_PlayerPawn_ScoreIcon,"\27",x)
 #define PROP_PlayerPawn_MorphWeapon(x)	ADD_STRING_PROP(ADEF_PlayerPawn_MorphWeapon,"\30",x)
+// [BC] Announcer pickup entry property.
+#define PROP_Inventory_PickupAnnouncerEntry(x)	ADD_STRING_PROP(ADEF_Inventory_PickupAnnouncerEntry,"\31",x)
 
 #define PROP_XScale(x)					ADD_BYTE_PROP(ADEF_XScale,x)
 #define PROP_YScale(x)					ADD_BYTE_PROP(ADEF_YScale,x)
@@ -243,16 +245,25 @@ public:
 #define PROP_Flags3(x)					ADD_LONG_PROP(ADEF_Flags3,x)
 #define PROP_Flags4(x)					ADD_LONG_PROP(ADEF_Flags4,x)
 #define PROP_Flags5(x)					ADD_LONG_PROP(ADEF_Flags5,x)
+// [BC]
+#define PROP_FlagsST(x)					ADD_LONG_PROP(ADEF_FlagsST,x)
+#define PROP_FlagsNetwork(x)			ADD_LONG_PROP(ADEF_FlagsNetwork,x)
 #define PROP_FlagsSet(x)				ADD_LONG_PROP(ADEF_FlagsSet,x)
 #define PROP_Flags2Set(x)				ADD_LONG_PROP(ADEF_Flags2Set,x)
 #define PROP_Flags3Set(x)				ADD_LONG_PROP(ADEF_Flags3Set,x)
 #define PROP_Flags4Set(x)				ADD_LONG_PROP(ADEF_Flags4Set,x)
 #define PROP_Flags5Set(x)				ADD_LONG_PROP(ADEF_Flags5Set,x)
+// [BC]
+#define PROP_FlagsSTSet(x)				ADD_LONG_PROP(ADEF_FlagsSTSet,x)
+#define PROP_FlagsNetworkSet(x)			ADD_LONG_PROP(ADEF_FlagsNetworkSet,x)
 #define PROP_FlagsClear(x)				ADD_LONG_PROP(ADEF_FlagsClear,x)
 #define PROP_Flags2Clear(x)				ADD_LONG_PROP(ADEF_Flags2Clear,x)
 #define PROP_Flags3Clear(x)				ADD_LONG_PROP(ADEF_Flags3Clear,x)
 #define PROP_Flags4Clear(x)				ADD_LONG_PROP(ADEF_Flags4Clear,x)
 #define PROP_Flags5Clear(x)				ADD_LONG_PROP(ADEF_Flags5Clear,x)
+// [BC]
+#define PROP_FlagsSTClear(x)			ADD_LONG_PROP(ADEF_FlagsSTClear,x)
+#define PROP_FlagsNetworkClear(x)		ADD_LONG_PROP(ADEF_FlagsNetworkClear,x)
 #define PROP_Alpha(x)					ADD_LONG_PROP(ADEF_Alpha,x)
 #define PROP_RenderStyle(x)				ADD_BYTE_PROP(ADEF_RenderStyle,x)
 #define PROP_RenderFlags(x)				ADD_WORD_PROP(ADEF_RenderFlags,x)
@@ -320,10 +331,12 @@ public:
 #define PROP_Weapon_AmmoGive2(x)		ADD_BYTE_PROP(ADEF_Weapon_AmmoGive2,x)
 #define PROP_Weapon_AmmoUse1(x)			ADD_BYTE_PROP(ADEF_Weapon_AmmoUse1,x)
 #define PROP_Weapon_AmmoUse2(x)			ADD_BYTE_PROP(ADEF_Weapon_AmmoUse2,x)
+// [BC]
+//#define PROP_Weapon_AmmoUseDM1(x)		ADD_BYTE_PROP(ADEF_Weapon_AmmoUseDM1,x)
+//#define PROP_Weapon_AmmoUseDM2(x)		ADD_BYTE_PROP(ADEF_Weapon_AmmoUseDM2,x)
 #define PROP_Weapon_Kickback(x)			ADD_BYTE_PROP(ADEF_Weapon_Kickback,x)
 #define PROP_Weapon_YAdjust(x)			ADD_FIXD_PROP(ADEF_Weapon_YAdjust,x)
 #define PROP_Weapon_SelectionOrder(x)	ADD_WORD_PROP(ADEF_Weapon_SelectionOrder,x)
-#define PROP_Weapon_MoveCombatDist(x)	ADD_LONG_PROP(ADEF_Weapon_MoveCombatDist,x)
 #define PROP_Weapon_UpState(x)			ADD_BYTE_PROP(ADEF_Weapon_UpState,x)
 #define PROP_Weapon_DownState(x)		ADD_BYTE_PROP(ADEF_Weapon_DownState,x)
 #define PROP_Weapon_ReadyState(x)		ADD_BYTE_PROP(ADEF_Weapon_ReadyState,x)

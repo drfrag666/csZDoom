@@ -51,6 +51,8 @@
 #include "decallib.h"
 #include "i_system.h"
 #include "thingdef.h"
+// [BC] New #includes.
+#include "network.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -90,6 +92,13 @@ public:
 
 	bool TryPickup (AActor *toucher)
 	{
+		// [BC] The server told us we picked up the item; thus make it so!
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		{
+			GoAwayAndDie( );
+			return ( true );
+		}
+
 		INTBOOL success = LineSpecials[special] (NULL, toucher, false,
 			args[0], args[1], args[2], args[3], args[4]);
 
@@ -254,17 +263,26 @@ static const char *FlagNames3[] =
 
 void LoadDecorations (void (*process)(FState *, int))
 {
+	// [BC] Calling FinishThingdef() doesn't work if no decorations are found. So,
+	// don't call it if we don't find any.
+	bool	bFoundDecorations;
 	int lastlump, lump;
 
 	InitDecorateTranslations();
 	lastlump = 0;
+	bFoundDecorations = false;
 	while ((lump = Wads.FindLump ("DECORATE", &lastlump)) != -1)
 	{
 		SC_OpenLumpNum (lump, "DECORATE");
 		ParseDecorate (process);
 		SC_Close ();
+
+		bFoundDecorations = true;
 	}
-	FinishThingdef();
+
+	if ( bFoundDecorations )
+		FinishThingdef();
+	// [BC] End of changes.
 }
 
 //==========================================================================
@@ -810,6 +828,12 @@ static void ParseInsideDecoration (FActorInfo *info, AActor *defaults,
 		{
 			SC_MustGetString ();
 			info->Class->Meta.SetMetaString(AIMETA_PickupMessage, sc_String);
+		}
+		// [BC]
+		else if (def == DEF_Pickup && SC_Compare ("PickupAnnouncerEntry"))
+		{
+			SC_MustGetString ();
+			sprintf( inv->szPickupAnnouncerEntry, "%s", sc_String );
 		}
 		else if (def == DEF_Pickup && SC_Compare ("Respawns"))
 		{

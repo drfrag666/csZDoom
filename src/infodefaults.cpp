@@ -180,6 +180,13 @@ static void ApplyActorDefault (int defnum, const char *datastr, int dataint)
 		sgClass->Meta.SetMetaString (AIMETA_PickupMessage, datastr);
 		break;
 
+	// [BC] New property for the announcer entry to be played when the inventory item is
+	// picked up.
+	case ADEF_Inventory_PickupAnnouncerEntry:
+
+		sprintf( item->szPickupAnnouncerEntry, "%s", datastr );
+		break;
+
 	case ADEF_PowerupGiver_Powerup:
 		giver->PowerupType = datatype;
 		break;
@@ -209,16 +216,25 @@ static void ApplyActorDefault (int defnum, const char *datastr, int dataint)
 	case ADEF_Flags3:			actor->flags3 = dataint;			break;
 	case ADEF_Flags4:			actor->flags4 = dataint;			break;
 	case ADEF_Flags5:			actor->flags5 = dataint;			break;
+	// [BC]
+	case ADEF_FlagsST:			actor->ulSTFlags = dataint;			break;
+	case ADEF_FlagsNetwork:		actor->ulNetworkFlags = dataint;	break;
 	case ADEF_FlagsSet:			actor->flags |= dataint;			break;
 	case ADEF_Flags2Set:		actor->flags2 |= dataint;			break;
 	case ADEF_Flags3Set:		actor->flags3 |= dataint;			break;
 	case ADEF_Flags4Set:		actor->flags4 |= dataint;			break;
 	case ADEF_Flags5Set:		actor->flags5 |= dataint;			break;
+	// [BC]
+	case ADEF_FlagsSTSet:		actor->ulSTFlags |= dataint;		break;
+	case ADEF_FlagsNetworkSet:	actor->ulNetworkFlags |= dataint;	break;
 	case ADEF_FlagsClear:		actor->flags &= ~dataint;			break;
 	case ADEF_Flags2Clear:		actor->flags2 &= ~dataint;			break;
 	case ADEF_Flags3Clear:		actor->flags3 &= ~dataint;			break;
 	case ADEF_Flags4Clear:		actor->flags4 &= ~dataint;			break;
 	case ADEF_Flags5Clear:		actor->flags5 &= ~dataint;			break;
+	// [BC]
+	case ADEF_FlagsSTClear:		actor->ulSTFlags &= ~dataint;			break;
+	case ADEF_FlagsNetworkClear:	actor->ulNetworkFlags &= ~dataint;	break;
 	case ADEF_Alpha:			actor->alpha = dataint;				break;
 	case ADEF_RenderStyle:		actor->RenderStyle = dataint;		break;
 	case ADEF_RenderFlags:		actor->renderflags = dataint;		break;
@@ -272,7 +288,8 @@ static void ApplyActorDefault (int defnum, const char *datastr, int dataint)
 		break;
 	case ADEF_Inventory_PickupSound:item->PickupSound = datasound; break;
 
-	case ADEF_BasicArmorPickup_SavePercent:		armorp->SavePercent = dataint; break;
+	// [BC] Fixed this. This is how thingdef.cpp does SavePercent (and shouldn't it work the same?)
+	case ADEF_BasicArmorPickup_SavePercent:		armorp->SavePercent = (fixed_t)( dataint * FRACUNIT / 100.f ); break;
 	case ADEF_BasicArmorPickup_SaveAmount:		armorp->SaveAmount = dataint; break;
 	case ADEF_BasicArmorBonus_SavePercent:		armorb->SavePercent = dataint; break;
 	case ADEF_BasicArmorBonus_SaveAmount:		armorb->SaveAmount = dataint; break;
@@ -300,12 +317,17 @@ static void ApplyActorDefault (int defnum, const char *datastr, int dataint)
 	case ADEF_Weapon_AmmoType2:		weapon->AmmoType2 = fuglyname(datastr); break;
 	case ADEF_Weapon_AmmoGive1:		weapon->AmmoGive1 = dataint; break;
 	case ADEF_Weapon_AmmoGive2:		weapon->AmmoGive2 = dataint; break;
-	case ADEF_Weapon_AmmoUse1:		weapon->AmmoUse1 = dataint; break;
-	case ADEF_Weapon_AmmoUse2:		weapon->AmmoUse2 = dataint; break;
+	// [BC] Also, initialize how much ammo the weapon uses in DM. Unless explicitly
+	// specified, the weapon will use the same amount of ammo in single player as it will
+	// in deathmatch.
+	case ADEF_Weapon_AmmoUse1:		weapon->AmmoUse1 = /*weapon->AmmoUseDM1 = */dataint; break;
+	case ADEF_Weapon_AmmoUse2:		weapon->AmmoUse2 = /*weapon->AmmoUseDM2 = */dataint; break;
+	// [BC] Allow different ammo amounts for DM/teamgames.
+//	case ADEF_Weapon_AmmoUseDM1:	weapon->AmmoUseDM1 = dataint; break;
+//	case ADEF_Weapon_AmmoUseDM2:	weapon->AmmoUseDM2 = dataint; break;
 	case ADEF_Weapon_Kickback:		weapon->Kickback = dataint; break;
 	case ADEF_Weapon_YAdjust:		weapon->YAdjust = (dataint<<8)>>8; break;
 	case ADEF_Weapon_SelectionOrder:weapon->SelectionOrder = dataint; break;
-	case ADEF_Weapon_MoveCombatDist:weapon->MoveCombatDist = dataint; break;
 	case ADEF_Weapon_UpState:		weapon->UpState = datastate; break;
 	case ADEF_Weapon_DownState:		weapon->DownState = datastate; break;
 	case ADEF_Weapon_ReadyState:	weapon->ReadyState = datastate; break;

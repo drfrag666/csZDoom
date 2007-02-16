@@ -7,6 +7,9 @@
 #include "p_enemy.h"
 #include "gstrings.h"
 #include "a_action.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 static FRandom pr_spidrefire ("SpidRefire");
 
@@ -74,6 +77,7 @@ IMPLEMENT_ACTOR (ASpiderMastermind, Doom, 7, 7)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_BOSS|MF2_FLOORCLIP)
 	PROP_Flags3 (MF3_NORADIUSDMG|MF3_DONTMORPH)
 	PROP_Flags4 (MF4_BOSSDEATH|MF4_MISSILEMORE)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_SPID_STND)
 	PROP_SeeState (S_SPID_RUN)
@@ -94,6 +98,10 @@ void A_SpidRefire (AActor *self)
 	// keep firing unless target got out of sight
 	A_FaceTarget (self);
 
+	// [BC] Client spider masterminds continue to fire until told by the server to stop.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (pr_spidrefire() < 10)
 		return;
 
@@ -103,6 +111,10 @@ void A_SpidRefire (AActor *self)
 		|| !P_CheckSight (self, self->target, 0) )
 	{
 		self->SetState (self->SeeState);
+
+		// [BC] If we're the server, tell clients to update this thing's state.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingState( self, STATE_SEE );
 	}
 }
 

@@ -32,11 +32,13 @@
 */
 
 #include "vectors.h"
+#include "c_cvars.h"	// [BC] #include this so that we can't extern cl_respawninvuleffect.
 
-#define FX_ROCKET			0x00000001
-#define FX_GRENADE			0x00000002
-#define FX_RESPAWNINVUL		0x00000020
-#define FX_VISIBILITYPULSE	0x00000040
+#define FX_ROCKET				0x00000001
+#define FX_GRENADE				0x00000002
+#define FX_RESPAWNINVUL			0x00000020
+#define FX_VISIBILITYPULSE		0x00000040
+#define	FX_VISIBILITYFLICKER	0x00000080
 
 #define FX_FOUNTAINMASK		0x00070000
 #define FX_FOUNTAINSHIFT	16
@@ -62,3 +64,6 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 void P_DrawSplash (int count, fixed_t x, fixed_t y, fixed_t z, angle_t angle, int kind);
 void P_DrawSplash2 (int count, fixed_t x, fixed_t y, fixed_t z, angle_t angle, int updown, int kind);
 void P_DisconnectEffect (AActor *actor);
+
+// [BC] Extern this here so we don't have to do it everywhere else.
+EXTERN_CVAR (Int, cl_respawninvuleffect)

@@ -13,6 +13,8 @@
 #include "gstrings.h"
 #include "p_enemy.h"
 #include "gi.h"
+#include "deathmatch.h"
+#include "network.h"
 
 static FRandom pr_sap ("StaffAtkPL1");
 static FRandom pr_sap2 ("StaffAtkPL2");
@@ -113,7 +115,7 @@ FState AStaff::States[] =
 IMPLEMENT_ACTOR (AStaff, Heretic, -1, 0)
 	PROP_Weapon_SelectionOrder (3800)
 	PROP_Flags2Set(MF2_THRUGHOST)
-	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_WIMPY_WEAPON)
 	PROP_Weapon_UpState (S_STAFFUP)
 	PROP_Weapon_DownState (S_STAFFDOWN)
 	PROP_Weapon_ReadyState (S_STAFFREADY)
@@ -123,7 +125,7 @@ IMPLEMENT_ACTOR (AStaff, Heretic, -1, 0)
 END_DEFAULTS
 
 IMPLEMENT_STATELESS_ACTOR (AStaffPowered, Heretic, -1, 0)
-	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_READYSNDHALF|WIF_POWERED_UP|WIF_BOT_MELEE|WIF_STAFF2_KICKBACK)
+	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_READYSNDHALF|WIF_POWERED_UP|WIF_STAFF2_KICKBACK)
 	PROP_Weapon_UpState (S_STAFFUP2)
 	PROP_Weapon_DownState (S_STAFFDOWN2)
 	PROP_Weapon_ReadyState (S_STAFFREADY2)
@@ -214,6 +216,11 @@ void A_StaffAttackPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	damage = 5+(pr_sap()&15);
 	angle = player->mo->angle;
 	angle += pr_sap.Random2() << 18;
@@ -252,6 +259,11 @@ void A_StaffAttackPL2 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	// P_inter.c:P_DamageMobj() handles target momentums
 	damage = 18+(pr_sap2()&63);
 	angle = player->mo->angle;
@@ -319,7 +331,6 @@ IMPLEMENT_ACTOR (AGoldWand, Heretic, -1, 0)
 	PROP_Weapon_AtkState (S_GOLDWANDATK1)
 	PROP_Weapon_HoldAtkState (S_GOLDWANDATK1)
 	PROP_Weapon_YAdjust (5)
-	PROP_Weapon_MoveCombatDist (25000000)
 	PROP_Weapon_AmmoType1 ("GoldWandAmmo")
 	PROP_Weapon_SisterType ("GoldWandPowered")
 END_DEFAULTS
@@ -450,6 +461,14 @@ void A_FireGoldWandPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		S_Sound (player->mo, CHAN_WEAPON, "weapons/wandhit", 1, ATTN_NORM);
+		return;
+	}
+
 	P_BulletSlope(mo);
 	damage = 7+(pr_fgw()&7);
 	angle = mo->angle;
@@ -488,6 +507,14 @@ void A_FireGoldWandPL2 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		S_Sound (player->mo, CHAN_WEAPON, "weapons/wandhit", 1, ATTN_NORM);
+		return;
+	}
+
 	P_BulletSlope (mo);
 	momz = FixedMul (GetDefault<AGoldWandFX2>()->Speed,
 		finetangent[FINEANGLES/4-((signed)bulletpitch>>ANGLETOFINESHIFT)]);
@@ -586,7 +613,6 @@ IMPLEMENT_ACTOR (ACrossbow, Heretic, 2001, 27)
 	PROP_Weapon_AtkState (S_CRBOWATK1)
 	PROP_Weapon_HoldAtkState (S_CRBOWATK1)
 	PROP_Weapon_YAdjust (15)
-	PROP_Weapon_MoveCombatDist (24000000)
 	PROP_Weapon_AmmoType1 ("CrossbowAmmo")
 	PROP_Weapon_SisterType ("CrossbowPowered")
 	PROP_Weapon_ProjectileType ("CrossbowFX1")
@@ -732,6 +758,11 @@ void A_FireCrossbowPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX1));
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX3), pmo->angle-(ANG45/10));
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX3), pmo->angle+(ANG45/10));
@@ -760,6 +791,11 @@ void A_FireCrossbowPL2(AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX2));
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX2), pmo->angle-(ANG45/10));
 	P_SpawnPlayerMissile (pmo, RUNTIME_CLASS(ACrossbowFX2), pmo->angle+(ANG45/10));
@@ -867,7 +903,6 @@ BEGIN_DEFAULTS (AMace, Heretic, -1, 0)
 	PROP_SpawnState (0)
 
 	PROP_Weapon_SelectionOrder (1400)
-	PROP_Weapon_Flags (WIF_BOT_REACTION_SKILL_THING|WIF_BOT_EXPLOSIVE)
 	PROP_Weapon_AmmoUse1 (USE_MACE_AMMO_1)
 	PROP_Weapon_AmmoGive1 (50)
 	PROP_Weapon_UpState (S_MACEUP)
@@ -876,7 +911,6 @@ BEGIN_DEFAULTS (AMace, Heretic, -1, 0)
 	PROP_Weapon_AtkState (S_MACEATK1)
 	PROP_Weapon_HoldAtkState (S_MACEATK1+1)
 	PROP_Weapon_YAdjust (15)
-	PROP_Weapon_MoveCombatDist (27000000)
 	PROP_Weapon_AmmoType1 ("MaceAmmo")
 	PROP_Weapon_SisterType ("MacePowered")
 	PROP_Weapon_ProjectileType ("MaceFX2")
@@ -884,7 +918,7 @@ BEGIN_DEFAULTS (AMace, Heretic, -1, 0)
 END_DEFAULTS
 
 IMPLEMENT_STATELESS_ACTOR (AMacePowered, Heretic, -1, 0)
-	PROP_Weapon_Flags (WIF_POWERED_UP|WIF_BOT_REACTION_SKILL_THING|WIF_BOT_EXPLOSIVE)
+	PROP_Weapon_Flags (WIF_POWERED_UP)
 	PROP_Weapon_AmmoUse1 (USE_MACE_AMMO_2)
 	PROP_Weapon_AmmoGive1 (0)
 	PROP_Weapon_AtkState (S_MACEATK2)
@@ -1148,6 +1182,11 @@ void A_FireMacePL1B (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	pmo = player->mo;
 	ball = Spawn<AMaceFX2> (pmo->x, pmo->y, pmo->z + 28*FRACUNIT 
 		- pmo->floorclip, ALLOW_REPLACE);
@@ -1193,6 +1232,11 @@ void A_FireMacePL1 (AActor *actor)
 	}
 	player->psprites[ps_weapon].sx = ((pr_maceatk()&3)-2)*FRACUNIT;
 	player->psprites[ps_weapon].sy = WEAPONTOP+(pr_maceatk()&3)*FRACUNIT;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	ball = P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(AMaceFX1),
 		player->mo->angle+(((pr_maceatk()&7)-4)<<24));
 	if (ball)
@@ -1350,6 +1394,11 @@ void A_FireMacePL2 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	mo = P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(AMaceFX4));
 	if (mo)
 	{
@@ -1522,7 +1571,7 @@ IMPLEMENT_ACTOR (AGauntlets, Heretic, 2005, 32)
 	PROP_SpawnState (S_WGNT)
 
 	PROP_Weapon_SelectionOrder (2300)
-	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_WIMPY_WEAPON)
 	PROP_Weapon_UpState (S_GAUNTLETUP)
 	PROP_Weapon_DownState (S_GAUNTLETDOWN)
 	PROP_Weapon_ReadyState (S_GAUNTLETREADY)
@@ -1536,7 +1585,7 @@ IMPLEMENT_ACTOR (AGauntlets, Heretic, 2005, 32)
 END_DEFAULTS
 
 IMPLEMENT_STATELESS_ACTOR (AGauntletsPowered, Heretic, -1, 0)
-	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_POWERED_UP|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_WIMPY_WEAPON|WIF_POWERED_UP)
 	PROP_Weapon_AtkState (S_GAUNTLETATK2)
 	PROP_Weapon_HoldAtkState (S_GAUNTLETATK2+2)
 	PROP_Weapon_SisterType ("Gauntlets")
@@ -1634,6 +1683,11 @@ void A_GauntletAttack (AActor *actor)
 	}
 	player->psprites[ps_weapon].sx = ((pr_gatk()&3)-2) * FRACUNIT;
 	player->psprites[ps_weapon].sy = WEAPONTOP + (pr_gatk()&3) * FRACUNIT;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	angle = player->mo->angle;
 	power = player->mo->FindInventory (RUNTIME_CLASS(APowerWeaponLevel2));
 	if (power)
@@ -1766,7 +1820,6 @@ IMPLEMENT_ACTOR (ABlaster, Heretic, 53, 28)
 	PROP_Weapon_AtkState (S_BLASTERATK1)
 	PROP_Weapon_HoldAtkState (S_BLASTERATK1+2)
 	PROP_Weapon_YAdjust (15)
-	PROP_Weapon_MoveCombatDist (27000000)
 	PROP_Weapon_AmmoType1 ("BlasterAmmo")
 	PROP_Weapon_SisterType ("BlasterPowered")
 	PROP_Inventory_PickupMessage("$TXT_WPNBLASTER")
@@ -1969,6 +2022,11 @@ void A_FireBlasterPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_BulletSlope(actor);
 	damage = pr_fb1.HitDice (4);
 	angle = actor->angle;
@@ -2002,6 +2060,11 @@ void A_FireBlasterPL2 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	mo = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(ABlasterFX1));
 	S_Sound (mo, CHAN_WEAPON, "weapons/blastershoot", 1, ATTN_NORM);
 }
@@ -2168,7 +2231,6 @@ IMPLEMENT_ACTOR (ASkullRod, Heretic, 2004, 30)
 	PROP_Weapon_AtkState (S_HORNRODATK1)
 	PROP_Weapon_HoldAtkState (S_HORNRODATK1)
 	PROP_Weapon_YAdjust (15)
-	PROP_Weapon_MoveCombatDist (27000000)
 	PROP_Weapon_AmmoType1 ("SkullRodAmmo")
 	PROP_Weapon_SisterType ("SkullRodPowered")
 	PROP_Weapon_ProjectileType ("HornRodFX1")
@@ -2370,6 +2432,11 @@ void A_FireSkullRodPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	mo = P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(AHornRodFX1));
 	// Randomize the first frame
 	if (mo && pr_fsr1() > 128)
@@ -2401,6 +2468,11 @@ void A_FireSkullRodPL2 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(AHornRodFX2));
 	// Use MissileActor instead of the return value from
 	// P_SpawnPlayerMissile because we need to give info to the mobj
@@ -2527,7 +2599,7 @@ void A_SkullRodStorm (AActor *actor)
 	x = actor->x + ((pr_storm()&127) - 64) * FRACUNIT;
 	y = actor->y + ((pr_storm()&127) - 64) * FRACUNIT;
 	mo = Spawn<ARainPillar> (x, y, ONCEILINGZ, ALLOW_REPLACE);
-	mo->Translation = multiplayer ?
+	mo->Translation = ( NETWORK_GetState( ) != NETSTATE_SINGLE ) ?
 		TRANSLATION(TRANSLATION_PlayersExtra,actor->special2) : 0;
 	mo->target = actor->target;
 	mo->momx = 1; // Force collision detection
@@ -2632,7 +2704,7 @@ IMPLEMENT_ACTOR (APhoenixRod, Heretic, 2003, 29)
 	PROP_Flags (MF_SPECIAL)
 	PROP_SpawnState (S_WPHX)
 
-	PROP_Weapon_Flags (WIF_NOAUTOFIRE|WIF_BOT_REACTION_SKILL_THING)
+	PROP_Weapon_Flags (WIF_NOAUTOFIRE)
 	PROP_Weapon_SelectionOrder (2600)
 	PROP_Weapon_AmmoUse1 (USE_PHRD_AMMO_1)
 	PROP_Weapon_AmmoGive1 (2)
@@ -2642,7 +2714,6 @@ IMPLEMENT_ACTOR (APhoenixRod, Heretic, 2003, 29)
 	PROP_Weapon_AtkState (S_PHOENIXATK1)
 	PROP_Weapon_HoldAtkState (S_PHOENIXATK1)
 	PROP_Weapon_YAdjust (15)
-	PROP_Weapon_MoveCombatDist (18350080)
 	PROP_Weapon_AmmoType1 ("PhoenixRodAmmo")
 	PROP_Weapon_SisterType ("PhoenixRodPowered")
 	PROP_Weapon_ProjectileType ("PhoenixFX1")
@@ -2650,12 +2721,11 @@ IMPLEMENT_ACTOR (APhoenixRod, Heretic, 2003, 29)
 END_DEFAULTS
 
 IMPLEMENT_STATELESS_ACTOR (APhoenixRodPowered, Heretic, -1, 0)
-	PROP_Weapon_Flags (WIF_NOAUTOFIRE|WIF_POWERED_UP|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_NOAUTOFIRE|WIF_POWERED_UP)
 	PROP_Weapon_AmmoUse1 (USE_PHRD_AMMO_2)
 	PROP_Weapon_AmmoGive1 (0)
 	PROP_Weapon_AtkState (S_PHOENIXATK2)
 	PROP_Weapon_HoldAtkState (S_PHOENIXATK2+1)
-	PROP_Weapon_MoveCombatDist (0)
 	PROP_Weapon_SisterType ("PhoenixRod")
 	PROP_Weapon_ProjectileType ("PhoenixFX2")
 END_DEFAULTS
@@ -2810,6 +2880,11 @@ void A_FirePhoenixPL1 (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(APhoenixFX1));
 	angle = actor->angle + ANG180;
 	angle >>= ANGLETOFINESHIFT;

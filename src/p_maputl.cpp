@@ -256,6 +256,38 @@ void P_LineOpening (const line_t *linedef, fixed_t x, fixed_t y, fixed_t refx, f
 	openrange = opentop - openbottom;
 }
 
+// [BC] ugh old code for people who just have to have doom2.exe style movement.
+void P_OldLineOpening(const line_t *linedef, fixed_t x, fixed_t y)
+{
+	sector_t *front, *back;
+
+	if (linedef->sidenum[1] == -1)      // single sided line
+	{
+		openrange = 0;
+		return;
+	}
+
+	front = linedef->frontsector;
+	back = linedef->backsector;
+  
+	if (front->ceilingplane.ZatPoint( x, y ) < back->ceilingplane.ZatPoint( x, y ))
+		opentop = front->ceilingplane.ZatPoint( x, y );
+	else
+		opentop = back->ceilingplane.ZatPoint( x, y );
+
+	if (front->floorplane.ZatPoint( x, y ) < back->floorplane.ZatPoint( x, y ))
+	{
+		openbottom = front->floorplane.ZatPoint( x, y );
+		lowfloor = back->floorplane.ZatPoint( x, y );
+	}
+	else
+	{
+		openbottom = back->floorplane.ZatPoint( x, y );
+		lowfloor = front->floorplane.ZatPoint( x, y );
+	}
+	openrange = opentop - openbottom;
+}
+
 
 //
 // THING POSITION SETTING

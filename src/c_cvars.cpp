@@ -51,6 +51,14 @@
 #include "i_system.h"
 #include "v_palette.h"
 #include "v_video.h"
+#include "v_text.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "team.h"
+#include "lastmanstanding.h"
+#include "campaign.h"
+#include "sv_commands.h"
+#include "network.h"
 
 struct FLatchedValue
 {
@@ -67,6 +75,8 @@ bool FBaseCVar::m_UseCallback = false;
 FBaseCVar *CVars = NULL;
 
 int cvar_defflags;
+
+EXTERN_CVAR( Bool, sv_cheats );
 
 FBaseCVar::FBaseCVar (const FBaseCVar &var)
 {
@@ -148,6 +158,11 @@ void FBaseCVar::SetGenericRep (UCVarValue value, ECVarType type)
 	{
 		return;
 	}
+	else if (( Flags & CVAR_CAMPAIGNLOCK ) && ( CAMPAIGN_InCampaign( )) && ( sv_cheats == false ))
+	{
+		Printf( "%s cannot be changed during a campaign.\n", GetName( ));
+		return;
+	}
 	else if ((Flags & CVAR_LATCH) && gamestate != GS_FULLCONSOLE && gamestate != GS_STARTUP)
 	{
 		FLatchedValue latch;
@@ -162,12 +177,11 @@ void FBaseCVar::SetGenericRep (UCVarValue value, ECVarType type)
 	}
 	else if ((Flags & CVAR_SERVERINFO) && gamestate != GS_STARTUP && !demoplayback)
 	{
-		if (netgame && consoleplayer != Net_Arbitrator)
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 		{
-			Printf ("Only player %d can change %s\n", Net_Arbitrator+1, Name);
-			return;
+			ForceSet (value, type);
+//			D_SendServerInfoChange (this, value, type);
 		}
-		D_SendServerInfoChange (this, value, type);
 	}
 	else
 	{
@@ -890,6 +904,7 @@ UCVarValue FColorCVar::FromInt2 (int value, ECVarType type)
 	if (type == CVAR_String)
 	{
 		UCVarValue ret;
+
 		sprintf (cstrbuf, "%02x %02x %02x",
 			RPART(value), GPART(value), BPART(value));
 		ret.String = cstrbuf;
@@ -1112,30 +1127,14 @@ void FFlagCVar::SetGenericRepDefault (UCVarValue value, ECVarType type)
 void FFlagCVar::DoSet (UCVarValue value, ECVarType type)
 {
 	bool newval = ToBool (value, type);
-
-	// Server cvars that get changed by this need to use a special message, because
-	// changes are not processed until the next net update. This is a problem with
-	// exec scripts because all flags will base their changes off of the value of
-	// the "master" cvar at the time the script was run, overriding any changes
-	// another flag might have made to the same cvar earlier in the script.
-	if ((ValueVar.Flags & CVAR_SERVERINFO) && gamestate != GS_STARTUP && !demoplayback)
-	{
-		if (netgame && consoleplayer != Net_Arbitrator)
-		{
-			Printf ("Only player %d can change %s\n", Net_Arbitrator+1, Name);
-			return;
-		}
-		D_SendServerFlagChange (&ValueVar, BitNum, newval);
-	}
+	ECVarType dummy;
+	UCVarValue val;
+	val = ValueVar.GetFavoriteRep (&dummy);
+	if (newval)
+		val.Int |= BitVal;
 	else
-	{
-		int val = *ValueVar;
-		if (newval)
-			val |= BitVal;
-		else
-			val &= ~BitVal;
-		ValueVar = val;
-	}
+		val.Int &= ~BitVal;
+	ValueVar = val.Int;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1414,12 +1413,22 @@ void C_ArchiveCVars (FConfigFile *f, int type)
 		{
 			UCVarValue val;
 			val = cvar->GetGenericRep (CVAR_String);
-			f->SetValueForKey (cvar->GetName (), val.String);
+			if ( type == 4 )
+			{
+				char	szString[64];
+
+				sprintf( szString, val.String );
+				V_UnColorizeString( szString, 64 );
+				f->SetValueForKey( cvar->GetName( ), szString );
+			}
+			else
+				f->SetValueForKey (cvar->GetName (), val.String);
 		}
 		cvar = cvar->m_Next;
 	}
 }
 
+void SERVERCONSOLE_UpdateScoreboard( void );
 void FBaseCVar::CmdSet (const char *newval)
 {
 	UCVarValue val;

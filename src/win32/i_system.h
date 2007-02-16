@@ -139,6 +139,10 @@ int I_GetTimeFake (void);
 
 fixed_t I_GetTimeFrac (uint32 *ms);
 
+float	I_GetTimeFloat( void );
+int		I_GetMSElapsed( void );
+void	I_Sleep( int iMS );
+
 
 //
 // Called by D_DoomLoop,
@@ -227,6 +231,8 @@ struct findstate_t
 void *I_FindFirst (const char *filespec, findstate_t *fileinfo);
 int I_FindNext (void *handle, findstate_t *fileinfo);
 int I_FindClose (void *handle);
+
+char *I_ConsoleInput (void);
 
 #define I_FindName(a)	((a)->Name)
 #define I_FindAttr(a)	((a)->Attribs)

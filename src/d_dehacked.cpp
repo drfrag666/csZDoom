@@ -63,6 +63,9 @@
 #include "r_draw.h"
 #include "v_palette.h"
 #include "a_sharedglobal.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 // [SO] Just the way Randy said to do it :)
 // [RH] Made this CVAR_SERVERINFO
@@ -1007,7 +1010,7 @@ static int PatchThing (int thingy)
 						info->renderflags &= ~RF_INVISIBLE;
 				}
 				DPrintf ("Bits: %d,%d (0x%08x,0x%08x)\n", info->flags, info->flags2,
-													      info->flags, info->flags2);
+															    info->flags, info->flags2);
 			}
 			else if (stricmp (Line1, "ID #") == 0)
 			{
@@ -1418,6 +1421,9 @@ static int PatchWeapon (int weapNum)
 					if (info->AmmoUse1 == 0)
 					{
 						info->AmmoUse1 = 1;
+
+						// [BC] Also apply this to the amount of ammo used in DM.
+//						info->AmmoUseDM1 = 1;
 					}
 				}
 			}
@@ -1442,6 +1448,9 @@ static int PatchWeapon (int weapNum)
 		else if (stricmp (Line1, "Ammo use") == 0 || stricmp (Line1, "Ammo per shot") == 0)
 		{
 			info->AmmoUse1 = val;
+
+			// [BC] Also apply this to the amount of ammo used in DM.
+//			info->AmmoUseDM1 = val;
 		}
 		else if (stricmp (Line1, "Min ammo") == 0)
 		{
@@ -1456,6 +1465,9 @@ static int PatchWeapon (int weapNum)
 	if (info->AmmoType1 == NULL)
 	{
 		info->AmmoUse1 = 0;
+
+		// [BC] Also apply this to the amount of ammo used in DM.
+//		info->AmmoUseDM1 = 0;
 	}
 
 	return result;
@@ -1537,6 +1549,9 @@ static int PatchMisc (int dummy)
 			if (stricmp (Line1, "BFG Cells/Shot") == 0)
 			{
 				((AWeapon*)GetDefaultByName ("BFG9000"))->AmmoUse1 = atoi (Line2);
+
+				// [BC] Also apply this to the amount of ammo used in DM.
+//				((AWeapon*)GetDefaultByName ("BFG9000"))->AmmoUseDM1 = atoi (Line2);
 			}
 			else if (stricmp (Line1, "Rocket Explosion Style") == 0)
 			{
@@ -2589,6 +2604,10 @@ void HandleNoSector()
 
 void A_SpawnDehackedPickup (AActor *actor)
 {
+	// [BC] This is not done client-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if ((size_t)actor->health < DehackedPickups.Size())
 	{
 		AActor *real = Spawn (DehackedPickups[actor->health], actor->x, actor->y, actor->z, NO_REPLACE);
@@ -2630,6 +2649,17 @@ bool ADehackedPickup::TryPickup (AActor *toucher)
 			RealPickup = NULL;
 			return false;
 		}
+
+		// [BC] Tell the client that he successfully picked up the item.
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
+			( toucher->player ))
+		{
+			SERVERCOMMANDS_GiveInventory( ULONG( toucher->player - players ), RealPickup );
+
+			if (( ItemFlags & IF_QUIET ) == false )
+				SERVERCOMMANDS_DoInventoryPickup( ULONG( toucher->player - players ), (char *)RealPickup->GetClass( )->TypeName.GetChars( ), (char *)RealPickup->PickupMessage( ));
+		}
+
 		GoAwayAndDie ();
 		return true;
 	}

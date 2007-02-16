@@ -49,6 +49,7 @@
 #include "r_state.h"
 #include "r_bsp.h"
 #include "v_palette.h"
+#include "gl_main.h"
 
 int WallMost (short *mostbuf, const secplane_t &plane);
 
@@ -337,6 +338,11 @@ sector_t *R_FakeFlat(sector_t *sec, sector_t *tempsec,
 					 int *floorlightlevel, int *ceilinglightlevel,
 					 bool back)
 {
+   // [ZDoomGL] - convenience, so you don't have to check for NULL before calling function
+   if (!sec)
+   {
+      return NULL;
+   }
 	// [RH] allow per-plane lighting
 	if (floorlightlevel != NULL)
 	{
@@ -420,26 +426,33 @@ sector_t *R_FakeFlat(sector_t *sec, sector_t *tempsec,
 		fixed_t orgceilz = sec->ceilingplane.ZatPoint (viewx, viewy);
 
 #if 1
-		// [RH] Allow viewing underwater areas through doors/windows that
-		// are underwater but not in a water sector themselves.
-		// Only works if you cannot see the top surface of any deep water
-		// sectors at the same time.
-		if (back && !r_fakingunderwater && curline->frontsector->heightsec == NULL)
+		if ( OPENGL_GetCurrentRenderer( ) == RENDERER_SOFTWARE )
 		{
-			if (rw_frontcz1 <= s->floorplane.ZatPoint (curline->v1->x, curline->v1->y) &&
-				rw_frontcz2 <= s->floorplane.ZatPoint (curline->v2->x, curline->v2->y))
+			// [RH] Allow viewing underwater areas through doors/windows that
+			// are underwater but not in a water sector themselves.
+			// Only works if you cannot see the top surface of any deep water
+			// sectors at the same time.
+			if (back && !r_fakingunderwater && curline->frontsector->heightsec == NULL)
 			{
-				// Check that the window is actually visible
-				for (int z = WallSX1; z < WallSX2; ++z)
+				if (rw_frontcz1 <= s->floorplane.ZatPoint (curline->v1->x, curline->v1->y) &&
+					rw_frontcz2 <= s->floorplane.ZatPoint (curline->v2->x, curline->v2->y))
 				{
-					if (floorclip[z] > ceilingclip[z])
+					// Check that the window is actually visible
+					for (int z = WallSX1; z < WallSX2; ++z)
 					{
-						doorunderwater = true;
-						r_fakingunderwater = true;
-						break;
+						if (floorclip[z] > ceilingclip[z])
+						{
+							doorunderwater = true;
+							r_fakingunderwater = true;
+							break;
+						}
 					}
 				}
 			}
+		}
+		else
+		{
+			// have to do this a different way for the hardware engine...
 		}
 #endif
 

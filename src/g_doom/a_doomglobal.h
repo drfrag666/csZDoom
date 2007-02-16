@@ -4,6 +4,9 @@
 #include "dobject.h"
 #include "info.h"
 #include "d_player.h"
+#include "gstrings.h"
+#include "network.h"
+#include "sv_commands.h"
 
 class ABossBrain : public AActor
 {
@@ -26,6 +29,18 @@ class ARocket : public AActor
 {
 	DECLARE_ACTOR (ARocket, AActor)
 public:
+};
+
+// [BC]
+class AGrenade : public AActor
+{
+	DECLARE_ACTOR (AGrenade, AActor)
+public:
+	void BeginPlay ();
+	void Tick ();
+	bool	FloorBounceMissile( secplane_t &plane );
+
+	void	PreExplode( );
 };
 
 class AArchvile : public AActor
@@ -85,6 +100,24 @@ class ADoomPlayer : public APlayerPawn
 	DECLARE_ACTOR (ADoomPlayer, APlayerPawn)
 public:
 	void GiveDefaultInventory ();
+};
+
+// [BC]
+class AFlag : public AInventory
+{
+	DECLARE_STATELESS_ACTOR( AFlag, AInventory )
+public:
+	virtual bool ShouldRespawn( );
+	virtual bool TryPickup( AActor *pToucher );
+	virtual bool HandlePickup( AInventory *pItem );
+	virtual LONG AllowFlagPickup( AActor *pToucher );
+	virtual void AnnounceFlagPickup( AActor *pToucher );
+	virtual void DisplayFlagTaken( AActor *pToucher );
+	virtual void MarkFlagTaken( bool bTaken );
+	virtual void ResetReturnTicks( void );
+	virtual void ReturnFlag( AActor *pReturner );
+	virtual void AnnounceFlagReturn( void );
+	virtual void DisplayFlagReturn( void );
 };
 
 #endif //__A_DOOMGLOBAL_H__

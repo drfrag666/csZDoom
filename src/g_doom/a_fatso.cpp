@@ -7,11 +7,19 @@
 #include "gstrings.h"
 #include "a_action.h"
 #include "thingdef.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 void A_FatRaise (AActor *);
 void A_FatAttack1 (AActor *);
 void A_FatAttack2 (AActor *);
 void A_FatAttack3 (AActor *);
+
+void A_HectRaise (AActor *);
+void A_HectAttack1 (AActor *);
+void A_HectAttack2 (AActor *);
+void A_HectAttack3 (AActor *);
 
 class AFatso : public AActor
 {
@@ -87,6 +95,7 @@ IMPLEMENT_ACTOR (AFatso, Doom, 67, 112)
 	PROP_Flags (MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_FLOORCLIP)
 	PROP_Flags4 (MF4_BOSSDEATH)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_FATT_STND)
 	PROP_SeeState (S_FATT_RUN)
@@ -100,6 +109,83 @@ IMPLEMENT_ACTOR (AFatso, Doom, 67, 112)
 	PROP_DeathSound ("fatso/death")
 	PROP_ActiveSound ("fatso/active")
 	PROP_Obituary("$OB_FATSO")
+END_DEFAULTS
+
+class AHectebus : public AFatso
+{
+	DECLARE_ACTOR (AHectebus, AFatso)
+};
+
+FState AHectebus::States[] =
+{
+#define S_HECT_STND 0
+	S_NORMAL (HECT, 'A',   15, A_Look						, &States[S_HECT_STND+1]),
+	S_NORMAL (HECT, 'B',   15, A_Look						, &States[S_HECT_STND]),
+
+#define S_HECT_RUN (S_HECT_STND+2)
+	S_NORMAL (HECT, 'A',	4, A_Chase						, &States[S_HECT_RUN+1]),
+	S_NORMAL (HECT, 'A',	4, A_Chase						, &States[S_HECT_RUN+2]),
+	S_NORMAL (HECT, 'B',	4, A_Chase						, &States[S_HECT_RUN+3]),
+	S_NORMAL (HECT, 'B',	4, A_Chase						, &States[S_HECT_RUN+4]),
+	S_NORMAL (HECT, 'C',	4, A_Chase						, &States[S_HECT_RUN+5]),
+	S_NORMAL (HECT, 'C',	4, A_Chase						, &States[S_HECT_RUN+6]),
+	S_NORMAL (HECT, 'D',	4, A_Chase						, &States[S_HECT_RUN+7]),
+	S_NORMAL (HECT, 'D',	4, A_Chase						, &States[S_HECT_RUN+8]),
+	S_NORMAL (HECT, 'E',	4, A_Chase						, &States[S_HECT_RUN+9]),
+	S_NORMAL (HECT, 'E',	4, A_Chase						, &States[S_HECT_RUN+10]),
+	S_NORMAL (HECT, 'F',	4, A_Chase						, &States[S_HECT_RUN+11]),
+	S_NORMAL (HECT, 'F',	4, A_Chase						, &States[S_HECT_RUN+0]),
+
+#define S_HECT_ATK (S_HECT_RUN+12)
+	S_NORMAL (HECT, 'G',   20, A_HectRaise					, &States[S_HECT_ATK+1]),
+	S_BRIGHT (HECT, 'H',   10, A_HectAttack1 				, &States[S_HECT_ATK+2]),
+	S_NORMAL (HECT, 'I',	5, A_FaceTarget 				, &States[S_HECT_ATK+3]),
+	S_NORMAL (HECT, 'G',	5, A_FaceTarget 				, &States[S_HECT_ATK+4]),
+	S_BRIGHT (HECT, 'H',   10, A_HectAttack2 				, &States[S_HECT_ATK+5]),
+	S_NORMAL (HECT, 'I',	5, A_FaceTarget 				, &States[S_HECT_ATK+6]),
+	S_NORMAL (HECT, 'G',	5, A_FaceTarget 				, &States[S_HECT_ATK+7]),
+	S_BRIGHT (HECT, 'H',   10, A_HectAttack3 				, &States[S_HECT_ATK+8]),
+	S_NORMAL (HECT, 'I',	5, A_FaceTarget 				, &States[S_HECT_ATK+9]),
+	S_NORMAL (HECT, 'G',	5, A_FaceTarget 				, &States[S_HECT_RUN+0]),
+
+#define S_HECT_PAIN (S_HECT_ATK+10)
+	S_NORMAL (HECT, 'J',	3, NULL 						, &States[S_HECT_PAIN+1]),
+	S_NORMAL (HECT, 'J',	3, A_Pain						, &States[S_HECT_RUN+0]),
+
+#define S_HECT_DIE (S_HECT_PAIN+2)
+	S_NORMAL (HECT, 'K',	6, NULL 						, &States[S_HECT_DIE+1]),
+	S_NORMAL (HECT, 'L',	6, A_Scream 					, &States[S_HECT_DIE+2]),
+	S_NORMAL (HECT, 'M',	6, A_NoBlocking					, &States[S_HECT_DIE+3]),
+	S_NORMAL (HECT, 'N',	6, NULL 						, &States[S_HECT_DIE+4]),
+	S_NORMAL (HECT, 'O',	6, NULL 						, &States[S_HECT_DIE+5]),
+	S_NORMAL (HECT, 'P',	6, NULL 						, &States[S_HECT_DIE+6]),
+	S_NORMAL (HECT, 'Q',	6, NULL 						, &States[S_HECT_DIE+7]),
+	S_NORMAL (HECT, 'R',	6, NULL 						, &States[S_HECT_DIE+8]),
+	S_NORMAL (HECT, 'S',	6, NULL 						, &States[S_HECT_DIE+9]),
+	S_NORMAL (HECT, 'T',   -1, NULL							, NULL),
+
+#define S_HECT_RAISE (S_HECT_DIE+10)
+	S_NORMAL (HECT, 'R',	5, NULL 						, &States[S_HECT_RAISE+1]),
+	S_NORMAL (HECT, 'Q',	5, NULL 						, &States[S_HECT_RAISE+2]),
+	S_NORMAL (HECT, 'P',	5, NULL 						, &States[S_HECT_RAISE+3]),
+	S_NORMAL (HECT, 'O',	5, NULL 						, &States[S_HECT_RAISE+4]),
+	S_NORMAL (HECT, 'N',	5, NULL 						, &States[S_HECT_RAISE+5]),
+	S_NORMAL (HECT, 'M',	5, NULL 						, &States[S_HECT_RAISE+6]),
+	S_NORMAL (HECT, 'L',	5, NULL 						, &States[S_HECT_RAISE+7]),
+	S_NORMAL (HECT, 'K',	5, NULL 						, &States[S_HECT_RUN+0])
+};
+
+IMPLEMENT_ACTOR (AHectebus, Doom, 5007, 158)
+	PROP_SpawnHealth (1200)
+	PROP_PainChance (20)
+
+	PROP_SpawnState (S_HECT_STND)
+	PROP_SeeState (S_HECT_RUN)
+	PROP_PainState (S_HECT_PAIN)
+	PROP_MissileState (S_HECT_ATK)
+	PROP_DeathState (S_HECT_DIE)
+	PROP_RaiseState (S_HECT_RAISE)
+	PROP_Obituary("$OB_HECTEBUS")
 END_DEFAULTS
 
 class AFatShot : public AActor
@@ -136,14 +222,47 @@ IMPLEMENT_ACTOR (AFatShot, Doom, -1, 153)
 	PROP_DeathSound ("fatso/shotx")
 END_DEFAULTS
 
+class AHectShot : public AFatShot
+{
+	DECLARE_ACTOR (AHectShot, AFatShot)
+};
+
+FState AHectShot::States[] =
+{
+#define S_HECTSHOT 0
+	S_BRIGHT (HECF, 'A',	4, NULL 						, &States[S_HECTSHOT+1]),
+	S_BRIGHT (HECF, 'B',	4, NULL 						, &States[S_HECTSHOT+0]),
+
+#define S_HECTSHOTX (S_HECTSHOT+2)
+	S_BRIGHT (HECF, 'C',	8, NULL 						, &States[S_HECTSHOTX+1]),
+	S_BRIGHT (HECF, 'D',	6, NULL 						, &States[S_HECTSHOTX+2]),
+	S_BRIGHT (HECF, 'E',	4, NULL 						, NULL)
+};
+
+IMPLEMENT_ACTOR (AHectShot, Doom, -1, 153)
+	PROP_SpeedFixed (22)
+	PROP_Damage (12)
+
+	PROP_SpawnState (S_HECTSHOT)
+	PROP_DeathState (S_HECTSHOTX)
+
+END_DEFAULTS
+
 //
 // Mancubus attack,
 // firing three missiles in three different directions?
 // Doesn't look like it.
 //
 #define FATSPREAD (ANG90/8)
+#define HECTSPREAD (ANG90/8)
 
 void A_FatRaise (AActor *self)
+{
+	A_FaceTarget (self);
+	S_Sound (self, CHAN_WEAPON, "fatso/raiseguns", 1, ATTN_NORM);
+}
+
+void A_HectRaise (AActor *self)
 {
 	A_FaceTarget (self);
 	S_Sound (self, CHAN_WEAPON, "fatso/raiseguns", 1, ATTN_NORM);
@@ -165,7 +284,11 @@ void A_FatAttack1 (AActor *self)
 	A_FaceTarget (self);
 	// Change direction  to ...
 	self->angle += FATSPREAD;
-	P_SpawnMissile (self, self->target, spawntype);
+	missile = P_SpawnMissile (self, self->target, spawntype);
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( missile ))
+		SERVERCOMMANDS_SpawnMissile( missile );
 
 	missile = P_SpawnMissile (self, self->target, spawntype);
 	if (missile != NULL)
@@ -174,6 +297,10 @@ void A_FatAttack1 (AActor *self)
 		an = missile->angle >> ANGLETOFINESHIFT;
 		missile->momx = FixedMul (missile->Speed, finecosine[an]);
 		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
 	}
 }
 
@@ -193,7 +320,11 @@ void A_FatAttack2 (AActor *self)
 	A_FaceTarget (self);
 	// Now here choose opposite deviation.
 	self->angle -= FATSPREAD;
-	P_SpawnMissile (self, self->target, spawntype);
+	missile = P_SpawnMissile (self, self->target, spawntype);
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( missile ))
+		SERVERCOMMANDS_SpawnMissile( missile );
 
 	missile = P_SpawnMissile (self, self->target, spawntype);
 	if (missile != NULL)
@@ -202,6 +333,10 @@ void A_FatAttack2 (AActor *self)
 		an = missile->angle >> ANGLETOFINESHIFT;
 		missile->momx = FixedMul (missile->Speed, finecosine[an]);
 		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
 	}
 }
 
@@ -227,6 +362,10 @@ void A_FatAttack3 (AActor *self)
 		an = missile->angle >> ANGLETOFINESHIFT;
 		missile->momx = FixedMul (missile->Speed, finecosine[an]);
 		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
 	}
 
 	missile = P_SpawnMissile (self, self->target, spawntype);
@@ -236,6 +375,206 @@ void A_FatAttack3 (AActor *self)
 		an = missile->angle >> ANGLETOFINESHIFT;
 		missile->momx = FixedMul (missile->Speed, finecosine[an]);
 		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+}
+
+void A_HectAttack1 (AActor *self)
+{
+	AActor *missile;
+	angle_t an;
+
+	if (!self->target)
+		return;
+
+	const PClass *spawntype = NULL;
+	int index = CheckIndex (1, NULL);
+	if (index >= 0) spawntype = PClass::FindClass ((ENamedName)StateParameters[index]);
+	if (spawntype == NULL) spawntype = RUNTIME_CLASS(AHectShot);
+
+	A_FaceTarget (self);
+	
+	missile = P_SpawnMissile (self, self->target, spawntype);
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( missile ))
+		SERVERCOMMANDS_SpawnMissile( missile );
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle += HECTSPREAD / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle += HECTSPREAD;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle += HECTSPREAD * 3 / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+}
+
+void A_HectAttack2 (AActor *self)
+{
+	AActor *missile;
+	angle_t an;
+
+	if (!self->target)
+		return;
+
+	const PClass *spawntype = NULL;
+	int index = CheckIndex (1, NULL);
+	if (index >= 0) spawntype = PClass::FindClass ((ENamedName)StateParameters[index]);
+	if (spawntype == NULL) spawntype = RUNTIME_CLASS(AHectShot);
+
+	A_FaceTarget (self);
+	
+	missile = P_SpawnMissile (self, self->target, spawntype);
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( missile ))
+		SERVERCOMMANDS_SpawnMissile( missile );
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle -= HECTSPREAD / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle -= HECTSPREAD;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle -= HECTSPREAD * 3 / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+}
+
+void A_HectAttack3 (AActor *self)
+{
+	AActor *missile;
+	angle_t an;
+
+	if (!self->target)
+		return;
+
+	const PClass *spawntype = NULL;
+	int index = CheckIndex (1, NULL);
+	if (index >= 0) spawntype = PClass::FindClass ((ENamedName)StateParameters[index]);
+	if (spawntype == NULL) spawntype = RUNTIME_CLASS(AHectShot);
+
+	A_FaceTarget (self);
+	
+	missile = P_SpawnMissile (self, self->target, spawntype);
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( missile ))
+		SERVERCOMMANDS_SpawnMissile( missile );
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle += HECTSPREAD / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle -= HECTSPREAD / 2;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle += HECTSPREAD;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
+	}
+
+	missile = P_SpawnMissile (self, self->target, spawntype);
+	if (missile != NULL)
+	{
+		missile->angle -= HECTSPREAD;
+		an = missile->angle >> ANGLETOFINESHIFT;
+		missile->momx = FixedMul (missile->Speed, finecosine[an]);
+		missile->momy = FixedMul (missile->Speed, finesine[an]);
+
+		// [BC] If we're the server, tell clients to spawn the missile.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnMissile( missile );
 	}
 }
 

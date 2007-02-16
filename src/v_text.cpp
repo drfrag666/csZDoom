@@ -162,9 +162,9 @@ void STACK_ARGS DCanvas::DrawText (int normalcolor, int x, int y, const char *st
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				scalex = CleanXfac;
-				scaley = CleanYfac;
-				maxwidth = Width - (Width % CleanYfac);
+				scalex = (LONG)CleanXfac;
+				scaley = (LONG)CleanYfac;
+				maxwidth = Width - (Width % (int)CleanYfac);
 			}
 			break;
 
@@ -185,6 +185,12 @@ void STACK_ARGS DCanvas::DrawText (int normalcolor, int x, int y, const char *st
 
 		case DTA_TextLen:
 			maxstrlen = va_arg (tags, int);
+			break;
+
+		// [BC] Is this text? If so, handle it slightly differently when we draw it.
+		case DTA_IsText:
+
+			va_arg( tags, int );
 			break;
 		}
 		tag = va_arg (tags, DWORD);
@@ -255,7 +261,8 @@ void STACK_ARGS DCanvas::DrawText (int normalcolor, int x, int y, const char *st
 		{
 			va_list taglist;
 			va_start (taglist, string);
-			DrawTexture (pic, cx, cy, DTA_Translation, range, TAG_MORE, &taglist);
+			// [BC] Flag this as being text.
+			DrawTexture (pic, cx, cy, DTA_Translation, range, DTA_IsText, true, TAG_MORE, &taglist);
 			va_end (taglist);
 		}
 		cx += (w + kerning) * scalex;
@@ -302,6 +309,155 @@ int FFont::StringWidth (const BYTE *string) const
 	}
 				
 	return MAX (maxw, w);
+}
+
+// [BC] This is essentially strbin() from the original ZDoom code. It's been made a public
+// function so that we can colorize lots of things.
+void V_ColorizeString( char *pszString )
+{
+	char *p = pszString, c;
+	int i;
+
+	while ( (c = *p++) )
+	{
+		// If we don't encounter a slash, keep parsing.
+		if (c != '\\')
+			*pszString++ = c;
+		else
+		{
+			switch (*p)
+			{
+				case 'c':
+					*pszString++ = TEXTCOLOR_ESCAPE;
+					break;
+				case 'n':
+					*pszString++ = '\n';
+					break;
+				case 't':
+					*pszString++ = '\t';
+					break;
+				case 'r':
+					*pszString++ = '\r';
+					break;
+//				case '\n':
+//					break;
+				case 'x':
+				case 'X':
+					c = 0;
+					p++;
+					for (i = 0; i < 2; i++) {
+						c <<= 4;
+						if (*p >= '0' && *p <= '9')
+							c += *p-'0';
+						else if (*p >= 'a' && *p <= 'f')
+							c += 10 + *p-'a';
+						else if (*p >= 'A' && *p <= 'F')
+							c += 10 + *p-'A';
+						else
+							break;
+						p++;
+					}
+					*pszString++ = c;
+					break;
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+					c = 0;
+					for (i = 0; i < 3; i++) {
+						c <<= 3;
+						if (*p >= '0' && *p <= '7')
+							c += *p-'0';
+						else
+							break;
+						p++;
+					}
+					*pszString++ = c;
+					break;
+				default:
+					*pszString++ = c;
+					p--;
+					break;
+			}
+			p++;
+		}
+	}
+	*pszString = 0;
+}
+
+// [BC] This essentially does the reverse of V_ColorizeString(). It takes a string with
+// color codes and puts it back in \c<color code> format.
+void V_UnColorizeString( char *pszString, ULONG ulMaxStringLength )
+{
+	char	*p;
+	char	c;
+	ULONG	ulCurStringLength;
+
+	ulCurStringLength = strlen( pszString );
+
+	p = pszString;
+	while ( c = *p++ )
+	{
+		if ( c == TEXTCOLOR_ESCAPE )
+		{
+			ULONG	ulPos;
+
+			ulCurStringLength++;
+			if ( ulCurStringLength > ulMaxStringLength )
+			{
+				pszString++;
+				continue;
+			}
+
+			for ( ulPos = strlen( pszString ) + 1; ulPos > 0; ulPos-- )
+				pszString[ulPos] = pszString[ulPos - 1];
+
+			pszString[0] = '\\';
+			pszString[1] = 'c';
+		}
+
+		pszString++;
+	}
+	*pszString = 0;
+}
+
+// [BC] This strips color codes from a string.
+void V_RemoveColorCodes( char *pszString )
+{
+	char *p;
+	char c;
+
+	p = pszString;
+	while ( c = *p++ )
+	{
+		if ( c == TEXTCOLOR_ESCAPE )
+		{
+			ULONG	ulPos;
+			ULONG	ulStringLength;
+
+			ulStringLength = strlen( pszString );
+
+			// If there aren't 3 characters left (the color character, the color code,
+			// and the new text), just terminate the string where the color character is.
+			if ( ulStringLength < 3 )
+			{
+				pszString[0] = 0;
+				return;
+			}
+
+			for ( ulPos = 0; ulPos < ulStringLength; ulPos++ )
+				pszString[ulPos] = pszString[ulPos + 2];
+
+			p--;
+		}
+		else
+			pszString++;
+	}
+	*pszString = 0;
 }
 
 //

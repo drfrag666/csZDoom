@@ -31,6 +31,9 @@
 **
 */
 
+#ifndef	__WIN32_IFACE_H__
+#define	__WIN32_IFACE_H__
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <ddraw.h>
@@ -182,3 +185,5 @@ private:
 	bool UseBlitter;		// Use blitter to copy from sys mem to video mem
 	bool UsePfx;
 };
+
+#endif

@@ -32,20 +32,14 @@ const BYTE HU_FONTEND   = 'ß';	// the last font characters
 
 // Calculate # of glyphs in font.
 const int HU_FONTSIZE = HU_FONTEND - HU_FONTSTART + 1;
-
+/*
 //
 // Chat routines
 //
-
-void CT_Init (void);
-bool CT_Responder (event_t* ev);
-void CT_Drawer (void);
-
-extern int chatmodeon;
 
 // [RH] Draw deathmatch scores
 
 class player_s;
 void HU_DrawScores (player_s *me);
-
+*/
 #endif

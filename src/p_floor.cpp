@@ -29,6 +29,9 @@
 #include "doomstat.h"
 #include "r_state.h"
 #include "tables.h"
+#include "network.h"
+#include "sv_commands.h"
+#include "gl_main.h"
 
 //
 // FLOORS
@@ -74,6 +77,54 @@ void DElevator::Serialize (FArchive &arc)
 		<< m_Speed;
 }
 
+// [BC]
+void DElevator::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoElevator( m_Type, m_Sector, m_Speed, m_Direction, m_FloorDestDist, m_CeilingDestDist, m_lElevatorID, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+// [BC]
+LONG DElevator::GetID( void )
+{
+	return ( m_lElevatorID );
+}
+
+// [BC]
+void DElevator::SetID( LONG lID )
+{
+	m_lElevatorID = lID;
+}
+
+// [BC]
+void DElevator::SetType( EElevator Type )
+{
+	m_Type = Type;
+}
+
+// [BC]
+void DElevator::SetSpeed( LONG lSpeed )
+{
+	m_Speed = lSpeed;
+}
+
+// [BC]
+void DElevator::SetDirection( LONG lDirection )
+{
+	m_Direction = lDirection;
+}
+
+// [BC]
+void DElevator::SetFloorDestDist( LONG lDestDist )
+{
+	m_FloorDestDist = lDestDist;
+}
+
+// [BC]
+void DElevator::SetCeilingDestDist( LONG lDestDist )
+{
+	m_CeilingDestDist = lDestDist;
+}
+
 IMPLEMENT_CLASS (DWaggleBase)
 IMPLEMENT_CLASS (DFloorWaggle)
 IMPLEMENT_CLASS (DCeilingWaggle)
@@ -103,29 +154,45 @@ void DFloor::Tick ()
 {
 	EResult res;
 
-	// [RH] Handle resetting stairs
-	if (m_Type == buildStair || m_Type == waitStair)
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 	{
-		if (m_ResetCount)
+		// [RH] Handle resetting stairs
+		if (m_Type == buildStair || m_Type == waitStair)
 		{
-			if (--m_ResetCount == 0)
+			if (m_ResetCount)
 			{
-				m_Type = resetStair;
-				m_Direction = (m_Direction > 0) ? -1 : 1;
-				m_FloorDestDist = m_OrgDist;
+				if (--m_ResetCount == 0)
+				{
+					m_Type = resetStair;
+					m_Direction = (m_Direction > 0) ? -1 : 1;
+					m_FloorDestDist = m_OrgDist;
+
+					// [BC] If we're the server, send out a bunch of updates to clients.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					{
+						// Tell clients to change the floor type.
+						SERVERCOMMANDS_ChangeFloorType( m_lFloorID, m_Type );
+
+						// Tell clients to change the direction of the floor.
+						SERVERCOMMANDS_ChangeFloorDirection( m_lFloorID, m_Direction );
+
+						// Tell clients to change the dest. dist. of the floor.
+						SERVERCOMMANDS_ChangeFloorDestDist( m_lFloorID, m_FloorDestDist );
+					}
+				}
 			}
-		}
-		if (m_PauseTime)
-		{
-			m_PauseTime--;
-			return;
-		}
-		else if (m_StepTime)
-		{
-			if (--m_StepTime == 0)
+			if (m_PauseTime)
 			{
-				m_PauseTime = m_Delay;
-				m_StepTime = m_PerStepTime;
+				m_PauseTime--;
+				return;
+			}
+			else if (m_StepTime)
+			{
+				if (--m_StepTime == 0)
+				{
+					m_PauseTime = m_Delay;
+					m_StepTime = m_PerStepTime;
+				}
 			}
 		}
 	}
@@ -134,13 +201,38 @@ void DFloor::Tick ()
 		return;
 
 	res = MoveFloor (m_Speed, m_FloorDestDist, m_Crush, m_Direction);
-	
+
+	// [BC] If we're in client mode, just move the floor and get out. The server will
+	// tell us when it stops.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (res == pastdest)
 	{
+		// [BC] If the sector has reached its destination, this is probably a good time to verify all the clients
+		// have the correct floor/ceiling height for this sector.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			if ( m_Sector->floorOrCeiling == 0 )
+				SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+			else
+				SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+		}
+
+		// [BC] If we're the server, tell clients to stop the floor's sound sequence.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_StopSectorSequence( m_Sector );
+
 		SN_StopSequence (m_Sector);
 
 		if (m_Type == buildStair)
+		{
 			m_Type = waitStair;
+
+			// [BC] Tell clients to change the floor type.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_ChangeFloorType( m_lFloorID, m_Type );
+		}
 
 		if (m_Type != waitStair || m_ResetCount == 0)
 		{
@@ -156,6 +248,13 @@ void DFloor::Tick ()
 				case genFloorChg:
 					m_Sector->floorpic = m_Texture;
 					m_Sector->AdjustFloorClip ();
+
+					// [BC] Update clients about this flat change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetSectorFlat( ULONG( m_Sector - sectors ));
+
+					// [BC] Also, mark this sector as having its flat changed.
+					m_Sector->bFlatChange = true;
 					break;
 				default:
 					break;
@@ -173,6 +272,13 @@ void DFloor::Tick ()
 				case genFloorChg:
 					m_Sector->floorpic = m_Texture;
 					m_Sector->AdjustFloorClip ();
+
+					// [BC] Update clients about this flat change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetSectorFlat( ULONG( m_Sector - sectors ));
+
+					// [BC] Also, mark this sector as having its flat changed.
+					m_Sector->bFlatChange = true;
 					break;
 				default:
 					break;
@@ -209,6 +315,10 @@ void DFloor::Tick ()
 				}
 			}
 
+			// [BC] If we're the server, tell clients to destroy the floor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_DestroyFloor( m_lFloorID );
+
 			Destroy ();
 		}
 	}
@@ -243,8 +353,28 @@ void DElevator::Tick ()
 			MoveCeiling (m_Speed, m_CeilingDestDist, m_Direction);
 	}
 
+	// [BC] This is all we need to do in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if (res == pastdest)	// if destination height acheived
 	{
+		// [BC] If the sector has reached its destination, this is probably a good time to verify all the clients
+		// have the correct floor/ceiling height for this sector.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+			SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+		}
+
+		// [BC] If we're the server, tell clients to play the elevator sound, and then
+		// destroy the elevator.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_StopSectorSequence( m_Sector );
+			SERVERCOMMANDS_DestroyElevator( m_lElevatorID );
+		}
+
 		// make floor stop sound
 		SN_StopSequence (m_Sector);
 
@@ -254,6 +384,12 @@ void DElevator::Tick ()
 		stopinterpolation (INTERP_SectorCeiling, m_Sector);
 		Destroy ();		// remove elevator from actives
 	}
+}
+
+void DFloor::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoFloor( m_Type, m_Sector, m_Direction, m_Speed, m_FloorDestDist, m_lFloorID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_StartFloorSound( m_lFloorID );
 }
 
 void DFloor::SetFloorChangeType (sector_t *sec, int change)
@@ -301,6 +437,86 @@ void DElevator::StartFloorSound ()
 DFloor::DFloor (sector_t *sec)
 	: DMovingFloor (sec)
 {
+}
+
+LONG DFloor::GetID( void )
+{
+	return ( m_lFloorID );
+}
+
+void DFloor::SetID( LONG lID )
+{
+	m_lFloorID = lID;
+}
+
+DFloor::EFloor DFloor::GetType( void )
+{
+	return ( m_Type );
+}
+
+void DFloor::SetType( DFloor::EFloor Type )
+{
+	m_Type = Type;
+}
+
+LONG DFloor::GetCrush( void )
+{
+	return ( m_Crush );
+}
+
+void DFloor::SetCrush( LONG lCrush )
+{
+	m_Crush = lCrush;
+}
+
+fixed_t DFloor::GetSpeed( void )
+{
+	return ( m_Speed );
+}
+
+void DFloor::SetSpeed( fixed_t Speed )
+{
+	m_Speed = Speed;
+}
+
+LONG DFloor::GetResetCount( void )
+{
+	return ( m_ResetCount );
+}
+
+void DFloor::SetResetCount( LONG lResetCount )
+{
+	m_ResetCount = lResetCount;
+}
+
+fixed_t DFloor::GetOrgDist( void )
+{
+	return ( m_OrgDist );
+}
+
+void DFloor::SetOrgDist( fixed_t OrgDist )
+{
+	m_OrgDist = OrgDist;
+}
+
+LONG DFloor::GetDirection( void )
+{
+	return ( m_Direction );
+}
+
+void DFloor::SetDirection( LONG lDirection )
+{
+	m_Direction = lDirection;
+}
+
+fixed_t DFloor::GetFloorDestDist( void ) 
+{
+	return ( m_FloorDestDist );
+}
+
+void DFloor::SetFloorDestDist( fixed_t FloorDestDist )
+{
+	m_FloorDestDist = FloorDestDist;
 }
 
 //
@@ -354,6 +570,14 @@ manual_floor:
 		floor->m_Speed = speed;
 		floor->m_ResetCount = 0;				// [RH]
 		floor->m_OrgDist = sec->floorplane.d;	// [RH]
+
+		// [BC] Assign the floor's network ID. However, don't do this on the client end.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			floor->m_lFloorID = P_GetFirstFreeFloorID( );
+		else
+			floor->m_lFloorID = -1;
+
+		floor->StartFloorSound ();
 
 		switch (floortype)
 		{
@@ -477,6 +701,14 @@ manual_floor:
 			{
 				int oldpic = sec->floorpic;
 				sec->floorpic = line->frontsector->floorpic;
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+
+				// [BC] Also, mark this sector as having its flat changed.
+				sec->bFlatChange = true;
+
 				sec->special = (sec->special & SECRET_MASK) | (line->frontsector->special & ~SECRET_MASK);
 				if (oldpic != sec->floorpic)
 				{
@@ -506,11 +738,25 @@ manual_floor:
 			{
 				floor->m_Texture = modelsec->floorpic;
 				floor->m_NewSpecial = modelsec->special & ~SECRET_MASK;
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+
+				// [BC] Also, mark this sector as having its flat changed.
+				sec->bFlatChange = true;
 			}
 			break;
 
 		  default:
 			break;
+		}
+
+		// [BC] If we're the server, tell clients to create the floor.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_DoFloor( floortype, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_lFloorID );
+			SERVERCOMMANDS_StartFloorSound( floor->m_lFloorID );
 		}
 
 		// Do not interpolate instant movement floors.
@@ -556,12 +802,20 @@ manual_floor:
 				if (modelsec != NULL)
 				{
 					floor->SetFloorChangeType (modelsec, change);
+
+					// [BC] Update clients about this flat change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetSectorFlat( ULONG( modelsec - sectors ));
 				}
 			}
 			else if (line)
 			{
 				// Trigger model change
 				floor->SetFloorChangeType (line->frontsector, change);
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
 			}
 		}
 		if (manual)
@@ -585,7 +839,26 @@ bool EV_FloorCrushStop (int tag)
 		if (sec->floordata && sec->floordata->IsKindOf (RUNTIME_CLASS(DFloor)) &&
 			static_cast<DFloor *>(sec->floordata)->m_Type == DFloor::floorRaiseAndCrush)
 		{
+			// [BC] If we're stopping, this is probably a good time to verify all the clients
+			// have the correct floor/ceiling height for this sector.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				if ( sec->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( sec - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( sec - sectors ));
+			}
+
+			// [BC] If we're the server, tell clients to stop the floor's sound sequence.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_StopSectorSequence( sec );
+
 			SN_StopSequence (sec);
+
+			// [BC] If we're the server, tell clients to destroy the floor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_DestroyFloor( static_cast<DFloor *>( sec->floordata )->m_lFloorID );
+
 			sec->floordata->Destroy ();
 			sec->floordata = NULL;
 		}
@@ -631,6 +904,13 @@ bool EV_DoChange (line_t *line, EChange changetype, int tag)
 			{ // [RH] if no line, no change
 				sec->floorpic = line->frontsector->floorpic;
 				sec->special = (sec->special & SECRET_MASK) | (line->frontsector->special & ~SECRET_MASK);
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+
+				// [BC] Also, mark this sector as having its flat changed.
+				sec->bFlatChange = true;
 			}
 			break;
 		case numChangeOnly:
@@ -639,6 +919,13 @@ bool EV_DoChange (line_t *line, EChange changetype, int tag)
 			{ // if no model, no change
 				sec->floorpic = secm->floorpic;
 				sec->special = secm->special;
+
+				// [BC] Update clients about this flat change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+
+				// [BC] Also, mark this sector as having its flat changed.
+				sec->bFlatChange = true;
 			}
 			break;
 		default:
@@ -751,7 +1038,17 @@ manual_stair:
 
 		texture = sec->floorpic;
 		osecnum = secnum;				//jff 3/4/98 preserve loop index
-		
+
+		// [BC] Assign the floor's network ID. However, don't do this on the client end.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			floor->m_lFloorID = P_GetFirstFreeFloorID( );
+		else
+			floor->m_lFloorID = -1;
+
+		// [BC] If we're the server, tell clients to create the floor.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DoFloor( floor->m_Type, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_lFloorID );
+
 		// Find next sector to raise
 		// 1. Find 2-sided line with same sector side[0] (lowest numbered)
 		// 2. Other side is the next sector to raise
@@ -853,6 +1150,19 @@ manual_stair:
 				floor->m_Crush = (!usespecials && speed == 4*FRACUNIT) ? 10 : -1;
 				floor->m_ResetCount = reset;	// [RH] Tics until reset (0 if never)
 				floor->m_OrgDist = sec->floorplane.d;	// [RH] Height to reset to
+
+				// [BC] Assign the floor's network ID. However, don't do this on the client end.
+				if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+					floor->m_lFloorID = P_GetFirstFreeFloorID( );
+				else
+					floor->m_lFloorID = -1;
+
+				// [BC] If we're the server, tell clients to create the floor.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				{
+					SERVERCOMMANDS_DoFloor( floor->m_Type, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_lFloorID );
+					SERVERCOMMANDS_StartFloorSound( floor->m_lFloorID );
+				}
 			}
 		} while (ok);
 		// [RH] make sure the first sector doesn't point to a previous one, otherwise
@@ -892,7 +1202,7 @@ bool EV_DoDonut (int tag, fixed_t pillarspeed, fixed_t slimespeed)
 		// ALREADY MOVING?	IF SO, KEEP GOING...
 		if (s1->floordata)
 			continue;
-						
+
 		rtn = true;
 		s2 = getNextSector (s1->lines[0], s1);	// s2 is pool's sector
 		if (!s2)								// note lowest numbered line around
@@ -921,6 +1231,19 @@ bool EV_DoDonut (int tag, fixed_t pillarspeed, fixed_t slimespeed)
 			floor->m_FloorDestDist = s2->floorplane.PointToDist (spot, height);
 			floor->StartFloorSound ();
 			
+			// [BC] Assign the floor's network ID. However, don't do this on the client end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				floor->m_lFloorID = P_GetFirstFreeFloorID( );
+			else
+				floor->m_lFloorID = -1;
+
+			// [BC] If we're the server, tell clients to create the floor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_lFloorID );
+				SERVERCOMMANDS_StartFloorSound( floor->m_lFloorID );
+			}
+
 			//	Spawn lowering donut-hole
 			floor = new DFloor (s1);
 			floor->m_Type = DFloor::floorLowerToNearest;
@@ -931,6 +1254,20 @@ bool EV_DoDonut (int tag, fixed_t pillarspeed, fixed_t slimespeed)
 			height = s3->FindHighestFloorPoint (&spot);
 			floor->m_FloorDestDist = s1->floorplane.PointToDist (spot, height);
 			floor->StartFloorSound ();
+
+			// [BC] Assign the floor's network ID. However, don't do this on the client end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				floor->m_lFloorID = P_GetFirstFreeFloorID( );
+			else
+				floor->m_lFloorID = -1;
+
+			// [BC] If we're the server, tell clients to create the floor.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_lFloorID );
+				SERVERCOMMANDS_StartFloorSound( floor->m_lFloorID );
+			}
+
 			break;
 		}
 	}
@@ -988,6 +1325,12 @@ bool EV_DoElevator (line_t *line, DElevator::EElevator elevtype,
 		elevator->m_Speed = speed;
 		elevator->StartFloorSound ();
 
+		// [BC] Assign the floor's network ID. However, don't do this on the client end.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			elevator->m_lElevatorID = P_GetFirstFreeElevatorID( );
+		else
+			elevator->m_lElevatorID = -1;
+
 		floorheight = sec->CenterFloor ();
 		ceilingheight = sec->CenterCeiling ();
 
@@ -1037,6 +1380,13 @@ bool EV_DoElevator (line_t *line, DElevator::EElevator elevtype,
 			elevator->m_CeilingDestDist = sec->ceilingplane.PointToDist (sec->soundorg[0], sec->soundorg[1], ceilingheight - height);
 			break;
 		}
+
+		// [BC] If we're the server, tell clients to create the elevator.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_DoElevator( elevator->m_Type, elevator->m_Sector, elevator->m_Speed, elevator->m_Direction, elevator->m_FloorDestDist, elevator->m_CeilingDestDist, elevator->m_lElevatorID );
+			SERVERCOMMANDS_StartElevatorSound( elevator->m_lElevatorID );
+		}
 	}
 	return rtn;
 }
@@ -1057,11 +1407,82 @@ DWaggleBase::DWaggleBase (sector_t *sec)
 {
 }
 
+// [BC]
+void DWaggleBase::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoWaggle( GetClass( ) == RUNTIME_CLASS( DCeilingWaggle ), m_Sector, m_OriginalDist, m_Accumulator, m_AccDelta, m_TargetScale, m_Scale, m_ScaleDelta, m_Ticker, m_State, m_lWaggleID, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+// [BC]
+LONG DWaggleBase::GetID( void )
+{
+	return ( m_lWaggleID );
+}
+
+// [BC]
+void DWaggleBase::SetID( LONG lID )
+{
+	m_lWaggleID = lID;
+}
+
+// [BC]
+void DWaggleBase::SetOriginalDistance( LONG lOriginalDistance )
+{
+	m_OriginalDist = lOriginalDistance;
+}
+
+// [BC]
+void DWaggleBase::SetAccumulator( LONG lAccumulator )
+{
+	m_Accumulator = lAccumulator;
+}
+
+// [BC]
+void DWaggleBase::SetAccelerationDelta( LONG lAccelerationDelta )
+{
+	m_AccDelta = lAccelerationDelta;
+}
+
+// [BC]
+void DWaggleBase::SetTargetScale( LONG lScale )
+{
+	m_TargetScale = lScale;
+}
+
+// [BC]
+void DWaggleBase::SetScale( LONG lScale )
+{
+	m_Scale = lScale;
+}
+
+// [BC]
+void DWaggleBase::SetScaleDelta( LONG lScaleDelta )
+{
+	m_ScaleDelta = lScaleDelta;
+}
+
+// [BC]
+void DWaggleBase::SetTicker( LONG lTicker )
+{
+	m_Ticker = lTicker;
+}
+
+// [BC]
+void DWaggleBase::SetState( LONG lState )
+{
+	m_State = lState;
+}
+
 void DWaggleBase::DoWaggle (bool ceiling)
 {
 	secplane_t *plane;
 	fixed_t *texz;
 	fixed_t dist;
+	// [BC]
+	ULONG	ulIdx;
+
+	// [ZDoomGL]
+	sectorMoving[ULONG( m_Sector - sectors )] = true;
 
 	if (ceiling)
 	{
@@ -1101,6 +1522,11 @@ void DWaggleBase::DoWaggle (bool ceiling)
 				m_Sector->floordata = NULL;
 				stopinterpolation (INTERP_SectorFloor, m_Sector);
 			}
+
+			// [BC] If we're the server, tell clients to delete the waggle.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_DestroyWaggle( m_lWaggleID );
+
 			Destroy ();
 			return;
 		}
@@ -1123,6 +1549,22 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	*texz += plane->HeightDiff (dist);
 	dist = plane->HeightDiff (dist);
 	P_ChangeSector (m_Sector, true, dist, ceiling);
+
+	// [BC] At the peak and troughs of the waggle, update the clients with the current
+	// position of the floor/ceiling.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+		{
+			if (( SERVER_IsValidClient( ulIdx ) == false ) ||
+				(( players[ulIdx].ulTime % ( 5 * TICRATE )) != 0 ))
+			{
+				continue;
+			}
+
+			SERVERCOMMANDS_UpdateWaggle( m_lWaggleID, m_Accumulator, ulIdx, SVCF_ONLYTHISCLIENT );
+		}
+	}
 }
 
 //==========================================================================
@@ -1211,6 +1653,154 @@ bool EV_StartWaggle (int tag, int height, int speed, int offset,
 			/(TICRATE+((3*TICRATE)*height)/255);
 		waggle->m_Ticker = timer ? timer*TICRATE : -1;
 		waggle->m_State = WGLSTATE_EXPAND;
+
+		// [BC] Assign the waggle's network ID. However, don't do this on the client end.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			waggle->m_lWaggleID = P_GetFirstFreeWaggleID( );
+		else
+			waggle->m_lWaggleID = -1;
+
+		// [BC] If we're the server, tell clients to do the waggle.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DoWaggle( ceiling, sector, waggle->m_OriginalDist, waggle->m_Accumulator, waggle->m_AccDelta, waggle->m_TargetScale, waggle->m_Scale, waggle->m_ScaleDelta, waggle->m_Ticker, waggle->m_State, waggle->m_lWaggleID );
 	}
 	return retCode;
+}
+
+//*****************************************************************************
+//
+DFloor *P_GetFloorByID( LONG lID )
+{
+	DFloor	*pFloor;
+
+	TThinkerIterator<DFloor>		Iterator;
+
+	while (( pFloor = Iterator.Next( )))
+	{
+		if ( pFloor->GetID( ) == lID )
+			return ( pFloor );
+	}
+
+	return ( NULL );
+}
+
+//*****************************************************************************
+//
+DElevator *P_GetElevatorByID( LONG lID )
+{
+	DElevator	*pElevator;
+
+	TThinkerIterator<DElevator>		Iterator;
+
+	while (( pElevator = Iterator.Next( )))
+	{
+		if ( pElevator->GetID( ) == lID )
+			return ( pElevator );
+	}
+
+	return ( NULL );
+}
+
+//*****************************************************************************
+//
+DWaggleBase *P_GetWaggleByID( LONG lID )
+{
+	DWaggleBase	*pWaggleBase;
+
+	TThinkerIterator<DWaggleBase>		Iterator;
+
+	while (( pWaggleBase = Iterator.Next( )))
+	{
+		if ( pWaggleBase->GetID( ) == lID )
+			return ( pWaggleBase );
+	}
+
+	return ( NULL );
+}
+
+//*****************************************************************************
+//
+LONG P_GetFirstFreeFloorID( void )
+{
+	LONG		lIdx;
+	DFloor		*pFloor;
+	bool		bIDIsAvailable;
+
+	for ( lIdx = 0; lIdx < 8192; lIdx++ )
+	{
+		TThinkerIterator<DFloor>		Iterator;
+
+		bIDIsAvailable = true;
+		while (( pFloor = Iterator.Next( )))
+		{
+			if ( pFloor->GetID( ) == lIdx )
+			{
+				bIDIsAvailable = false;
+				break;
+			}
+		}
+
+		if ( bIDIsAvailable )
+			return ( lIdx );
+	}
+
+	return ( -1 );
+}
+
+//*****************************************************************************
+//
+LONG P_GetFirstFreeElevatorID( void )
+{
+	LONG		lIdx;
+	DElevator	*pElevator;
+	bool		bIDIsAvailable;
+
+	for ( lIdx = 0; lIdx < 8192; lIdx++ )
+	{
+		TThinkerIterator<DElevator>		Iterator;
+
+		bIDIsAvailable = true;
+		while (( pElevator = Iterator.Next( )))
+		{
+			if ( pElevator->GetID( ) == lIdx )
+			{
+				bIDIsAvailable = false;
+				break;
+			}
+		}
+
+		if ( bIDIsAvailable )
+			return ( lIdx );
+	}
+
+	return ( -1 );
+}
+
+//*****************************************************************************
+//
+LONG P_GetFirstFreeWaggleID( void )
+{
+	LONG		lIdx;
+	DWaggleBase	*pWaggle;
+	bool		bIDIsAvailable;
+
+	for ( lIdx = 0; lIdx < 8192; lIdx++ )
+	{
+		TThinkerIterator<DWaggleBase>		Iterator;
+
+		bIDIsAvailable = true;
+		while (( pWaggle = Iterator.Next( )))
+		{
+			if ( pWaggle->GetID( ) == lIdx )
+			{
+				bIDIsAvailable = false;
+				break;
+			}
+		}
+
+		if ( bIDIsAvailable )
+			return ( lIdx );
+	}
+
+	return ( -1 );
 }

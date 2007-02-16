@@ -79,20 +79,12 @@ extern	int				NextSkill;			// [RH] Skill to use at next level load
 // Nightmare mode flag, single player.
 extern	int 			respawnmonsters;
 
-// Netgame? Only true if >1 player.
-extern	bool			netgame;
-
-// Bot game? Like netgame, but doesn't involve network communication.
-extern	bool			multiplayer;
-
-// Flag: true only if started as net deathmatch.
-EXTERN_CVAR (Int, deathmatch)
+// [BC] Removed netgame/multiplayer since it's been replaced by NETWORK_GetState().
 
 // [RH] Pretend as deathmatch for purposes of dmflags
 EXTERN_CVAR (Bool, alwaysapplydmflags)
 
-// [RH] Teamplay mode
-EXTERN_CVAR (Bool, teamplay)
+// [BC] Moved teamplay to a more appropriate location.
 
 // [RH] Friendly fire amount
 EXTERN_CVAR (Float, teamdamage)
@@ -195,6 +187,18 @@ extern	bool	 		playeringame[MAXPLAYERS];
 
 // Player spawn spots for deathmatch.
 extern TArray<mapthing2_t> deathmatchstarts;
+
+// [BC] Temporary team spawn spots.
+extern	TArray<mapthing2_t>	TemporaryTeamStarts;
+
+// [BC] Blue team spawn spots.
+extern	TArray<mapthing2_t>	BlueTeamStarts;
+
+// [BC] Red team spawn spots.
+extern	TArray<mapthing2_t>	RedTeamStarts;
+
+// [BC] Generic invasion spawn spots.
+extern	TArray<mapthing2_t>	GenericInvasionStarts;
 
 // Player spawn spots.
 extern	mapthing2_t		playerstarts[MAXPLAYERS];

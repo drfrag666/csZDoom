@@ -38,11 +38,12 @@
 #include "statnums.h"
 #include "i_system.h"
 #include "doomerrors.h"
+#include "network.h"
 
 
 static cycle_t ThinkCycles;
-extern cycle_t BotSupportCycles;
-extern cycle_t BotWTG;
+// [BC] Show the number of ticked thinkers this tick.
+static	LONG	g_lTickedThinkers;
 
 IMPLEMENT_CLASS (DThinker)
 
@@ -275,7 +276,9 @@ void DThinker::RunThinkers ()
 {
 	int i, count;
 
-	ThinkCycles = BotSupportCycles = BotWTG = 0;
+	// [BC] Reset the number of thinkers ticked.
+	ThinkCycles = 0;
+	g_lTickedThinkers = 0;
 
 	clock (ThinkCycles);
 
@@ -325,7 +328,33 @@ int DThinker::TickThinkers (List *list, List *dest)
 
 		if (!(thinker->ObjectFlags & OF_MassDestruction))
 		{ // Only tick thinkers not scheduled for destruction
-			thinker->Tick ();
+#ifndef	MULTITICK_HACK_FIX
+			bool	bTickThinker = true;
+
+			switch ( NETWORK_GetState( ))
+			{
+			case NETSTATE_CLIENT:
+
+				// Don't tick the consoleplayer's actor in client
+				// mode, because that's done in the main prediction function
+				if (( thinker->IsKindOf( RUNTIME_CLASS( AActor ))) && ( static_cast<AActor *>(thinker) == players[consoleplayer].mo ))
+					bTickThinker = false;
+				break;
+			case NETSTATE_SERVER:
+
+				// Player's actors are ticked whenever we receive a movement command from them, so don't do it here.
+				if (( thinker->IsKindOf( RUNTIME_CLASS( AActor ))) && ( static_cast<AActor *>(thinker)->player ) && ( static_cast<AActor *>(thinker)->player->bIsBot == false ))
+					bTickThinker = false;
+				break;
+			}
+
+			if ( bTickThinker )
+#endif
+			{
+				// [BC] Tick the thinker, and make a note of it.
+				thinker->Tick ();
+				g_lTickedThinkers++;
+			}
 		}
 		node = NextToThink;
 	}
@@ -421,7 +450,9 @@ DThinker *FThinkerIterator::Next ()
 ADD_STAT (think)
 {
 	FString out;
-	out.Format ("Think time = %04.1f ms",
-		SecondsPerCycle * (double)ThinkCycles * 1000);
+	// [BC] Show the number of ticked thinkers this tick.
+	out.Format ("Think time = %04.1f ms, %3d",
+		SecondsPerCycle * (double)ThinkCycles * 1000,
+		g_lTickedThinkers );
 	return out;
 }

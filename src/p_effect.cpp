@@ -47,15 +47,19 @@
 #include "r_things.h"
 #include "s_sound.h"
 #include "templates.h"
+#include "deathmatch.h"
+#include "network.h"
 
 CVAR (Int, cl_rockettrails, 1, CVAR_ARCHIVE);
+CVAR (Int, cl_grenadetrails, 1, CVAR_ARCHIVE);
+CVAR (Int, cl_respawninvuleffect, 1, CVAR_ARCHIVE);
 
 #define FADEFROMTTL(a)	(255/(a))
 
-static int grey1, grey2, grey3, grey4, red, green, blue, yellow, black,
-		   red1, green1, blue1, yellow1, purple, purple1, white,
-		   rblue1, rblue2, rblue3, rblue4, orange, yorange, dred, grey5,
-		   maroon1, maroon2;
+static int grey1, grey2, grey3, grey4, red, red2, red3, red4, green, blue, yellow, black,
+		   red1, green1, blue1, yellow1, yellow2, yellow3, purple, purple1, purple2, purple3, white,
+		   rblue1, rblue2, rblue3, rblue4, orange, yorange, dred,  dred2,
+		   dred3, dred4, grey5, grey6, maroon1, maroon2, gold1, gold2, cyan1, cyan2, green2;
 
 static const struct ColorList {
 	int *color;
@@ -66,17 +70,26 @@ static const struct ColorList {
 	{&grey3,	50,  50,  50 },
 	{&grey4,	210, 210, 210},
 	{&grey5,	128, 128, 128},
+	{&grey6,	139, 139, 139},
 	{&red,		255, 0,   0  },  
-	{&green,	0,   200, 0  },  
-	{&blue,		0,   0,   255},
-	{&yellow,	255, 255, 0  },  
-	{&black,	0,   0,   0  },  
 	{&red1,		255, 127, 127},
+	{&red2,		227, 0,   0  },
+	{&red3,		255, 31,  31 },
+	{&red4,		203, 0,   0  },
+	{&green,	0,   200, 0  },  
 	{&green1,	127, 255, 127},
+	{&green2,	71,  131, 58 },
+	{&blue,		0,   0,   255},
 	{&blue1,	127, 127, 255},
+	{&yellow,	255, 255, 0  },  
 	{&yellow1,	255, 255, 180},
+	{&yellow2,	255, 255, 35 },  
+	{&yellow3,	255, 255, 71 },  
+	{&black,	0,   0,   0  },  
 	{&purple,	120, 0,   160},
 	{&purple1,	200, 30,  255},
+	{&purple2,	207, 0,   207},
+	{&purple3,	255, 0,   255},
 	{&white, 	255, 255, 255},
 	{&rblue1,	81,  81,  255},
 	{&rblue2,	0,   0,   227},
@@ -84,9 +97,16 @@ static const struct ColorList {
 	{&rblue4,	0,   0,   80 },
 	{&orange,	255, 120, 0  },
 	{&yorange,	255, 170, 0  },
-	{&dred,		80,  0,   0  },
+	{&dred,		91,  3,   3  },
+	{&dred2,	127, 3,   3  },
+	{&dred3,	227, 0,	  0  },
+	{&dred4,	255, 31,  31 },
 	{&maroon1,	154, 49,  49 },
 	{&maroon2,	125, 24,  24 },
+	{&gold1,	204, 168, 62 },
+	{&gold2,	186, 139, 44 },
+	{&cyan1,	0,   255, 255},
+	{&cyan2,	81,  255, 255},	
 	{NULL}
 };
 
@@ -274,7 +294,7 @@ void P_RunEffect (AActor *actor, int effects)
 				break;
 		}
 	}
-	if ((effects & FX_GRENADE) && (cl_rockettrails))
+	if ((effects & FX_GRENADE) && (cl_grenadetrails))
 	{
 		// Grenade trail
 
@@ -430,6 +450,10 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 	float deg;
 	vec3_t step, dir, pos, extend;
 
+	// [BC] The server has no need to draw a railgun trail.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	VectorSubtract (end, start, dir);
 	length = VectorLength (dir);
 	steps = (int)(length*0.3333f);
@@ -489,7 +513,13 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 
 	if (color1 != -1)
 	{
-		color1 = color1==0? -1: ColorMatcher.Pick(RPART(color1), GPART(color1), BPART(color1));
+		// [BC] 
+		static LONG	s_lParticleColor = 0;
+
+		// [BC] If color1 is -2, then we want a rainbow trail.
+		if ( color1 != -2 )
+			color1 = color1==0? -1: ColorMatcher.Pick(RPART(color1), GPART(color1), BPART(color1));
+
 		VectorCopy (start, pos);
 		deg = 270;
 		for (i = steps; i; i--)
@@ -531,7 +561,63 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 				else
 					p->color = rblue4;
 			}
-			else 
+			// [BC] Handle the rainbow trail.
+			else if ( color1 == -2 )
+			{
+				switch ( s_lParticleColor )
+				{
+				// Red.
+				case 0:
+
+					p->color = 0xff0000;
+					s_lParticleColor++;
+					break;
+				// Orange.
+				case 1:
+
+					p->color = 0xff8f00;
+					s_lParticleColor++;
+					break;
+				// Yellow.
+				case 2:
+
+					p->color = 0xffff00;
+					s_lParticleColor++;
+					break;
+				// Green.
+				case 3:
+
+					p->color = 0x00ff00;
+					s_lParticleColor++;
+					break;
+				// Blue.
+				case 4:
+
+					p->color = 0x0000ff;
+					s_lParticleColor++;
+					break;
+				// Indigo.
+				case 5:
+
+					p->color = 0xff00ff;
+					s_lParticleColor = 0;
+					break;
+				// Violet.
+				case 6:
+
+					p->color = 0x8f008f;
+					s_lParticleColor = 0;
+					break;
+				default:
+
+					p->color = 0xffffff;
+					s_lParticleColor = 0;
+					break;
+				}
+
+				p->color = ColorMatcher.Pick(RPART(p->color), GPART(p->color), BPART(p->color));
+			}
+			else
 			{
 				p->color = color1;
 			}
@@ -540,7 +626,12 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 
 	if (color2 != -1)
 	{
-		color2 = color2==0? -1: ColorMatcher.Pick(RPART(color2), GPART(color2), BPART(color2));
+		// [BC] 
+		static LONG	s_lParticleColor = 0;
+
+		// [BC] If color1 is -2, then we want a rainbow trail.
+		if ( color2 != -2 )
+			color2 = color2==0? -1: ColorMatcher.Pick(RPART(color2), GPART(color2), BPART(color2));
 		vec3_t diff;
 		VectorSet (diff, 0, 0, 0);
 
@@ -588,6 +679,62 @@ void P_DrawRailTrail (AActor * source, vec3_t start, vec3_t end, int color1, int
 						p->color = grey1;
 				}
 				p->color = white;
+			}
+			// [BC] Handle the rainbow trail.
+			else if ( color2 == -2 )
+			{
+				switch ( s_lParticleColor )
+				{
+				// Red.
+				case 0:
+
+					p->color = 0xff0000;
+					s_lParticleColor++;
+					break;
+				// Orange.
+				case 1:
+
+					p->color = 0xff8f00;
+					s_lParticleColor++;
+					break;
+				// Yellow.
+				case 2:
+
+					p->color = 0xffff00;
+					s_lParticleColor++;
+					break;
+				// Green.
+				case 3:
+
+					p->color = 0x00ff00;
+					s_lParticleColor++;
+					break;
+				// Blue.
+				case 4:
+
+					p->color = 0x0000ff;
+					s_lParticleColor++;
+					break;
+				// Indigo.
+				case 5:
+
+					p->color = 0xff00ff;
+					s_lParticleColor = 0;
+					break;
+				// Violet.
+				case 6:
+
+					p->color = 0x8f008f;
+					s_lParticleColor = 0;
+					break;
+				default:
+
+					p->color = 0xffffff;
+					s_lParticleColor = 0;
+					break;
+				}
+
+				p->color = ColorMatcher.Pick(RPART(p->color), GPART(p->color), BPART(p->color));
 			}
 			else 
 			{

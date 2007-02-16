@@ -415,7 +415,10 @@ bool FMODSoundRenderer::Init ()
 			}
 			FSOUND_GetDriverCaps (FSOUND_GetDriver(), &DriverCaps);
 			Printf ("  Initialization");
-			if (!FModLog (FSOUND_Init (snd_samplerate, 64, FSOUND_INIT_DSOUND_DEFERRED)))
+			// [BC] Initalize FMOD with global focus, so that sound continues to play even if
+			// Skulltag is minimized. That way, people can join a server, alt+tab out while
+			// waiting for someone to show up, and then hear if someone joins.
+			if (!FModLog (FSOUND_Init (snd_samplerate, 64, FSOUND_INIT_DSOUND_DEFERRED|FSOUND_INIT_GLOBALFOCUS)))
 			{
 #if 0
 				if (trya3d)

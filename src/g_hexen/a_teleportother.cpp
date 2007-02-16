@@ -7,6 +7,8 @@
 #include "s_sound.h"
 #include "p_lnspec.h"
 #include "m_random.h"
+#include "deathmatch.h"
+#include "network.h"
 
 #define TELEPORT_LIFE 1
 
@@ -213,6 +215,10 @@ void A_CheckTeleRing (AActor *actor)
 bool AArtiTeleportOther::Use (bool pickup)
 {
 	AActor *mo;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( true );
 
 	mo = P_SpawnPlayerMissile (Owner, RUNTIME_CLASS(ATelOtherFX1));
 	if (mo)

@@ -74,10 +74,13 @@ void P_DropWeapon (player_t* player);
 // P_USER
 //
 void	P_FallingDamage (AActor *ent);
-void	P_PlayerThink (player_t *player);
+bool	PLAYER_Responder( event_t *pEvent );
+void	P_PlayerThink (player_t *player, ticcmd_t *pCmd = NULL );
 bool	P_UndoPlayerMorph (player_t *player, bool force=false);
+/*
 void	P_PredictPlayer (player_t *player);
 void	P_UnPredictPlayer ();
+*/
 
 //
 // P_MOBJ
@@ -90,7 +93,7 @@ void	P_UnPredictPlayer ();
 extern fixed_t FloatBobOffsets[64];
 extern AActor *MissileActor;
 
-void P_SpawnPlayer (mapthing2_t* mthing, bool tempplayer=false);
+void P_SpawnPlayer (mapthing2_t* mthing, bool bClientUpdate, player_t *p, bool tempplayer=false);
 
 void P_ThrustMobj (AActor *mo, angle_t angle, fixed_t move);
 int P_FaceMobj (AActor *source, AActor *target, angle_t *delta);
@@ -114,8 +117,8 @@ AActor *P_SpawnMissileAngleZSpeed (AActor *source, fixed_t z, const PClass *type
 AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PClass *type);
 
 AActor *P_SpawnPlayerMissile (AActor* source, const PClass *type);
-AActor *P_SpawnPlayerMissile (AActor *source, const PClass *type, angle_t angle);
-AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z, const PClass *type, angle_t angle);
+AActor *P_SpawnPlayerMissile (AActor *source, const PClass *type, angle_t angle, bool bSpawnSound = true );
+AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z, const PClass *type, angle_t angle, bool bSpawnSound = true );
 
 void P_CheckFakeFloorTriggers (AActor *mo, fixed_t oldz);
 
@@ -217,6 +220,7 @@ extern fixed_t			openrange;
 extern fixed_t			lowfloor;
 
 void	P_LineOpening (const line_t *linedef, fixed_t x, fixed_t y, fixed_t refx=FIXED_MIN, fixed_t refy=0);
+void	P_OldLineOpening (const line_t *linedef, fixed_t x, fixed_t y);
 
 bool P_BlockLinesIterator (int x, int y, bool(*func)(line_t*));
 bool P_BlockThingsIterator (int x, int y, bool(*func)(AActor*), TArray<AActor *> &checkarray, AActor *start=NULL);
@@ -279,16 +283,21 @@ extern AActor			*LastRipped;
 bool	P_TestMobjLocation (AActor *mobj);
 bool	P_TestMobjZ (AActor *mobj, bool quick=true);
 bool	P_CheckPosition (AActor *thing, fixed_t x, fixed_t y);
+bool	P_OldCheckPosition (AActor *thing, fixed_t x, fixed_t y);
 AActor	*P_CheckOnmobj (AActor *thing);
 void	P_FakeZMovement (AActor *mo);
 bool	P_TryMove (AActor* thing, fixed_t x, fixed_t y, bool dropoff, bool onfloor = false);
+bool	P_OldTryMove (AActor* thing, fixed_t x, fixed_t y, bool dropoff, bool onfloor = false);
 bool	P_TeleportMove (AActor* thing, fixed_t x, fixed_t y, fixed_t z, bool telefrag);	// [RH] Added z and telefrag parameters
 void	P_PlayerStartStomp (AActor *actor);		// [RH] Stomp on things for a newly spawned player
 void	P_SlideMove (AActor* mo, fixed_t tryx, fixed_t tryy, int numsteps);
+void	P_OldSlideMove (AActor* mo);
 bool	P_BounceWall (AActor *mo);
 bool	P_CheckSight (const AActor* t1, const AActor* t2, int flags=0);
 void	P_ResetSightCounters (bool full);
+void	P_ResetSpawnCounters( void );
 void	P_UseLines (player_t* player);
+void	P_UseItems (player_t* player);
 bool	P_UsePuzzleItem (AActor *actor, int itemType);
 void	PIT_ThrustSpike (AActor *actor);
 void	P_FindFloorCeiling (AActor *actor);
@@ -384,6 +393,14 @@ public:
 	void Serialize (FArchive &arc);
 
 	void StopInterpolation ();
+
+	LONG	GetSpeed( void );
+	void	SetSpeed( LONG lSpeed );
+
+	LONG	GetDist( void );
+	void	SetDist( LONG lDist );
+
+	LONG	GetPolyObj( void );
 protected:
 	DPolyAction ();
 	int m_PolyObj;
@@ -403,6 +420,8 @@ class DRotatePoly : public DPolyAction
 public:
 	DRotatePoly (int polyNum);
 	void Tick ();
+	void UpdateToClient( ULONG ulClient );
+
 private:
 	DRotatePoly ();
 
@@ -420,6 +439,16 @@ public:
 	DMovePoly (int polyNum);
 	void Serialize (FArchive &arc);
 	void Tick ();
+	void UpdateToClient( ULONG ulClient );
+
+	LONG	GetAngle( void );
+	void	SetAngle( LONG lAngle );
+
+	LONG	GetXSpeed( void );
+	void	SetXSpeed( LONG lSpeed );
+
+	LONG	GetYSpeed( void );
+	void	SetYSpeed( LONG lSpeed );
 protected:
 	DMovePoly ();
 	int m_Angle;
@@ -438,6 +467,17 @@ public:
 	DPolyDoor (int polyNum, podoortype_t type);
 	void Serialize (FArchive &arc);
 	void Tick ();
+	void UpdateToClient( ULONG ulClient );
+
+	LONG	GetDirection( void );
+	void	SetDirection( LONG lDirection );
+
+	LONG	GetTotalDist( void );
+	void	SetTotalDist( LONG lDist );
+
+	bool	GetClose( void );
+	void	SetClose( bool bClose );
+
 protected:
 	int m_Direction;
 	int m_TotalDist;

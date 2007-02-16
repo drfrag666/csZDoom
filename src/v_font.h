@@ -90,6 +90,8 @@ public:
 	int GetSpaceWidth () const { return SpaceWidth; }
 	int GetHeight () const { return FontHeight; }
 	int GetDefaultKerning () const { return GlobalKerning; }
+	// [BC]
+	char	*GetName( ) const { return Name; }
 
 	static FFont *FindFont (const char *fontname);
 

@@ -44,6 +44,7 @@
 #include "p_conversation.h"
 #include "a_strifeglobal.h"
 #include "templates.h"
+#include "network.h"
 
 static void FadePic ();
 static void GetFinaleText (const char *msgLumpName);
@@ -519,6 +520,7 @@ static struct
 int 			castnum;
 int 			casttics;
 int				castsprite;			// [RH] For overriding the player sprite with a skin
+int				castscale;			// [BC] For overriding the scale of the player with the skin's scale
 const BYTE *	casttranslation;	// [RH] Draw "our hero" with their chosen suit color
 FState*			caststate;
 bool	 		castdeath;
@@ -573,6 +575,7 @@ void F_StartCast (void)
 	castnum = 0;
 	caststate = castorder[castnum].info->SeeState;
 	castsprite = caststate->sprite.index;
+	castscale = 63;
 	casttranslation = NULL;
 	casttics = caststate->GetTics ();
 	castdeath = false;
@@ -624,11 +627,13 @@ void F_CastTicker (void)
 		{
 			castsprite = skins[players[consoleplayer].userinfo.skin].sprite;
 			casttranslation = translationtables[TRANSLATION_Players] + 256*consoleplayer;
+			castscale = skins[players[consoleplayer].userinfo.skin].scale;
 		}
 		else
 		{
 			castsprite = caststate->sprite.index;
 			casttranslation = NULL;
+			castscale = 63;
 		}
 		castframes = 0;
 	}
@@ -758,6 +763,8 @@ void F_CastDrawer (void)
 		screen->DrawTexture (pic, 160, 170,
 			DTA_320x200, true,
 			DTA_FlipX, sprframe->Flip & 1,
+			DTA_DestWidth, MulScale6 (pic->GetWidth() * CleanXfac, castscale + 1),
+			DTA_DestHeight, MulScale6 (pic->GetHeight() * CleanYfac, castscale + 1),
 			DTA_Translation, casttranslation,
 			TAG_DONE);
 	}
@@ -979,7 +986,7 @@ void F_StartSlideshow ()
 	V_SetBlend (0,0,0,0);
 
 	// The slideshow is determined solely by the map you're on.
-	if (!multiplayer && level.flags & LEVEL_DEATHSLIDESHOW)
+	if (( NETWORK_GetState( ) == NETSTATE_SINGLE ) && level.flags & LEVEL_DEATHSLIDESHOW)
 	{
 		FinalePart = 14;
 	}
@@ -1271,7 +1278,7 @@ void F_Drawer (void)
 		screen->FillBorder (NULL);
 		if (FinaleStage >= 14)
 		{ // Chess pic, draw the correct character graphic
-			if (multiplayer)
+			if (NETWORK_GetState( ) != NETSTATE_SINGLE)
 			{
 				screen->DrawTexture (TexMan["CHESSALL"], 20, 0,
 					DTA_VirtualWidth, pic->GetWidth(),

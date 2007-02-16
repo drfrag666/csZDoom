@@ -53,11 +53,17 @@ void M_Deinit ();
 // does nothing if menu is already up.
 void M_StartControlPanel (bool makeSound);
 
+// Setup multiplayer menu
+bool M_StartMultiplayerMenu (void);
+
 // Turns off the menu
 void M_ClearMenus ();
 
 // [RH] Setup options menu
 bool M_StartOptionsMenu (void);
+
+//  Setup join team menu
+bool M_StartJoinTeamMenu (void);
 
 // [RH] Handle keys for options menu
 void M_OptResponder (event_t *ev);
@@ -80,6 +86,10 @@ void M_ActivateMenuInput ();
 void M_DeactivateMenuInput ();
 
 void M_NotifyNewSave (const char *file, const char *title, bool okForQuicksave);
+
+// Menu flag definitions.
+#define MNF_ALIGNLEFT			1	// Align menu to the left
+#define MNF_CENTERED			2	// Menu text is centered
 
 //
 // MENU TYPEDEFS
@@ -106,6 +116,19 @@ typedef enum {
 	colorpicker,
 	intslider,
 	palettegrid,
+	string,
+	pwstring,
+	skintype,
+	number,
+	botslot,
+	announcer,
+	levelslot,
+	browserheader,
+	browserslot,
+	weaponslot,
+	txslider,
+	mnnumber,
+
 } itemtype;
 
 struct GUIDName;
@@ -116,6 +139,7 @@ typedef struct menuitem_s {
 	union {
 		FBaseCVar		 *cvar;
 		FIntCVar		 *intcvar;
+		FStringCVar		 *stringcvar;
 		FGUIDCVar		 *guidcvar;
 		FColorCVar		 *colorcvar;
 		int				  selmode;
@@ -149,6 +173,12 @@ typedef struct menuitem_s {
 		int				  highlight;
 		int				  flagmask;
 	} e;
+	union {
+
+		// Server in the server browser list this slot indexes.
+		LONG			lServer;
+
+	} f;
 } menuitem_t;
 
 typedef struct menu_s {
@@ -163,6 +193,9 @@ typedef struct menu_s {
 	void		  (*PreDraw)(void);
 	bool			DontDim;
 	void		  (*EscapeHandler)(void);
+
+	// Special flags for this menu.
+	int				iFlags;
 } menu_t;
 
 typedef struct value_s {
@@ -179,8 +212,14 @@ typedef struct
 	// hotkey in menu
 	char		alphaKey;						
 	
-	const char *name;
+	const char	*name;
 	
+	// Use botskill settings for this episode?
+	bool		bBotSkill;
+
+	// Is the title of this botskill menu a text version?
+	bool		bBotSkillFullText;
+
 	// choice = menu item #.
 	// if status = 2,
 	//	 choice=0:leftarrow,1:rightarrow
@@ -224,6 +263,7 @@ extern int		CurrentItem;
 extern oldmenuitem_t EpisodeMenu[MAX_EPISODES];
 extern bool EpisodeNoSkill[MAX_EPISODES];
 extern char EpisodeMaps[MAX_EPISODES][8];
+extern char EpisodeSkillHeaders[MAX_EPISODES][64];
 extern oldmenu_t EpiDef;
 
 #endif

@@ -13,6 +13,8 @@
 #include "r_draw.h"
 #include "templates.h"
 #include "a_keys.h"
+#include "deathmatch.h"
+#include "network.h"
 
 static FRandom pr_chainwiggle;
 
@@ -271,7 +273,7 @@ private:
 			chainY = (HealthMarker == (CPlayer->health > 0 ? CPlayer->health : 0)) ? 33 : 33 + ChainWiggle;
 			DrawImage (Images[imgCHAINBACK], 0, 32);
 			DrawImage (Images[imgCHAIN], 2+(healthPos%17), chainY);
-			DrawImage (Images[imgLIFEGEM], 17+healthPos, chainY, multiplayer ?
+			DrawImage (Images[imgLIFEGEM], 17+healthPos, chainY, ( NETWORK_GetState( ) != NETSTATE_SINGLE ) ?
 				translationtables[TRANSLATION_PlayersExtra] + (CPlayer-players)*256 : NULL);
 			DrawImage (Images[imgLTFACE], 0, 32);
 			DrawImage (Images[imgRTFACE], 276, 32);

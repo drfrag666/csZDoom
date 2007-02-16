@@ -67,7 +67,8 @@ typedef enum
 #endif
 
 // The maximum number of players, multiplayer/networking.
-#define MAXPLAYERS		8
+// [BC] Changed to 32.
+#define MAXPLAYERS		32
 
 // State updates, number of tics / second.
 #define TICRATE 		35
@@ -235,25 +236,40 @@ enum
 {
 //	DF2_YES_IMPALING		= 1 << 0,	// Player gets implaed on MF2_IMPALE items
 	DF2_YES_WEAPONDROP		= 1 << 1,	// Drop current weapon upon death
-//#define DF2_NO_RUNES			4		// Don't spawn runes
-//#define DF2_YES_IRETURN		8		// Instantly return skull when player carrying it dies
-//#define DF2_YES_RETURN		16		// Return dropped skulls after 30 seconds
-//#define DF2_YES_TEAMCOLORS	32		// Don't use player's base color in teamgames
-//#define DF2_NO_SWITCH			64		// Player is not allowed to switch teams
-//#define DF2_FORCE_RANDOM		128		// Player put on random team
-//#define DF2_YES_RUNEDROP		256		// Drop current rune upon death
-//#define DF2_YES_200MAX		512		// Don't all max. health/armor items to bring
-//										// health or armor over 200%
-//#define DF2_YES_DOUBLEAMMO	1024	// Doubles ammo like skill 1 and 5 do
-//#define DF2_NO_CLEARFRAGS		2048	// Don't clear frags after each level
-//#define DF2_FORCE_NORESPAWN	4096	// Player cannot respawn
-//#define DF2_YES_DEGENERATION	8192	// Quake-style degeneration
-//#define DF2_YES_LOSEFRAG		16384	// Lose a frag when killed. More incentive to try to
-//										// not get yerself killed
-	DF2_NO_FREEAIMBFG		= 1 << 15,	// Don't allow BFG to be aimed at the ground
-										// or ceiling. Prevents cheap BFG frags
-	DF2_BARRELS_RESPAWN		= 1 << 16,	// Barrels respawn (duh)
-	DF2_YES_INVUL			= 1 << 17,	// Player is temporarily invulnerable when respawned
+
+	// Don't spawn runes.
+	DF2_NO_RUNES			= 1 << 2,
+
+	// Instantly return flags and skulls when player carrying it dies (ST/CTF).
+	DF2_INSTANT_RETURN		= 1 << 3,
+
+	// Do not allow players to switch teams in teamgames.
+	DF2_NO_TEAM_SWITCH		= 1 << 4,
+
+	// Player is automatically placed on a team.
+	DF2_NO_TEAM_SELECT		= 1 << 5,
+
+	// Double amount of ammo that items give you like skill 1 and 5 do.
+	DF2_YES_DOUBLEAMMO		= 1 << 6,
+
+	// Player slowly loses health when over 100% (quake-style).
+	DF2_YES_DEGENERATION	= 1 << 7,
+
+	// Allow BFG freeaiming in multiplayer games.
+	DF2_YES_FREEAIMBFG		= 1 << 8,
+
+	// Barrels respawn (duh).
+	DF2_BARRELS_RESPAWN		= 1 << 9,
+
+	// No respawn invulnerability.
+	DF2_NO_RESPAWN_INVUL	= 1 << 10,
+
+	// All players start with a shotgun when they respawn.
+	DF2_COOP_SHOTGUNSTART	= 1 << 11,
+
+	// Players respawn in the same place they died (co-op).
+	DF2_SAME_SPAWN_SPOT		= 1 << 12,
+
 };
 
 // [RH] Compatibility flags.
@@ -275,6 +291,32 @@ enum
 	COMPATF_TRACE			= 1 << 13,	// Trace ignores lines with the same sector on both sides
 	COMPATF_DROPOFF			= 1 << 14,	// Monsters cannot move when hanging over a dropoff
 	COMPATF_BOOMSCROLL		= 1 << 15,	// Scrolling sectors are additive like in Boom
+
+	// [BC] Start of new compatflags.
+
+	// Limited movement in the air.
+	COMPATF_LIMITED_AIRMOVEMENT	= 1 << 16,
+
+	// Allow the map01 "plasma bump" bug.
+	COMPATF_PLASMA_BUMP_BUG	= 1 << 17,
+
+	// Allow instant respawn after death.
+	COMPATF_INSTANTRESPAWN	= 1 << 18,
+
+	// Taunting is disabled.
+	COMPATF_DISABLETAUNTS	= 1 << 19,
+
+	// Use doom2.exe's original sound curve.
+	COMPATF_ORIGINALSOUNDCURVE	= 1 << 20,
+
+	// Use doom2.exe's original intermission screens/music.
+	COMPATF_OLDINTERMISSION		= 1 << 21,
+
+	// Disable stealth monsters, since doom2.exe didn't have them.
+	COMPATF_DISABLESTEALTHMONSTERS		= 1 << 22,
+
+	// Disable cooperative backpacks.
+//	COMPATF_DISABLECOOPERATIVEBACKPACKS	= 1 << 23,
 };
 
 // phares 3/20/98:
@@ -307,6 +349,11 @@ enum
 #define MOD_HIT				22
 #define MOD_RAILGUN			23
 #define MOD_ICE				24
+#define	MOD_GRENADE			26
+#define	MOD_GRENADE_SPLASH	27
+#define	MOD_BFG10K			28
+#define	MOD_REFLECTION		29
+#define MOD_SPAWNTELEFRAG	30
 #define MOD_DISINTEGRATE	25
 #define MOD_POISON			26
 #define MOD_ELECTRIC		27

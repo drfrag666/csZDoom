@@ -11,6 +11,8 @@
 #include "gstrings.h"
 #include "a_hexenglobal.h"
 #include "sbar.h"
+#include "deathmatch.h"
+#include "network.h"
 
 IMPLEMENT_POINTY_CLASS (AFourthWeaponPiece)
  DECLARE_POINTER (TempFourthWeapon)
@@ -168,7 +170,7 @@ bool AFourthWeaponPiece::PrivateShouldStay ()
 {
 	// We want a weapon piece to behave like a weapon, so follow the exact
 	// same logic as weapons when deciding whether or not to stay.
-	if (((multiplayer &&
+	if (((( NETWORK_GetState( ) != NETSTATE_SINGLE ) &&
 		(!deathmatch && !alwaysapplydmflags)) || (dmflags & DF_WEAPONS_STAY)) &&
 		!(flags & MF_DROPPED))
 	{

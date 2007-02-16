@@ -222,6 +222,20 @@ static flagdef ActorFlags[]=
 	DEFINE_FLAG(MF5, DEHEXPLOSION, AActor, flags5),
 	DEFINE_FLAG(MF5, PIERCEARMOR, AActor, flags5),
 
+	// [BC] New DECORATE flag defines here.
+	DEFINE_FLAG(STFL, BLUETEAM, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, REDTEAM, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, USESPECIAL, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, BUMPSPECIAL, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, BASEHEALTH, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, SUPERHEALTH, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, BASEARMOR, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, SUPERARMOR, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, SCOREPILLAR, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, NODE, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, QUARTERGRAVITY, AActor, ulSTFlags),
+	DEFINE_FLAG(STFL, EXPLODEONDEATH, AActor, ulSTFlags),
+
 	// Effect flags
 	DEFINE_FLAG(FX, VISIBILITYPULSE, AActor, effects),
 	DEFINE_FLAG2(FX_ROCKET, ROCKETTRAIL, AActor, effects),
@@ -527,7 +541,7 @@ ACTOR(Stop)
  *   x = expression
  *   y = expression
  * If the final character is a +, the previous parameter is repeated indefinitely,
- * and an "imaginary" first parameter is inserted containing the total number of
+ * and an "imaginary" first parameter is inserted containing the total number of 
  * parameters passed.
  */
 #define FUNC(name, parm) { #name, name, parm },
@@ -1302,6 +1316,7 @@ int PrepareStateParameters(FState * state, int numparams)
 
 	v=0;
 	for(i=0;i<numparams;i++) StateParameters.Push(v);
+
 	state->ParameterIndex = paramindex+1;
 	return paramindex;
 }
@@ -1465,6 +1480,7 @@ static void ParseStateString(char * statestring)
 // processes a state block
 //
 //==========================================================================
+
 static int ProcessStates(FActorInfo * actor, AActor * defaults, Baggage &bag)
 {
 	char statestring[256];
@@ -3061,6 +3077,10 @@ static void ActorCameraheight (AActor *defaults, Baggage &bag)
 static void ActorClearFlags (AActor *defaults, Baggage &bag)
 {
 	defaults->flags=defaults->flags2=defaults->flags3=defaults->flags4=defaults->flags5=0;
+
+	// [BC] Also zero out ST's flags.
+	defaults->ulSTFlags = 0;
+	defaults->ulNetworkFlags = 0;
 }
 
 //==========================================================================
@@ -3072,6 +3092,9 @@ static void ActorMonster (AActor *defaults, Baggage &bag)
 	defaults->flags|=MF_SHOOTABLE|MF_COUNTKILL|MF_SOLID; 
 	defaults->flags2|=MF2_PUSHWALL|MF2_MCROSS|MF2_PASSMOBJ;
 	defaults->flags3|=MF3_ISMONSTER;
+
+	// [BC] Also send updates about its position in network games.
+	defaults->ulNetworkFlags |= NETFL_UPDATEPOSITION;
 }
 
 //==========================================================================
@@ -3228,6 +3251,24 @@ static void ArmorSavePercent (AActor *defaults, Baggage &bag)
 }
 
 //==========================================================================
+//	[BC]
+//==========================================================================
+static void ArmorMaxBonus (ABasicMaxArmorBonus *defaults, Baggage &bag)
+{
+	SC_MustGetNumber();
+	defaults->lMaxBonus=sc_Number;
+}
+
+//==========================================================================
+//	[BC]
+//==========================================================================
+static void ArmorMaxBonusMax (ABasicMaxArmorBonus *defaults, Baggage &bag)
+{
+	SC_MustGetNumber();
+	defaults->lMaxBonusMax=sc_Number;
+}
+
+//==========================================================================
 //
 //==========================================================================
 static void InventoryAmount (AInventory *defaults, Baggage &bag)
@@ -3271,6 +3312,16 @@ static void InventoryDefMaxAmount (AInventory *defaults, Baggage &bag)
 	defaults->MaxAmount = gameinfo.gametype == GAME_Heretic ? 16 : 25;
 }
 
+
+//==========================================================================
+// [BC]
+//==========================================================================
+static void InventoryPickupAnnouncerEntry (AInventory *defaults, Baggage &bag)
+{
+	SC_MustGetString();
+
+	sprintf( defaults->szPickupAnnouncerEntry, "%s", sc_String );
+}
 
 //==========================================================================
 //
@@ -3406,6 +3457,9 @@ static void WeaponAmmoUse1 (AWeapon *defaults, Baggage &bag)
 {
 	SC_MustGetNumber();
 	defaults->AmmoUse1=sc_Number;
+
+	// [BC] Also apply this to the amount of ammo used in DM. It can be overridden.
+//	defaults->AmmoUseDM1 = sc_Number;
 }
 
 //==========================================================================
@@ -3415,6 +3469,9 @@ static void WeaponAmmoUse2 (AWeapon *defaults, Baggage &bag)
 {
 	SC_MustGetNumber();
 	defaults->AmmoUse2=sc_Number;
+
+	// [BC] Also apply this to the amount of ammo used in DM. It can be overridden.
+//	defaults->AmmoUseDM2 = sc_Number;
 }
 
 //==========================================================================
@@ -3523,6 +3580,17 @@ static void PowerupColor (APowerupGiver *defaults, Baggage &bag)
 			defaults->BlendColor = GOLDCOLOR;
 			return;
 		}
+		// [BC] Yay, more hacks.
+		else if ( SC_Compare( "REDMAP" ))
+		{
+			defaults->BlendColor = REDCOLOR;
+			return;
+		}
+		else if ( SC_Compare( "GREENMAP" ))
+		{
+			defaults->BlendColor = GREENCOLOR;
+			return;
+		}
 
 		int c = V_GetColor(NULL, sc_String);
 		r=RPART(c);
@@ -3567,6 +3635,86 @@ static void PowerupType (APowerupGiver *defaults, Baggage &bag)
 	else
 	{
 		defaults->PowerupType=powertype;
+	}
+}
+
+//==========================================================================
+//	[BC] These are new.
+//==========================================================================
+static void RuneColor (ARuneGiver *defaults, Baggage &bag)
+{
+	int r;
+	int g;
+	int b;
+	int alpha;
+
+	if (SC_CheckNumber())
+	{
+		r=clamp<int>(sc_Number, 0, 255);
+		SC_MustGetNumber();
+		g=clamp<int>(sc_Number, 0, 255);
+		SC_MustGetNumber();
+		b=clamp<int>(sc_Number, 0, 255);
+	}
+	else
+	{
+		SC_MustGetString();
+
+		if (SC_Compare("INVERSEMAP"))
+		{
+			defaults->BlendColor = INVERSECOLOR;
+			return;
+		}
+		else if (SC_Compare("GOLDMAP"))
+		{
+			defaults->BlendColor = GOLDCOLOR;
+			return;
+		}
+		// [BC] Yay, more hacks.
+		else if ( SC_Compare( "REDMAP" ))
+		{
+			defaults->BlendColor = REDCOLOR;
+			return;
+		}
+		else if ( SC_Compare( "GREENMAP" ))
+		{
+			defaults->BlendColor = GREENCOLOR;
+			return;
+		}
+
+		int c = V_GetColor(NULL, sc_String);
+		r=RPART(c);
+		g=GPART(c);
+		b=BPART(c);
+	}
+	SC_MustGetFloat();
+	alpha=int(sc_Float*255);
+	alpha=clamp<int>(alpha, 0, 255);
+	if (alpha!=0) defaults->BlendColor = MAKEARGB(alpha, r, g, b);
+	else defaults->BlendColor = 0;
+}
+
+//==========================================================================
+//
+//==========================================================================
+static void RuneType (ARuneGiver *defaults, Baggage &bag)
+{
+	FString typestr;
+
+	SC_MustGetString();
+	typestr.Format ("Rune%s", sc_String);
+	const PClass * runetype=PClass::FindClass(typestr);
+	if (!runetype)
+	{
+		SC_ScriptError("Unknown rune type '%s' in '%s'\n", sc_String, bag.Info->Class->TypeName.GetChars());
+	}
+	else if (!runetype->IsDescendantOf(RUNTIME_CLASS(ARune)))
+	{
+		SC_ScriptError("Invalid rune type '%s' in '%s'\n", sc_String, bag.Info->Class->TypeName.GetChars());
+	}
+	else
+	{
+		defaults->RuneType=runetype;
 	}
 }
 
@@ -3811,6 +3959,9 @@ static const ActorProps props[] =
 	{ "ammo.backpackamount",		(apf)AmmoBackpackAmount,	RUNTIME_CLASS(AAmmo) },
 	{ "ammo.backpackmaxamount",		(apf)AmmoBackpackMaxAmount,	RUNTIME_CLASS(AAmmo) },
 	{ "ammo.dropamount",			(apf)AmmoDropAmount,		RUNTIME_CLASS(AAmmo) },
+	{ "armor.maxbonus",				(apf)ArmorMaxBonus,			RUNTIME_CLASS(ABasicMaxArmorBonus) },
+	{ "armor.maxbonusmax",			(apf)ArmorMaxBonusMax,		RUNTIME_CLASS(ABasicMaxArmorBonus) },
+	{ "armor.maxsaveamount",		(apf)ArmorMaxSaveAmount,	RUNTIME_CLASS(ABasicArmorBonus) },
 	{ "armor.maxsaveamount",		(apf)ArmorMaxSaveAmount,	RUNTIME_CLASS(ABasicArmorBonus) },
 	{ "armor.saveamount",			(apf)ArmorSaveAmount,		RUNTIME_CLASS(AActor) },
 	{ "armor.savepercent",			(apf)ArmorSavePercent,		RUNTIME_CLASS(AActor) },
@@ -3851,6 +4002,7 @@ static const ActorProps props[] =
 	{ "inventory.givequest",		(apf)InventoryGiveQuest,	RUNTIME_CLASS(AInventory) },
 	{ "inventory.icon",				(apf)InventoryIcon,			RUNTIME_CLASS(AInventory) },
 	{ "inventory.maxamount",		(apf)InventoryMaxAmount,	RUNTIME_CLASS(AInventory) },
+	{ "inventory.pickupannouncerentry",	(apf)InventoryPickupAnnouncerEntry,		RUNTIME_CLASS(AInventory) },	// [BC]
 	{ "inventory.pickupmessage",	(apf)InventoryPickupmsg,	RUNTIME_CLASS(AInventory) },
 	{ "inventory.pickupsound",		(apf)InventoryPickupsound,	RUNTIME_CLASS(AInventory) },
 	{ "inventory.respawntics",		(apf)InventoryRespawntics,	RUNTIME_CLASS(AInventory) },
@@ -3898,6 +4050,10 @@ static const ActorProps props[] =
 	{ "raise",						ActorRaiseState,			RUNTIME_CLASS(AActor) },
 	{ "reactiontime",				ActorReactionTime,			RUNTIME_CLASS(AActor) },
 	{ "renderstyle",				ActorRenderStyle,			RUNTIME_CLASS(AActor) },
+	// [BC] New props here.
+	{ "rune.color",					(apf)RuneColor,				RUNTIME_CLASS(ARuneGiver) },
+	{ "rune.type",					(apf)RuneType,				RUNTIME_CLASS(ARuneGiver) },
+	// [BC] End new props.
 	{ "scale",						ActorScale,					RUNTIME_CLASS(AActor) },
 	{ "see",						ActorSeeState,				RUNTIME_CLASS(AActor) },
 	{ "seesound",					ActorSeeSound,				RUNTIME_CLASS(AActor) },

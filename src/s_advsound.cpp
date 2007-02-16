@@ -1558,6 +1558,8 @@ CCMD (playersounds)
 
 IMPLEMENT_STATELESS_ACTOR (AAmbientSound, Any, 14065, 0)
 	PROP_Flags (MF_NOBLOCKMAP|MF_NOSECTOR)
+	// [BC]
+	PROP_FlagsNetwork( NETFL_ALLOWCLIENTSPAWN )
 END_DEFAULTS
 
 void AAmbientSound::Serialize (FArchive &arc)
@@ -1686,4 +1688,9 @@ void AAmbientSound::Deactivate (AActor *activator)
 			S_StopSound (this, CHAN_BODY);
 		}
 	}
+}
+
+bool AAmbientSound::GetActive( void )
+{
+	return ( bActive );
 }

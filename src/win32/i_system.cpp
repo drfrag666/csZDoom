@@ -23,6 +23,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <conio.h>
 #include <io.h>
 #include <direct.h>
 #include <string.h>
@@ -60,6 +61,11 @@
 #include "c_dispatch.h"
 #include "templates.h"
 #include "gameconfigfile.h"
+// [BC] New #includes.
+#include "announcer.h"
+#include "network.h"
+#include "cl_main.h"
+#include "campaign.h"
 
 #include "stats.h"
 
@@ -141,6 +147,33 @@ int I_GetTimePolled (bool saveMS)
 	return ((tm-basetime)*TICRATE)/1000;
 }
 
+float I_GetTimeFloat( void )
+{
+	DWORD tm;
+
+	tm = timeGetTime();
+	if (!basetime)
+		basetime = tm;
+
+	return (( (float)tm - (float)basetime ) * (float)TICRATE ) / 1000.0f;
+}
+
+int I_GetMSElapsed( void )
+{
+	DWORD tm;
+
+	tm = timeGetTime();
+	if (!basetime)
+		basetime = tm;
+
+	return ( tm - basetime );
+}
+
+void I_Sleep( int iMS )
+{
+	Sleep( iMS );
+}
+
 int I_WaitForTicPolled (int prevtic)
 {
 	int time;
@@ -208,6 +241,7 @@ void I_WaitVBL (int count)
 }
 
 // [RH] Detect the OS the game is running under
+void			SERVERCONSOLE_UpdateOperatingSystem( char *pszString );
 void I_DetectOS (void)
 {
 	OSVERSIONINFO info;
@@ -268,6 +302,20 @@ void I_DetectOS (void)
 			osname,
 			info.dwMajorVersion, info.dwMinorVersion,
 			OSPlatform == os_Win95 ? info.dwBuildNumber & 0xffff : info.dwBuildNumber);
+
+	if ( Args.CheckParm( "-host" ))
+	{
+		char	szString[256];
+
+		sprintf( szString,
+			"Windows %s %lu.%lu (Build %lu)",
+			osname,
+			info.dwMajorVersion, info.dwMinorVersion,
+			OSPlatform == os_Win95 ? info.dwBuildNumber & 0xffff : info.dwBuildNumber );
+
+		SERVERCONSOLE_UpdateOperatingSystem( szString );
+	}
+
 	if (info.szCSDVersion[0])
 	{
 		Printf ("    %s\n", info.szCSDVersion);
@@ -334,6 +382,7 @@ void SetLanguageIDs ()
 //
 // I_Init
 //
+void SERVERCONSOLE_UpdateVendor( char *pszString );
 void I_Init (void)
 {
 #ifndef USEASM
@@ -361,6 +410,9 @@ void I_Init (void)
 	if (CPU.VendorID[0])
 	{
 		Printf ("CPU Vendor ID: %s\n", CPU.VendorID);
+		if ( Args.CheckParm( "-host" ))
+			SERVERCONSOLE_UpdateVendor( CPU.VendorID );
+
 		if (CPU.CPUString[0])
 		{
 			Printf ("  Name: %s\n", CPU.CPUString);
@@ -414,7 +466,9 @@ void I_Init (void)
 			);
 		MillisecondsPerTic = delay;
 	}
-	if (TimerEventID != 0)
+	
+	// Server is never a timer event.
+	if (( TimerEventID != 0 ) && ( NETWORK_GetState( ) != NETSTATE_SERVER ))
 	{
 		I_GetTime = I_GetTimeEventDriven;
 		I_WaitForTic = I_WaitForTicEvent;
@@ -425,12 +479,16 @@ void I_Init (void)
 		I_WaitForTic = I_WaitForTicPolled;
 	}
 
-	atterm (I_ShutdownSound);
-	I_InitSound ();
-	I_InitInput (Window);
-	I_InitHardware ();
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		atterm (I_ShutdownSound);
+		I_InitSound ();
+		I_InitInput (Window);
+		I_InitHardware ();
+	}
 }
 
+void SERVERCONSOLE_UpdateCPUSpeed( char *pszString );
 void CalculateCPUSpeed ()
 {
 	LARGE_INTEGER freq;
@@ -474,9 +532,25 @@ void CalculateCPUSpeed ()
 	else
 	{
 		Printf ("Can't determine CPU speed, so pretending.\n");
+
+		if ( Args.CheckParm( "-host" ))
+		{
+			char	szString[256];
+
+			sprintf( szString, "Can't determine CPU speed, so pretending.", CyclesPerSecond / 1e6 );
+			SERVERCONSOLE_UpdateCPUSpeed( szString );
+		}
 	}
 
 	Printf ("CPU Speed: %f MHz\n", CyclesPerSecond / 1e6);
+
+	if ( Args.CheckParm( "-host" ))
+	{
+		char	szString[256];
+
+		sprintf( szString, "%f MHz", CyclesPerSecond / 1e6 );
+		SERVERCONSOLE_UpdateCPUSpeed( szString );
+	}
 }
 
 //
@@ -494,6 +568,10 @@ void I_Quit (void)
 		CloseHandle (NewTicArrived);
 
 	timeEndPeriod (TimerPeriod);
+
+	// [BC] Tell the server we're leaving the game.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENT_QuitNetworkGame( );
 
 	if (demorecording)
 		G_CheckDemoStatus();
@@ -519,6 +597,8 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 		va_list argptr;
 		va_start (argptr, error);
 		index = vsprintf (errortext, error, argptr);
+// GetLastError() is usually useless because we don't do a lot of Win32 stuff
+//		sprintf (errortext + index, "\nGetLastError = %ld", GetLastError());
 		va_end (argptr);
 
 		// Record error to log (if logging)
@@ -755,4 +835,67 @@ int I_FindNext (void *handle, findstate_t *fileinfo)
 int I_FindClose (void *handle)
 {
 	return FindClose ((HANDLE)handle);
+}
+
+//
+// I_ConsoleInput - [NightFang] - pulled from the old 0.99 code
+//
+char *I_ConsoleInput (void)
+{
+#ifndef	WIN32
+	static 	char text[256];
+	int	len;
+	if (!stdin_ready || !do_stdin)
+	{ return NULL; }
+
+	stdin_ready = 0;
+
+	len = read(0, text, sizeof(text));
+	if (len < 1)
+	{ return NULL; }
+
+	text[len-1] = 0;
+
+	return text;
+#else
+	
+// Windows code
+	static char     text[256];
+    static int              len;
+    int             c;
+
+    // read a line out
+    while (_kbhit())
+    {
+		c = _getch();
+        putch (c);
+        if (c == '\r')
+        {
+			text[len] = 0;
+            putch ('\n');
+            len = 0;
+            return text;
+        }
+        
+		if (c == 8)
+        {
+			if (len)
+            {
+				putch (' ');
+                putch (c);
+                len--;
+                text[len] = 0;
+            }
+            continue;
+        }
+    
+		text[len] = c;
+        len++;
+        text[len] = 0;
+        if (len == sizeof(text))
+		    len = 0;
+	}
+
+    return NULL;
+#endif
 }

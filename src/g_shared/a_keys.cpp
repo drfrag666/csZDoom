@@ -8,7 +8,8 @@
 #include "sc_man.h"
 #include "v_palette.h"
 #include "w_wad.h"
-
+#include "network.h"
+#include "sv_commands.h"
 
 
 struct OneKey
@@ -407,6 +408,16 @@ bool P_CheckKeys (AActor *owner, int keynum, bool remote)
 	{
 		PrintMessage(failtext);
 		S_SoundID (owner, CHAN_VOICE, failsound, 1, ATTN_NORM);
+
+		// [BC] If we're the server, print the message to 
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			if ( failtext[0] == '$' )
+				failtext = GStrings( failtext + 1 );
+
+			SERVERCOMMANDS_PrintMid( (char *)failtext, consoleplayer, SVCF_ONLYTHISCLIENT );
+			SERVERCOMMANDS_SoundIDActor( owner, CHAN_VOICE, failsound, 127, ATTN_NORM );
+		}
 	}
 
 	return false;
@@ -427,7 +438,7 @@ bool AKey::HandlePickup (AInventory *item)
 {
 	// In single player, you can pick up an infinite number of keys
 	// even though you can only hold one of each.
-	if (multiplayer)
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
 		return Super::HandlePickup (item);
 	}
@@ -445,7 +456,7 @@ bool AKey::HandlePickup (AInventory *item)
 
 bool AKey::ShouldStay ()
 {
-	return !!multiplayer;
+	return ( NETWORK_GetState( ) != NETSTATE_SINGLE );
 }
 
 //==========================================================================

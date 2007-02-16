@@ -293,7 +293,7 @@ gameinfo_t CommercialGameInfo =
 	GI_MAPxx | GI_MENUHACK_COMMERCIAL,
 	"TITLEPIC",
 	"CREDIT",
-	"CREDIT",
+	"STCREDIT",	// [BC] In Skulltag, show the ST credits screen, instead of the regular credits screen twice.
 	"D_DM2TTL",
 	11,
 	0,

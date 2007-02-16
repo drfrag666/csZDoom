@@ -41,6 +41,8 @@
 #include "gi.h"
 #include "files.h"
 #include "m_png.h"
+#include "deathmatch.h"
+#include "network.h"
 
 
 //==========================================================================
@@ -71,7 +73,7 @@ void G_LeavingHub(int mode, cluster_info_t * cluster, wbstartstruct_t * wbs)
 		}
 
 		hubdata[i].finished_ep=level.levelnum;
-		if (!multiplayer && !deathmatch)
+		if (( NETWORK_GetState( ) == NETSTATE_SINGLE ) && !deathmatch)
 		{
 			// The player counters don't work in hubs!
 			hubdata[i].plyr[0].skills=level.killed_monsters;

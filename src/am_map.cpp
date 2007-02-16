@@ -53,6 +53,13 @@
 #include "am_map.h"
 #include "a_artifacts.h"
 
+// [BC] New #includes.
+#include "team.h"
+#include "deathmatch.h"
+#include "network.h"
+#include "scoreboard.h"
+#include "gl_main.h"
+
 static int Background, YourColor, WallColor, TSWallColor,
 		   FDWallColor, CDWallColor, ThingColor,
 		   ThingColor_Item, ThingColor_Monster, ThingColor_Friend,
@@ -81,7 +88,7 @@ static BYTE DoomPaletteVals[11*3] =
 // scale on entry
 #define INITSCALEMTOF (.2*MAPUNIT)
 // used by MTOF to scale from map-to-frame-buffer coords
-static fixed_t scale_mtof = (fixed_t)INITSCALEMTOF;
+fixed_t scale_mtof = (fixed_t)INITSCALEMTOF; // [ZDoomGL]: was static
 // used by FTOM to scale from frame-buffer-to-map coords (=1/scale_mtof)
 static fixed_t scale_ftom;
 
@@ -136,6 +143,8 @@ CVAR (Color, am_thingcolor_item,		0xfcfcfc,	CVAR_ARCHIVE);
 CVAR (Color, am_ovthingcolor_friend,	0xe88800,	CVAR_ARCHIVE);
 CVAR (Color, am_ovthingcolor_monster,	0xe88800,	CVAR_ARCHIVE);
 CVAR (Color, am_ovthingcolor_item,		0xe88800,	CVAR_ARCHIVE);
+
+EXTERN_CVAR(Bool, gl_automap_dukestyle); // [ZDoomGL]
 
 // drawing stuff
 #define AM_PANDOWNKEY	KEY_DOWNARROW
@@ -258,7 +267,7 @@ EXTERN_CVAR (Bool, sv_cheats)
 CUSTOM_CVAR (Int, am_cheat, 0, 0)
 {
 	// No automap cheat in net games when cheats are disabled!
-	if (netgame && !sv_cheats && self != 0)
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && !sv_cheats && self != 0)
 	{
 		self = 0;
 	}
@@ -271,12 +280,14 @@ static int 	leveljuststarted = 1; 	// kluge until AM_LevelInit() is called
 bool		automapactive = false;
 
 // location of window on screen
-static int	f_x;
-static int	f_y;
+// [ZDoomGL]: was static
+int	f_x;
+int	f_y;
 
 // size of window on screen
-static int	f_w;
-static int	f_h;
+// [ZDoomGL]: was static
+int	f_w;
+int	f_h;
 static int	f_p;				// [RH] # of bytes from start of a line to start of next
 
 static BYTE *fb;				// pseudo-frame buffer
@@ -286,14 +297,16 @@ static mpoint_t	m_paninc;		// how far the window pans each tic (map coords)
 static fixed_t	mtof_zoommul;	// how far the window zooms in each tic (map coords)
 static fixed_t	ftom_zoommul;	// how far the window zooms in each tic (fb coords)
 
-static fixed_t	m_x, m_y;		// LL x,y where the window is on the map (map coords)
-static fixed_t	m_x2, m_y2;		// UR x,y where the window is on the map (map coords)
+// [ZDoomGL]: these were static
+fixed_t	m_x, m_y;		// LL x,y where the window is on the map (map coords)
+fixed_t	m_x2, m_y2;		// UR x,y where the window is on the map (map coords)
 
 //
 // width/height of window on map (map coords)
 //
-static fixed_t	m_w;
-static fixed_t	m_h;
+// [ZDoomGL]: was static
+fixed_t	m_w;
+fixed_t	m_h;
 
 // based on level size
 static fixed_t	min_x, min_y, max_x, max_y;
@@ -1253,6 +1266,13 @@ void AM_drawFline (fline_t *fl, int color)
 	fl->a.y += f_y;
 	fl->b.y += f_y;
 
+	// [BC/ZDoomGL] Just let the OpenGL renderer do everything.
+	if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+	{
+		GL_DrawLine(fl->a.x, fl->a.y, fl->b.x, fl->b.y, color);
+		return;
+	}
+
 	switch (color)
 	{
 		case WALLCOLORS:
@@ -1333,7 +1353,7 @@ void AM_drawFline (fline_t *fl, int color)
  * IntensityBits = log base 2 of NumLevels; the # of bits used to describe
  *          the intensity of the drawing color. 2**IntensityBits==NumLevels
  */
-void PUTDOT (int xx, int yy, BYTE *cc, BYTE *cm)
+void PUTDOT (int xx, int yy,BYTE *cc, BYTE *cm)
 {
 	static int oldyy;
 	static int oldyyshifted;
@@ -1976,7 +1996,7 @@ void AM_drawPlayers ()
 	angle_t angle;
 	int i;
 
-	if (!multiplayer)
+	if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 	{
 		if (am_rotate == 1 || (am_rotate == 2 && viewactive))
 			angle = ANG90;
@@ -2005,7 +2025,8 @@ void AM_drawPlayers ()
 			continue;
 		}
 		
-		if (deathmatch && !demoplayback &&
+		// [BC] Do this in teamgame mode too.
+		if (( deathmatch || teamgame ) && !demoplayback &&
 			!p->mo->IsTeammate (players[consoleplayer].mo) &&
 			p != players[consoleplayer].camera->player)
 		{
@@ -2244,11 +2265,15 @@ void AM_Drawer ()
 	if (grid)	
 		AM_drawGrid(GridColor);
 
+	// [BC/ZDoomGL] Potentially render the automap in DUKESTYLE!
+	if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( gl_automap_dukestyle ))
+		GL_DrawDukeAutomap();
+
 	AM_drawWalls(allmap);
 	AM_drawPlayers();
 	if (am_cheat >= 2 || allthings)
 		AM_drawThings(ThingColor);
-	AM_drawAuthorMarkers();
+	AM_drawAuthorMarkers ();
 
 	if (!viewactive)
 		AM_drawCrosshair(XHairColor);

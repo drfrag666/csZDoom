@@ -463,7 +463,8 @@ void DObject::PointerSubstitution (DObject *old, DObject *notOld)
 
 	for (i = 0; i <= highest; i++)
 	{
-		DObject *current = i < highest ? Objects[i] : &bglobal;
+		DObject *current = i < highest ? Objects[i] : NULL;
+//		DObject *current = i < highest ? Objects[i] : &bglobal;
 		if (current)
 		{
 			const PClass *info = current->GetClass();
@@ -534,7 +535,8 @@ void DObject::DestroyScan ()
 
 	for (i = 0; i <= highest; i++)
 	{
-		DObject *current = i < highest ? Objects[i] : &bglobal;
+		DObject *current = i < highest ? Objects[i] : NULL;
+//		DObject *current = i < highest ? Objects[i] : &bglobal;
 		if (current)
 		{
 			const PClass *info = current->GetClass();

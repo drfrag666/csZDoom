@@ -66,6 +66,15 @@
 
 // [RH] Needed for sky scrolling
 #include "r_sky.h"
+#include "announcer.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "network.h"
+#include "team.h"
+#include "lastmanstanding.h"
+#include "gl_main.h"
+#include "sbar.h"
+#include "sv_commands.h"
 
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 
@@ -125,14 +134,19 @@ bool CheckIfExitIsGood (AActor *self)
 	if (self == NULL)
 		return true;
 
-	if ((deathmatch || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
+	// [BC] Teamgame, too.
+	if ((deathmatch || teamgame || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
 	{
 		P_DamageMobj (self, self, self, 1000000, MOD_EXIT);
 		return false;
 	}
-	if (deathmatch)
+	// [BC] Instead of displaying this message in deathmatch only, display it any
+	// time we're not in single player mode (it can be annoying when people exit
+	// the map in cooperative, and it's nice to know who's doing it).
+//	if (deathmatch || teamgame)
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
-		Printf ("%s exited the level.\n", self->player->userinfo.netname);
+		Printf ("%s \\c-exited the level.\n", self->player->userinfo.netname);
 	}
 	return true;
 }
@@ -187,6 +201,17 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 	INTBOOL buttonSuccess;
 	BYTE special;
 
+	// [BC] Lines are server side. However, allow spectators to cross teleports.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && (
+		( mo == NULL ) ||
+		( mo->player == NULL ) ||
+		( mo->player->bSpectating == false ) ||
+		((( line->special == Teleport ) || ( line->special == Teleport_NoFog ) || ( line->special == Teleport_Line )) == false )
+		))
+	{ 
+		return ( false );
+	}
+
 	if (!P_TestActivateLine (line, mo, side, activationType))
 	{
 		return false;
@@ -201,7 +226,7 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 	buttonSuccess = LineSpecials[line->special]
 					(line, mo, side == 1, line->args[0],
 					line->args[1], line->args[2],
-					line->args[3], line->args[4]);
+						line->args[3], line->args[4]);
 
 	special = line->special;
 	if (!repeat && buttonSuccess)
@@ -220,6 +245,10 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 		if (lineActivation == SPAC_USE || lineActivation == SPAC_IMPACT || lineActivation == SPAC_USETHROUGH)
 		{
 			P_ChangeSwitchTexture (&sides[line->sidenum[0]], repeat, special);
+
+			// [BC] Tell the clients of the switch texture change.
+//			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+//				SERVERCOMMANDS_ToggleLine( line - lines, !!repeat );
 		}
 	}
 
@@ -234,6 +263,10 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 	{
 		P_ChangeSwitchTexture (&sides[line->sidenum[0]], repeat, special);
 		line->special = 0;
+
+		// [BC] Tell the clients of the switch texture change.
+//		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+//			SERVERCOMMANDS_ToggleLine( line - lines, !!repeat );
 	}
 // end of changed code
 	if (developer && buttonSuccess)
@@ -367,6 +400,25 @@ void P_PlayerInSpecialSector (player_t *player)
 	sector_t *sector = player->mo->Sector;
 	int special = sector->special & ~SECRET_MASK;
 
+	// [BC] Sector specials are server-side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		// Just do secret triggers, and get out.
+		if ( sector->special & SECRET_MASK )
+		{
+			if (player->mo->CheckLocalView (consoleplayer))
+			{
+				player->secretcount++;
+				level.found_secrets++;
+				sector->special &= ~SECRET_MASK;
+				C_MidPrint (secretmessage);
+				S_Sound (CHAN_AUTO, "misc/secret", 1, ATTN_NORM);
+			}
+		}
+
+		return;
+	}
+
 	// Falling, not all the way down yet?
 	if (player->mo->z != sector->floorplane.ZatPoint (player->mo->x, player->mo->y)
 		&& !player->mo->waterlevel)
@@ -443,7 +495,8 @@ void P_PlayerInSpecialSector (player_t *player)
 			if (!(level.time & 0x1f))
 				P_DamageMobj (player->mo, NULL, NULL, 20, MOD_UNKNOWN);
 
-			if (player->health <= 10 && (!deathmatch || !(dmflags & DF_NO_EXIT)))
+			// [BC] Don't do this in teamgame, either.
+			if (player->health <= 10 && ((!deathmatch && !teamgame) || !(dmflags & DF_NO_EXIT)))
 				G_ExitLevel(0, false);
 			break;
 
@@ -564,17 +617,312 @@ void P_PlayerOnSpecialFlat (player_t *player, int floorType)
 // P_UpdateSpecials
 // Animate planes, scroll walls, etc.
 //
-EXTERN_CVAR (Float, timelimit)
-
 void P_UpdateSpecials ()
 {
-	// LEVEL TIMER
-	if (deathmatch && timelimit)
+//	size_t j;
+//	int i;
+	
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 	{
-		if (level.maptime >= (int)(timelimit * TICRATE * 60))
+		// LEVEL TIMER
+		if (( deathmatch || teamgame ) && timelimit && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
 		{
-			Printf ("%s\n", GStrings("TXT_TIMELIMIT"));
-			G_ExitLevel(0, false);
+			if ( level.time >= (int)(timelimit * TICRATE * 60) && ( GAME_GetEndLevelDelay( ) == 0 ))
+			{
+				// Pause for five seconds for the win sequence.
+				if ( duel )
+				{
+					if ( DUEL_GetState( ) == DS_INDUEL )
+					{
+						LONG	lDueler1 = -1;
+						LONG	lDueler2 = -1;
+						LONG	lWinner = -1;
+						LONG	lLoser = -1;
+						ULONG	ulIdx;
+
+						for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+						{
+							if ( playeringame[ulIdx] && ( players[ulIdx].bSpectating == false ))
+							{
+								if ( lDueler1 == -1 )
+									lDueler1 = ulIdx;
+								else if ( lDueler2 == -1 )
+									lDueler2 = ulIdx;
+							}
+						}
+
+						if (( lDueler1 != -1 ) && ( lDueler2 != -1 ))
+						{
+							if (( players[lDueler1].fragcount ) == ( players[lDueler2].fragcount ))
+							{
+								// If the timlimit is reached, and both duelers have the same fragcount, 
+								// sudden death is reached!
+								if ( level.time == (int)(timelimit * TICRATE * 60 ))
+								{
+									if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+										SERVER_Printf( PRINT_HIGH, "SUDDEN DEATH!\n" );
+									else
+										Printf( "SUDDEN DEATH!\n" );
+								}
+							}
+							else
+							{
+								if (( players[lDueler1].fragcount ) > ( players[lDueler2].fragcount ))
+								{
+									lWinner = lDueler1;
+									lLoser = lDueler2;
+								}
+								else
+								{
+									lWinner = lDueler2;
+									lLoser = lDueler1;
+								}
+
+								// Also, do the win sequence for the player.
+								DUEL_SetLoser( lLoser );
+								DUEL_DoWinSequence( lWinner );
+
+								// Give the winner a win.
+								PLAYER_SetWins( &players[lWinner], players[lWinner].ulWins + 1 );
+
+								if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+									SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+								else
+									Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+								GAME_SetEndLevelDelay( 5 * TICRATE );
+							}
+						}
+						else
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+							else
+								Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+							GAME_SetEndLevelDelay( 5 * TICRATE );
+						}
+					}
+				}
+				else if ( lastmanstanding )
+				{
+					if ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS )
+					{
+						LONG	ulIdx;
+						LONG	lHighestHealth;
+						bool	bTie = false;
+						bool	bFoundPlayer = false;
+						LONG	lWinner = -1;
+
+						for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+						{
+							if ( playeringame[ulIdx] == false )
+								continue;
+
+							if ( players[ulIdx].bSpectating )
+								continue;
+
+							if ( bFoundPlayer == false )
+							{
+								lHighestHealth = players[ulIdx].health;
+								bFoundPlayer = true;
+								lWinner = ulIdx;
+							}
+							else
+							{
+								if ( players[ulIdx].health > lHighestHealth )
+								{
+									lHighestHealth = players[ulIdx].health;
+									bTie = false;
+									lWinner = ulIdx;
+								}
+								else if ( players[ulIdx].health == lHighestHealth )
+									bTie = true;
+							}
+						}
+
+						// No possible winner found. Maybe someone left...
+						if ( lWinner == -1 )
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+							else
+								Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+							G_ExitLevel( 0, false );
+						}
+						// If there was a tie, declare a draw game, and issue a win to all those who are tied.
+						else if ( bTie )
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+							else
+								Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "DRAW GAME!\n" );
+							else
+								Printf( "DRAW GAME!\n" );
+
+							for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+							{
+								if ( playeringame[ulIdx] == false )
+									continue;
+
+								if ( players[ulIdx].bSpectating )
+									continue;
+
+								if ( players[ulIdx].health == lHighestHealth )
+									PLAYER_SetWins( &players[ulIdx], players[ulIdx].ulWins + 1 );
+							}
+
+							// Pause for five seconds for the win sequence.
+							LASTMANSTANDING_DoWinSequence( MAXPLAYERS );
+
+							GAME_SetEndLevelDelay( 5 * TICRATE );
+						}
+						else
+						{
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+							else
+								Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVER_Printf( PRINT_HIGH, "%s \\c-wins!\n", players[lWinner].userinfo.netname );
+							else
+							{
+								Printf( "%s \\c-wins!\n", players[lWinner].userinfo.netname );
+
+								if ( lWinner == consoleplayer )
+									ANNOUNCER_PlayEntry( cl_announcer, "YouWin" );
+							}
+
+							// Give the winner a win.
+							PLAYER_SetWins( &players[lWinner], players[lWinner].ulWins + 1 );
+
+							// Pause for five seconds for the win sequence.
+							LASTMANSTANDING_DoWinSequence( lWinner );
+
+							GAME_SetEndLevelDelay( 5 * TICRATE );
+						}
+					}
+					else
+						G_ExitLevel( 0, false );
+				}
+				else if ( teamlms )
+				{
+					if ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS )
+					{
+						LONG	lWinner;
+						LONG	lDifference;
+
+						lDifference = TEAM_CountLivingPlayers( TEAM_BLUE ) - TEAM_CountLivingPlayers( TEAM_RED );
+						if ( lDifference > 0 )
+							lWinner = TEAM_BLUE;
+						else if ( lDifference < 0 )
+							lWinner = TEAM_RED;
+						else
+							lWinner = NUM_TEAMS;
+
+						// If there was a tie, declare a draw game, and issue a win to both teams.
+						if ( lWinner == NUM_TEAMS )
+						{
+							TEAM_SetWinCount( TEAM_BLUE, TEAM_GetWinCount( TEAM_BLUE ) + 1, false );
+							TEAM_SetWinCount( TEAM_RED, TEAM_GetWinCount( TEAM_RED ) + 1, false );
+						}
+						else
+						{
+							// Give the winner a win.
+							TEAM_SetWinCount( lWinner, TEAM_GetWinCount( lWinner ) + 1, false );
+						}
+
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+						else
+							Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+						// Pause for five seconds for the win sequence.
+						LASTMANSTANDING_DoWinSequence( lWinner );
+
+						GAME_SetEndLevelDelay( 5 * TICRATE );
+					}
+					else
+						G_ExitLevel( 0, false );
+				}
+				// End the level after one second.
+				else
+				{
+					ULONG				ulIdx;
+					LONG				lWinner;
+					LONG				lHighestFrags;
+					bool				bTied;
+					char				szString[64];
+					DHUDMessageFadeOut	*pMsg;
+
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVER_Printf( PRINT_HIGH, "%s\n", GStrings( "TXT_TIMELIMIT" ));
+					else
+						Printf( "%s\n", GStrings( "TXT_TIMELIMIT" ));
+
+					GAME_SetEndLevelDelay( 1 * TICRATE );
+
+					// Determine the winner.
+					lWinner = -1;
+					lHighestFrags = INT_MIN;
+					bTied = false;
+					for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+					{
+						if ( playeringame[ulIdx] == false )
+							continue;
+
+						if ( players[ulIdx].fragcount > lHighestFrags )
+						{
+							lWinner = ulIdx;
+							lHighestFrags = players[ulIdx].fragcount;
+							bTied = false;
+						}
+						else if ( players[ulIdx].fragcount == lHighestFrags )
+							bTied = true;
+					}
+
+					// Just print "YOU WIN!" in single player.
+					if ( bTied )
+						sprintf( szString, "\\cdDRAW GAME!" );
+					else
+					{
+						if (( NETWORK_GetState( ) == NETSTATE_SINGLE_MULTIPLAYER ) && ( players[consoleplayer].mo->CheckLocalView( lWinner )))
+							sprintf( szString, "YOU WIN!" );
+						else
+							sprintf( szString, "%s \\c-WINS!", players[lWinner].userinfo.netname );
+					}
+					V_ColorizeString( szString );
+
+					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+					{
+						screen->SetFont( BigFont );
+
+						// Display "%s WINS!" HUD message.
+						pMsg = new DHUDMessageFadeOut( szString,
+							160.4f,
+							75.0f,
+							320,
+							200,
+							CR_RED,
+							3.0f,
+							2.0f );
+
+						StatusBar->AttachMessage( pMsg, 'CNTR' );
+						screen->SetFont( SmallFont );
+					}
+					else
+					{
+						SERVERCOMMANDS_PrintHUDMessageFadeOut( szString, 1.5f, 0.375f, 320, 200, CR_RED, 3.0f, 2.0f, "BigFont", 'CNTR' );
+					}
+
+					GAME_SetEndLevelDelay( 5 * TICRATE );
+				}
+			}
 		}
 	}
 }
@@ -802,31 +1150,46 @@ void P_SpawnSpecials (void)
 
 		case dLight_Flicker:
 			// FLICKERING LIGHTS
-			new DLightFlash (sector);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DLightFlash (sector);
 			sector->special &= 0xff00;
 			break;
 
 		case dLight_StrobeFast:
 			// STROBE FAST
-			new DStrobe (sector, STROBEBRIGHT, FASTDARK, false);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DStrobe (sector, STROBEBRIGHT, FASTDARK, false);
 			sector->special &= 0xff00;
 			break;
 			
 		case dLight_StrobeSlow:
 			// STROBE SLOW
-			new DStrobe (sector, STROBEBRIGHT, SLOWDARK, false);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DStrobe (sector, STROBEBRIGHT, SLOWDARK, false);
 			sector->special &= 0xff00;
 			break;
 
 		case dLight_Strobe_Hurt:
 		case sLight_Strobe_Hurt:
 			// STROBE FAST/DEATH SLIME
-			new DStrobe (sector, STROBEBRIGHT, FASTDARK, false);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DStrobe (sector, STROBEBRIGHT, FASTDARK, false);
 			break;
 
 		case dLight_Glow:
 			// GLOWING LIGHT
-			new DGlow (sector);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DGlow (sector);
 			sector->special &= 0xff00;
 			break;
 			
@@ -837,13 +1200,19 @@ void P_SpawnSpecials (void)
 			
 		case dLight_StrobeSlowSync:
 			// SYNC STROBE SLOW
-			new DStrobe (sector, STROBEBRIGHT, SLOWDARK, true);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DStrobe (sector, STROBEBRIGHT, SLOWDARK, true);
 			sector->special &= 0xff00;
 			break;
 
 		case dLight_StrobeFastSync:
 			// SYNC STROBE FAST
-			new DStrobe (sector, STROBEBRIGHT, FASTDARK, true);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DStrobe (sector, STROBEBRIGHT, FASTDARK, true);
 			sector->special &= 0xff00;
 			break;
 
@@ -854,24 +1223,41 @@ void P_SpawnSpecials (void)
 			
 		case dLight_FireFlicker:
 			// fire flickering
-			new DFireFlicker (sector);
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DFireFlicker (sector);
 			sector->special &= 0xff00;
 			break;
 
 		case dFriction_Low:
-			sector->friction = FRICTION_LOW;
-			sector->movefactor = 0x269;
+			// [BC] In client mode, let the server tell us about sectors' friction level.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			{
+				sector->friction = FRICTION_LOW;
+				sector->movefactor = 0x269;
+			}
 			sector->special &= 0xff00;
-			sector->special |= FRICTION_MASK;
+			// [BC] In client mode, let the server tell us about sectors' friction level.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				sector->special |= FRICTION_MASK;
 			break;
 
 		  // [RH] Hexen-like phased lighting
 		case LightSequenceStart:
-			new DPhased (sector);
+
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DPhased (sector);
 			break;
 
 		case Light_Phased:
-			new DPhased (sector, 48, 63 - (sector->lightlevel & 63));
+
+			// [BC] In client mode, light specials may have been shut off by the server.
+			// Therefore, we can't spawn them on our end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				new DPhased (sector, 48, 63 - (sector->lightlevel & 63));
 			break;
 
 		case Sky2:
@@ -879,11 +1265,21 @@ void P_SpawnSpecials (void)
 			break;
 
 		case dScroll_EastLavaDamage:
+
+			// [BC] Damage is server-side.
+			if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+				break;
+
 			new DScroller (DScroller::sc_floor, (-FRACUNIT/2)<<3,
 				0, -1, sector-sectors, 0);
 			break;
 
 		default:
+
+			// [BC] Don't run any other specials in client mode.
+			if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+				break;
+
 			if ((sector->special & 0xff) >= Scroll_North_Slow &&
 				(sector->special & 0xff) <= Scroll_SouthWest_Fast)
 			{ // Hexen scroll special
@@ -985,6 +1381,11 @@ void P_SpawnSpecials (void)
 			switch (lines[i].args[1])
 			{
 			case Init_Gravity:
+
+				// [BC] The server will give us gravity updates.
+				if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+					break;
+
 				{
 				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (FRACUNIT * 100.0f);
 				for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
@@ -996,6 +1397,11 @@ void P_SpawnSpecials (void)
 			// handled in P_LoadSideDefs2()
 
 			case Init_Damage:
+
+				// [BC] Damage is server-side.
+				if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+					break;
+
 				{
 					int damage = P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS;
 					for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
@@ -1024,7 +1430,9 @@ void P_SpawnSpecials (void)
 		}
 
 	// [RH] Start running any open scripts on this map
-	FBehavior::StaticStartTypedScripts (SCRIPT_Open, NULL, false);
+	// [BC] Clients don't run scripts.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		FBehavior::StaticStartTypedScripts (SCRIPT_Open, NULL, false);
 }
 
 // killough 2/28/98:
@@ -1095,6 +1503,25 @@ void DScroller::Tick ()
 
 		case sc_carry_ceiling:       // to be added later
 			break;
+	}
+}
+
+//*****************************************************************************
+//
+void DScroller::UpdateToClient( ULONG ulClient )
+{
+	switch ( m_Type )
+	{
+	case sc_side:
+
+		break;
+	case sc_floor:
+	case sc_carry:
+	case sc_ceiling:
+	case sc_carry_ceiling:
+
+		SERVERCOMMANDS_DoScroller( m_Type, m_dx, m_dy, m_Affectee, ulClient, SVCF_ONLYTHISCLIENT );
+		break;
 	}
 }
 
@@ -1268,11 +1695,21 @@ static void P_SpawnScrollers(void)
 			register int s;
 
 		case Scroll_Ceiling:
+
+			// [BC] The server will update these for us.
+			if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+				break;
+
 			for (s=-1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0;)
 				new DScroller (DScroller::sc_ceiling, -dx, dy, control, s, accel);
 			break;
 
 		case Scroll_Floor:
+
+			// [BC] The server will update these for us.
+			if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+				break;
+
 			if (l->args[2] != 1)
 			{ // scroll the floor texture
 				for (s=-1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0;)
@@ -1397,6 +1834,11 @@ static void P_SpawnFriction(void)
 	int i;
 	line_t *l = lines;
 
+	// [BC] Don't do this in client mode, because the friction for the sector could
+	// have changed at some point on the server end.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	for (i = 0 ; i < numlines ; i++,l++)
 	{
 		if (l->special == Sector_SetFriction)
@@ -1475,6 +1917,10 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 			{
 				sectors[s].special |= FRICTION_MASK;
 			}
+
+			// [BC] If we're the server, update clients about this friction change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorFriction( s );
 		}
 	}
 }

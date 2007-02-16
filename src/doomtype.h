@@ -92,6 +92,14 @@ typedef int64_t					SQWORD;
 typedef uint64_t				QWORD;
 #endif
 
+// [BC] New additions.
+typedef	unsigned short			USHORT;
+typedef	short					SHORT;
+typedef	unsigned long			ULONG;
+typedef	long					LONG;
+typedef unsigned int			UINT;
+typedef	int						INT;
+
 // windef.h, included by windows.h, has its own incompatible definition
 // of DWORD as a long. In files that mix Doom and Windows code, you
 // must define USE_WINDOWS_DWORD before including doomtype.h so that
@@ -165,14 +173,27 @@ enum
 	PRINT_MEDIUM,	// death messages
 	PRINT_HIGH,		// critical messages
 	PRINT_CHAT,		// chat messages
-	PRINT_TEAMCHAT	// chat messages from a teammate
+	PRINT_TEAMCHAT,	// chat messages from a teammate
+		
+	// [BC] Output for OpenGL messages.
+	PRINT_OPENGL,
 };
 #define PRINT_LOW				0				// pickup messages
 #define PRINT_MEDIUM			1				// death messages
 #define PRINT_HIGH				2				// critical messages
 #define PRINT_CHAT				3				// chat messages
 #define PRINT_TEAMCHAT			4				// chat messages from a teammate
+#define PRINT_OPENGL			5				// [BC] Output for OpenGL messages.
 #define PRINT_BOLD				200				// What Printf_Bold used
+
+// [BC] heh, why did I define this here?
+typedef struct
+{
+	fixed_t	x;
+	fixed_t	y;
+	fixed_t	z;
+
+} POS_t;
 
 struct PalEntry
 {

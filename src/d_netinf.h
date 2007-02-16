@@ -38,7 +38,8 @@
 
 EXTERN_CVAR (Float, autoaim)
 
-#define MAXPLAYERNAME	15
+// [BC] Allow longer names since we can now colorize them and stuff.
+#define MAXPLAYERNAME	31
 
 enum
 {
@@ -60,25 +61,16 @@ struct userinfo_s
 	int			color;
 	int			skin;
 	int			gender;
-	bool		neverswitch;
+	int			switchonpickup;
 	fixed_t		MoveBob, StillBob;
 	int			PlayerClass;
+
+	// [BC] New Skulltag userinfo settings.
+	LONG		lRailgunTrailColor;
+	LONG		lConnectionType;
+	LONG		lHandicap;
 };
 typedef struct userinfo_s userinfo_t;
-
-enum ETeams
-{
-	TEAM_Red,
-	TEAM_Blue,
-	TEAM_Green,
-	TEAM_Gold,
-
-	NUM_TEAMS,
-	TEAM_None		= 255
-};
-
-extern const char *TeamNames[NUM_TEAMS];
-extern float TeamHues[NUM_TEAMS];
 
 FArchive &operator<< (FArchive &arc, userinfo_t &info);
 

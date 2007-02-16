@@ -44,6 +44,8 @@
 #include "templates.h"
 #include "r_draw.h"
 #include "a_sharedglobal.h"
+// [BC] New #includes.
+#include "g_game.h"
 
 FDecalLib DecalLibrary;
 
@@ -1126,7 +1128,7 @@ void DDecalFader::Tick ()
 	}
 	else
 	{
-		if (level.maptime < TimeToStartDecay || bglobal.freeze)
+		if (level.maptime < TimeToStartDecay || GAME_GetFreezeMode( ))
 		{
 			return;
 		}
@@ -1213,7 +1215,7 @@ void DDecalStretcher::Tick ()
 		Destroy ();
 		return;
 	}
-	if (level.maptime < TimeToStart || bglobal.freeze)
+	if (level.maptime < TimeToStart || GAME_GetFreezeMode( ))
 	{
 		return;
 	}
@@ -1282,7 +1284,7 @@ void DDecalSlider::Tick ()
 		Destroy ();
 		return;
 	}
-	if (level.maptime < TimeToStart || bglobal.freeze)
+	if (level.maptime < TimeToStart || GAME_GetFreezeMode( ))
 	{
 		return;
 	}
@@ -1348,7 +1350,7 @@ void DDecalColorer::Tick ()
 	}
 	else
 	{
-		if (level.maptime < TimeToStartDecay || bglobal.freeze)
+		if (level.maptime < TimeToStartDecay || GAME_GetFreezeMode( ))
 		{
 			return;
 		}

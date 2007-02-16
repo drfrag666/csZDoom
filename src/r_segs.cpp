@@ -137,7 +137,8 @@ static void WallSpriteColumn (void (*drawfunc)(const BYTE *column, const FTextur
 
 CVAR(Bool, r_fogboundary, true, 0)
 
-inline bool IsFogBoundary (sector_t *front, sector_t *back)
+// [ZDoomGL] - inline bool IsFogBoundary (sector_t *front, sector_t *back)
+bool IsFogBoundary (sector_t *front, sector_t *back)
 {
 	return r_fogboundary && !fixedcolormap && front->ColorMap->Fade &&
 		front->ColorMap->Fade != back->ColorMap->Fade &&

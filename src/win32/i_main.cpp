@@ -59,6 +59,8 @@
 #include "i_sound.h"
 #include "autosegs.h"
 #include "w_wad.h"
+#include "serverconsole.h"
+#include "network.h"
 
 #include "stats.h"
 
@@ -80,8 +82,9 @@ extern EXCEPTION_POINTERS CrashPointers;
 
 DArgs Args;
 
-const char WinClassName[] = "ZDOOM WndClass";
-const char ConClassName[] = "ZDOOM Logview";
+// [BC] Sure, let's change this.
+const char WinClassName[] = "Skulltag WndClass";
+const char ConClassName[] = "Skulltag Logview";
 
 HINSTANCE		g_hInst;
 WNDCLASS		WndClass;
@@ -89,6 +92,10 @@ HWND			Window, ConWindow;
 DWORD			SessionID;
 HANDLE			MainThread;
 DWORD			MainThreadID;
+
+// [BC] New stuff for the server console.
+HANDLE			hStdout;
+HANDLE			hStdin;
 
 HMODULE			hwtsapi32;		// handle to wtsapi32.dll
 
@@ -287,86 +294,95 @@ void DoMain (HINSTANCE hInstance)
 		*(strrchr (progdir, '\\') + 1) = 0;
 		FixPathSeperator (progdir);
 
-		height = GetSystemMetrics (SM_CYFIXEDFRAME) * 2 +
-				GetSystemMetrics (SM_CYCAPTION) + 12 * 32;
-		width  = GetSystemMetrics (SM_CXFIXEDFRAME) * 2 + 8 * 78;
-
-		TheInvisibleCursor = LoadCursor (hInstance, MAKEINTRESOURCE(IDC_INVISIBLECURSOR));
-		TheArrowCursor = LoadCursor (NULL, IDC_ARROW);
-
-		WndClass.style			= 0;
-		WndClass.lpfnWndProc	= WndProc;
-		WndClass.cbClsExtra		= 0;
-		WndClass.cbWndExtra		= 0;
-		WndClass.hInstance		= hInstance;
-		WndClass.hIcon			= LoadIcon (hInstance, MAKEINTRESOURCE(IDI_ICON1));
-		WndClass.hCursor		= TheArrowCursor;
-		WndClass.hbrBackground	= NULL;
-		WndClass.lpszMenuName	= NULL;
-		WndClass.lpszClassName	= (LPCTSTR)WinClassName;
-		
-		/* register this new class with Windows */
-		if (!RegisterClass((LPWNDCLASS)&WndClass))
-			I_FatalError ("Could not register window class");
-		
-		/* create window */
-		Window = CreateWindow((LPCTSTR)WinClassName,
-				(LPCTSTR) GAMESIG " " DOTVERSIONSTR " (" __DATE__ ")",
-				WS_OVERLAPPEDWINDOW,
-				0/*CW_USEDEFAULT*/, 1/*CW_USEDEFAULT*/, width, height,
-				(HWND)   NULL,
-				(HMENU)  NULL,
-						hInstance,
-				NULL);
-
-		if (!Window)
-			I_FatalError ("Could not open window");
-
-		WndClass.lpfnWndProc = LConProc;
-		WndClass.lpszClassName = (LPCTSTR)ConClassName;
-		if (RegisterClass ((LPWNDCLASS)&WndClass))
+		// [BC] When hosting, spawn a console dialog box instead of creating a window.
+		if ( Args.CheckParm( "-host" ))
 		{
-			ConWindow = CreateWindowEx (
-				WS_EX_PALETTEWINDOW & (~WS_EX_TOPMOST),
-				(LPCTSTR)ConClassName,
-				(LPCTSTR) "ZDoom Startup Viewer",
-				WS_OVERLAPPEDWINDOW/* | WS_VISIBLE*/,
-				CW_USEDEFAULT, CW_USEDEFAULT,
-				512, 384,
-				Window, NULL, hInstance, NULL);
+			// This never returns.
+			DialogBox( g_hInst, MAKEINTRESOURCE( IDD_SERVERDIALOG ), NULL/*(HWND)Window*/, SERVERCONSOLE_ServerDialogBoxCallback );
 		}
-
-		if (kernel != 0)
+		else
 		{
-			typedef BOOL (WINAPI *pts)(DWORD, DWORD *);
-			pts pidsid = (pts)GetProcAddress (kernel, "ProcessIdToSessionId");
-			if (pidsid != 0)
+			height = GetSystemMetrics (SM_CYFIXEDFRAME) * 2 +
+					GetSystemMetrics (SM_CYCAPTION) + 12 * 32;
+			width  = GetSystemMetrics (SM_CXFIXEDFRAME) * 2 + 8 * 78;
+
+			TheInvisibleCursor = LoadCursor (hInstance, MAKEINTRESOURCE(IDC_INVISIBLECURSOR));
+			TheArrowCursor = LoadCursor (NULL, IDC_ARROW);
+
+			WndClass.style			= 0;
+			WndClass.lpfnWndProc	= WndProc;
+			WndClass.cbClsExtra		= 0;
+			WndClass.cbWndExtra		= 0;
+			WndClass.hInstance		= hInstance;
+			WndClass.hIcon			= LoadIcon (hInstance, MAKEINTRESOURCE(IDI_ICON5));
+			WndClass.hCursor		= TheArrowCursor;
+			WndClass.hbrBackground	= NULL;
+			WndClass.lpszMenuName	= NULL;
+			WndClass.lpszClassName	= (LPCTSTR)WinClassName;
+			
+			/* register this new class with Windows */
+			if (!RegisterClass((LPWNDCLASS)&WndClass))
+				I_FatalError ("Could not register window class");
+			
+			/* create window */
+			Window = CreateWindow((LPCTSTR)WinClassName,
+					(LPCTSTR) GAMESIG " v" DOTVERSIONSTR " (" __DATE__ ")",
+					WS_OVERLAPPEDWINDOW,
+					0/*CW_USEDEFAULT*/, 1/*CW_USEDEFAULT*/, width, height,
+					(HWND)   NULL,
+					(HMENU)  NULL,
+							hInstance,
+					NULL);
+
+			if (!Window)
+				I_FatalError ("Could not open window");
+
+			WndClass.lpfnWndProc = LConProc;
+			WndClass.lpszClassName = (LPCTSTR)ConClassName;
+			if (RegisterClass ((LPWNDCLASS)&WndClass))
 			{
-				if (!pidsid (GetCurrentProcessId(), &SessionID))
+				ConWindow = CreateWindowEx (
+					WS_EX_PALETTEWINDOW & (~WS_EX_TOPMOST),
+					(LPCTSTR)ConClassName,
+					(LPCTSTR) "Skulltag Startup Viewer",
+					WS_OVERLAPPEDWINDOW/* | WS_VISIBLE*/,
+					CW_USEDEFAULT, CW_USEDEFAULT,
+					512, 384,
+					Window, NULL, hInstance, NULL);
+			}
+
+			if (kernel != 0)
+			{
+				typedef BOOL (WINAPI *pts)(DWORD, DWORD *);
+				pts pidsid = (pts)GetProcAddress (kernel, "ProcessIdToSessionId");
+				if (pidsid != 0)
 				{
-					SessionID = 0;
-				}
-				hwtsapi32 = LoadLibraryA ("wtsapi32.dll");
-				if (hwtsapi32 != 0)
-				{
-					FARPROC reg = GetProcAddress (hwtsapi32, "WTSRegisterSessionNotification");
-					if (reg == 0 || !((BOOL(WINAPI *)(HWND, DWORD))reg) (Window, NOTIFY_FOR_THIS_SESSION))
+					if (!pidsid (GetCurrentProcessId(), &SessionID))
 					{
-						FreeLibrary (hwtsapi32);
-						hwtsapi32 = 0;
+						SessionID = 0;
 					}
-					else
+					hwtsapi32 = LoadLibraryA ("wtsapi32.dll");
+					if (hwtsapi32 != 0)
 					{
-						atterm (UnWTS);
+						FARPROC reg = GetProcAddress (hwtsapi32, "WTSRegisterSessionNotification");
+						if (reg == 0 || !((BOOL(WINAPI *)(HWND, DWORD))reg) (Window, NOTIFY_FOR_THIS_SESSION))
+						{
+							FreeLibrary (hwtsapi32);
+							hwtsapi32 = 0;
+						}
+						else
+						{
+							atterm (UnWTS);
+						}
 					}
 				}
 			}
+
+			GetClientRect (Window, &cRect);
+
+			WinWidth = cRect.right;
+			WinHeight = cRect.bottom;
 		}
-
-		GetClientRect (Window, &cRect);
-
-		WinWidth = cRect.right;
-		WinHeight = cRect.bottom;
 
 		CoInitialize (NULL);
 		atterm (UnCOM);
@@ -386,7 +402,7 @@ void DoMain (HINSTANCE hInstance)
 		}
 		if (error.GetMessage ())
 			MessageBox (Window, error.GetMessage(),
-				"ZDOOM Fatal Error", MB_OK|MB_ICONSTOP|MB_TASKMODAL);
+				"Skulltag Fatal Error", MB_OK|MB_ICONSTOP|MB_TASKMODAL);
 		exit (-1);
 	}
 }
@@ -396,7 +412,7 @@ void DoomSpecificInfo (char *buffer)
 	const char *arg;
 	int i;
 
-	buffer += wsprintf (buffer, "ZDoom version " DOTVERSIONSTR " (" __DATE__ ")\r\n");
+	buffer += wsprintf (buffer, "Skulltag version " DOTVERSIONSTR " (" __DATE__ ")\r\n");
 	buffer += wsprintf (buffer, "\r\nCommand line: %s\r\n", GetCommandLine());
 
 	for (i = 0; (arg = Wads.GetWadName (i)) != NULL; ++i)
@@ -415,6 +431,33 @@ void DoomSpecificInfo (char *buffer)
 		strncpy (name, level.mapname, 8);
 		name[8] = 0;
 		buffer += wsprintf (buffer, "\r\n\r\nCurrent map: %s", name);
+
+		// [BC] Also display the network state.
+		char	szNetState[16];
+		switch ( NETWORK_GetState( ))
+		{
+		case NETSTATE_SINGLE:
+
+			sprintf( szNetState, "SINGLE" );
+			break;
+		case NETSTATE_SINGLE_MULTIPLAYER:
+
+			sprintf( szNetState, "FAKE MULTI" );
+			break;
+		case NETSTATE_CLIENT:
+
+			sprintf( szNetState, "CLIENT" );
+			break;
+		case NETSTATE_SERVER:
+
+			sprintf( szNetState, "SERVER" );
+			break;
+		default:
+
+			sprintf( szNetState, "UNKNOWN" );
+			break;
+		}
+		buffer += wsprintf (buffer, "\r\n\r\nNetwork state: %s", szNetState);
 
 		if (!viewactive)
 		{
@@ -583,9 +626,10 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 	MainThread = INVALID_HANDLE_VALUE;
 	return 0;
 }
-
+/*
 #include "c_dispatch.h"
 CCMD (crashout)
 {
 	*(int *)0 = 0;
 }
+*/

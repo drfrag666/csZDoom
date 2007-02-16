@@ -48,6 +48,15 @@
 #include "gi.h"
 #include "p_effect.h"
 #include "../version.h"
+// [BC] New #includes.
+#include "cl_main.h"
+#include "deathmatch.h"
+#include "team.h"
+#include "stats.h"
+#include "chat.h"
+#include "lastmanstanding.h"
+#include "gl_main.h"
+#include "network.h"
 
 #define XHAIRSHRINKSIZE		(FRACUNIT/18)
 #define XHAIRPICKUPSIZE		(FRACUNIT*2+XHAIRSHRINKSIZE)
@@ -90,6 +99,10 @@ CUSTOM_CVAR (Int, crosshair, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 	char name[16], size;
 	int lump;
 
+	// [BC] Server has no use for a crosshair.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if (CrosshairImage != NULL)
 	{
 		CrosshairImage->Unload ();
@@ -120,6 +133,7 @@ CVAR (Color, crosshaircolor, 0xff0000, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (Bool, crosshairhealth, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (Bool, crosshairscale, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (Bool, crosshairgrow, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+CVAR( Bool, cl_identifytarget, true, CVAR_ARCHIVE );
 
 CVAR (Bool, idmypos, false, 0);
 
@@ -1035,14 +1049,29 @@ void FBaseStatusBar::DrawCrosshair ()
 		palettecolor = ColorMatcher.Pick (RPART(color), GPART(color), BPART(color));
 	}
 
-	screen->DrawTexture (CrosshairImage,
-		realviewwidth / 2 + viewwindowx,
-		realviewheight / 2 + viewwindowy,
-		DTA_DestWidth, w,
-		DTA_DestHeight, h,
-		DTA_AlphaChannel, true,
-		DTA_FillColor, (palettecolor << 24) | (color & 0xFFFFFF),
-		TAG_DONE);
+	// [BC]
+	if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+	{
+		screen->DrawTexture (CrosshairImage,
+			realviewwidth / 2 + viewwindowx,
+			realviewheight / 2 + viewwindowy,
+			DTA_DestWidth, w,
+			DTA_DestHeight, h,
+			DTA_AlphaChannel, true,
+			DTA_FillColor, palettecolor/*(palettecolor << 24) | (color & 0xFFFFFF)*/,
+			TAG_DONE);
+	}
+	else
+	{
+		screen->DrawTexture (CrosshairImage,
+			realviewwidth / 2 + viewwindowx,
+			realviewheight / 2 + viewwindowy,
+			DTA_DestWidth, w,
+			DTA_DestHeight, h,
+			DTA_AlphaChannel, true,
+			DTA_FillColor, (palettecolor << 24) | (color & 0xFFFFFF),
+			TAG_DONE);
+	}
 }
 
 //---------------------------------------------------------------------------
@@ -1263,7 +1292,8 @@ void FBaseStatusBar::DrawTopStuff (EHudState state)
 		DrawMessages (SCREENHEIGHT);
 	}
 
-	DrawConsistancy ();
+	// [BC] Draw the name of the player that's in our crosshair.
+	DrawTargetName( );
 }
 
 //---------------------------------------------------------------------------
@@ -1277,6 +1307,10 @@ void FBaseStatusBar::DrawPowerups ()
 	// Each icon gets a 32x32 block to draw itself in.
 	int x, y;
 	AInventory *item;
+
+	// [BC] The player may not have a body between intermission-less maps.
+	if ( CPlayer->mo == NULL )
+		return;
 
 	x = -20;
 	y = 17;
@@ -1321,11 +1355,16 @@ void FBaseStatusBar::AddBlend (float r, float g, float b, float a, float v_blend
 //
 //---------------------------------------------------------------------------
 
+CVAR( Float, blood_fade_scalar, 0.5f, CVAR_ARCHIVE )
 void FBaseStatusBar::BlendView (float blend[4])
 {
 	int cnt;
 
 	AddBlend (BaseBlendR / 255.f, BaseBlendG / 255.f, BaseBlendB / 255.f, BaseBlendA, blend);
+
+	// [BC] The player may not have a body between intermission-less maps.
+	if ( CPlayer->mo == NULL )
+		return;
 
 	// [RH] All powerups can effect the screen blending now
 	for (AInventory *item = CPlayer->mo->Inventory; item != NULL; item = item->Inventory)
@@ -1344,6 +1383,9 @@ void FBaseStatusBar::BlendView (float blend[4])
 
 	cnt = DamageToAlpha[MIN (113, CPlayer->damagecount)];
 		
+	// [BC] Allow users to tone down the intensity of the blood on the screen.
+	cnt = (int)( cnt * blood_fade_scalar );
+
 	if (cnt)
 	{
 		if (cnt > 228)
@@ -1380,7 +1422,7 @@ void FBaseStatusBar::BlendView (float blend[4])
 	V_SetBlend ((int)(blend[0] * 255.0f), (int)(blend[1] * 255.0f),
 				(int)(blend[2] * 255.0f), (int)(blend[3] * 256.0f));
 }
-
+/*
 void FBaseStatusBar::DrawConsistancy () const
 {
 	static bool firsttime = true;
@@ -1425,6 +1467,78 @@ void FBaseStatusBar::DrawConsistancy () const
 			(screen->GetWidth() - SmallFont->StringWidth (conbuff)*CleanXfac) / 2,
 			0, conbuff, DTA_CleanNoMove, true, TAG_DONE);
 		BorderTopRefresh = screen->GetPageCount ();
+	}
+}
+*/
+player_s	*P_PlayerScan( AActor *mo );
+void FBaseStatusBar::DrawTargetName ()
+{
+	// [BC] The player may not have a body between intermission-less maps.
+	if ( CPlayer->camera == NULL )
+		return;
+
+	// Break out if we don't want to identify the target, or
+	// a medal has just been awarded and is being displayed.
+	if (( cl_identifytarget == false ) || ( MEDAL_GetDisplayedMedal( CPlayer->camera->player - players ) != NUM_MEDALS ))
+		return;
+
+	// Don't do any of this while still receiving a snapshot.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) == CTS_RECEIVINGSNAPSHOT ))
+		return;
+
+	if (( CPlayer->bSpectating ) && ( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ))
+		return;
+
+	// Look for players directly in front of the player.
+	if ( camera )
+	{
+		player_s			*pTargetPlayer;
+		ULONG				ulTextColor;
+		char				szString[64];
+		DHUDMessageFadeOut	*pMsg;
+
+		// Search for a player directly in front of the camera. If none are found, exit.
+		pTargetPlayer = P_PlayerScan( camera );
+		if ( pTargetPlayer == NULL )
+			return;
+
+		// Build the string and text color;
+		sprintf( szString, "%s", pTargetPlayer->userinfo.netname );
+
+		if ( deathmatch )
+		{
+			if ( terminator )
+			{
+				// If this player is carrying the terminator artifact, display his name in red.
+				if ( pTargetPlayer->Powers & PW_TERMINATORARTIFACT )
+					ulTextColor = CR_RED;
+				else
+					ulTextColor = CR_GRAY;
+			}
+			else
+				ulTextColor = CR_GRAY;
+		}
+		// Attempt to use the team color.
+		else if ( teamgame )
+		{
+			if ( pTargetPlayer->bOnTeam )
+				ulTextColor = TEAM_GetTextColor( pTargetPlayer->ulTeam );
+			else
+				ulTextColor = CR_GRAY;
+		}
+		else
+			ulTextColor = CR_GRAY;
+
+		pMsg = new DHUDMessageFadeOut( szString,
+			1.5f,
+			gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f,
+			0,
+			0,
+			(EColorRange)ulTextColor,
+			2.f,
+			0.35f );
+
+		AttachMessage( pMsg, 'PNAM' );
 	}
 }
 

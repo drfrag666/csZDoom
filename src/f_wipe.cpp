@@ -28,6 +28,7 @@
 #include "doomdef.h"
 #include "f_wipe.h"
 #include "c_cvars.h"
+#include "gl_main.h"
 
 //
 //		SCREEN WIPE PACKAGE
@@ -365,6 +366,10 @@ int wipe_exitFade (int ticks)
 
 int wipe_StartScreen (int type)
 {
+	// [BC/ZDoomGL] This hasn't been completed in OpenGL mode yet.
+	if ( OPENGL_GetCurrentRenderer( ) != RENDERER_SOFTWARE )
+		return ( 0 );
+
 	CurrentWipeType = type;
 	if (CurrentWipeType < 0)
 		CurrentWipeType = 0;
@@ -383,6 +388,10 @@ int wipe_StartScreen (int type)
 
 int wipe_EndScreen (void)
 {
+	// [BC/ZDoomGL] This hasn't been completed in OpenGL mode yet.
+	if ( OPENGL_GetCurrentRenderer( ) != RENDERER_SOFTWARE )
+		return ( 0 );
+
 	if (CurrentWipeType)
 	{
 		wipe_scr_end = new short[SCREENWIDTH * SCREENHEIGHT / 2];
@@ -404,6 +413,10 @@ bool wipe_ScreenWipe (int ticks)
 		wipe_initFade, wipe_doFade, wipe_exitFade
 	};
 	int rc;
+
+	// [BC/ZDoomGL] This hasn't been completed in OpenGL mode yet.
+	if ( OPENGL_GetCurrentRenderer( ) != RENDERER_SOFTWARE )
+		return ( true );
 
 	if (CurrentWipeType == wipe_None)
 		return true;

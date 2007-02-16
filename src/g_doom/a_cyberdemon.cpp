@@ -69,6 +69,7 @@ IMPLEMENT_ACTOR (ACyberdemon, Doom, 16, 114)
 	PROP_Flags2 (MF2_MCROSS|MF2_PASSMOBJ|MF2_PUSHWALL|MF2_BOSS|MF2_FLOORCLIP)
 	PROP_Flags3 (MF3_NORADIUSDMG|MF3_DONTMORPH)
 	PROP_Flags4 (MF4_BOSSDEATH|MF4_MISSILEMORE)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 	PROP_MinMissileChance (160)
 
 	PROP_SpawnState (S_CYBER_STND)
@@ -86,11 +87,17 @@ END_DEFAULTS
 
 void A_CyberAttack (AActor *self)
 {
+	AActor	*pMissile;
+
 	if (!self->target)
 		return;
 				
 	A_FaceTarget (self);
-	P_SpawnMissile (self, self->target, RUNTIME_CLASS(ARocket));
+	pMissile = P_SpawnMissile (self, self->target, RUNTIME_CLASS(ARocket));
+
+	// [BC] If we're the server, tell clients to spawn the missile.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pMissile ))
+		SERVERCOMMANDS_SpawnMissile( pMissile );
 }
 
 void A_Hoof (AActor *self)

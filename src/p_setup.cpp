@@ -58,6 +58,18 @@
 #include "s_sndseq.h"
 #include "sbar.h"
 #include "p_setup.h"
+#include "deathmatch.h"
+#include "duel.h"
+#include "team.h"
+#include "a_doomglobal.h"
+#include "network.h"
+#include "lastmanstanding.h"
+#include "astar.h"
+#include "campaign.h"
+#include "invasion.h"
+#include "survival.h"
+#include "gl_main.h"
+#include "possession.h"
 
 extern void P_SpawnMapThing (mapthing2_t *mthing, int position);
 extern bool P_LoadBuildMap (BYTE *mapdata, size_t len, mapthing2_t **things, int *numthings);
@@ -170,6 +182,19 @@ static bool		ForceNodeBuild;
 
 // Maintain single and multi player starting spots.
 TArray<mapthing2_t> deathmatchstarts (16);
+
+// [BC] Temporary team spawn spots.
+TArray<mapthing2_t>	TemporaryTeamStarts( 16 );
+
+// [BC] Blue team spawn spots.
+TArray<mapthing2_t>	BlueTeamStarts( 16 );
+
+// [BC] Red team spawn spots.
+TArray<mapthing2_t>	RedTeamStarts( 16 );
+
+// [BC] Generic invasion spawn spots.
+TArray<mapthing2_t>	GenericInvasionStarts( 16 );
+
 mapthing2_t		playerstarts[MAXPLAYERS];
 
 static void P_AllocateSideDefs (int count);
@@ -1044,6 +1069,13 @@ void P_LoadSectors (MapData * map)
 	ss = sectors;
 	for (i = 0; i < numsectors; i++, ss++, ms++)
 	{
+		// [BC] Store changes for flats, height, and light. If these change over the course of
+		// the level, tell new clients about them.
+		ss->bFlatChange = false;
+		ss->bFloorHeightChange = false;
+		ss->bCeilingHeightChange = false;
+		ss->bLightChange = false;
+
 		ss->floortexz = LittleShort(ms->floorheight)<<FRACBITS;
 		ss->floorplane.d = -ss->floortexz;
 		ss->floorplane.c = FRACUNIT;
@@ -1099,6 +1131,16 @@ void P_LoadSectors (MapData * map)
 		// killough 8/28/98: initialize all sectors to normal friction
 		ss->friction = ORIG_FRICTION;
 		ss->movefactor = ORIG_FRICTION_FACTOR;
+
+		// [BC] Save these values. If they change, and a client connects, send
+		// him the new values.
+		ss->SavedLightLevel = ss->lightlevel;
+		ss->SavedCeilingPic = ss->ceilingpic;
+		ss->SavedFloorPic = ss->floorpic;
+		ss->SavedCeilingPlane = ss->ceilingplane;
+		ss->SavedFloorPlane = ss->floorplane;
+		ss->SavedCeilingTexZ = ss->ceilingtexz;
+		ss->SavedFloorTexZ = ss->floortexz;
 	}
 	delete[] msp;
 }
@@ -1733,6 +1775,9 @@ void P_FinishLoadingLineDefs ()
 			sides[ld->sidenum[1]].Light = light;
 		}
 
+		// [BC] Back up the line's alpha here.
+		ld->SavedAlpha = ld->alpha;
+
 		switch (ld->special)
 		{						// killough 4/11/98: handle special types
 			int j;
@@ -1748,6 +1793,10 @@ void P_FinishLoadingLineDefs ()
 			if (!ld->args[0])
 			{
 				ld->alpha = (BYTE)alpha;
+
+				// [BC] Back up the line's alpha here.
+				ld->SavedAlpha = ld->alpha;
+
 				if (ld->args[2] == 1)
 				{
 					sides[ld->sidenum[0]].Flags |= WALLF_ADDTRANS;
@@ -1764,6 +1813,10 @@ void P_FinishLoadingLineDefs ()
 					if (lines[j].id == ld->args[0])
 					{
 						lines[j].alpha = (BYTE)alpha;
+
+						// [BC] Back up the line's alpha here.
+						lines[j].SavedAlpha = lines[j].alpha;
+
 						if (lines[j].args[2] == 1)
 						{
 							sides[lines[j].sidenum[0]].Flags |= WALLF_ADDTRANS;
@@ -1776,6 +1829,10 @@ void P_FinishLoadingLineDefs ()
 				}
 			}
 			ld->special = 0;
+
+			// [BC] Erase the line's backed up special.
+			ld->SavedSpecial = ld->special;
+
 			break;
 		}
 	}
@@ -1854,6 +1911,11 @@ void P_LoadLineDefs (MapData * map)
 
 		P_AdjustLine (ld);
 		P_SaveLineSpecial (ld);
+
+		// [BC] Backup certain properties of the line.
+		ld->SavedSpecial = ld->special;
+		ld->SavedFlags = ld->flags;
+
 		if (level.flags & LEVEL_CLIPMIDTEX) ld->flags |= ML_CLIP_MIDTEX;
 		if (level.flags & LEVEL_WRAPMIDTEX) ld->flags |= ML_WRAP_MIDTEX;
 	}
@@ -1930,6 +1992,11 @@ void P_LoadLineDefs2 (MapData * map)
 
 		P_AdjustLine (ld);
 		P_SaveLineSpecial (ld);
+
+		// [BC] Backup certain properties of the line.
+		ld->SavedSpecial = ld->special;
+		ld->SavedFlags = ld->flags;
+
 		if (level.flags & LEVEL_CLIPMIDTEX) ld->flags |= ML_CLIP_MIDTEX;
 		if (level.flags & LEVEL_WRAPMIDTEX) ld->flags |= ML_WRAP_MIDTEX;
 	}
@@ -2272,6 +2339,10 @@ void P_LoadSideDefs2 (MapData * map)
 			sd->bottomtexture = TexMan.GetTexture (name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable);
 			break;
 		}
+
+		sd->SavedTopTexture = sd->toptexture;
+		sd->SavedMidTexture = sd->midtexture;
+		sd->SavedBottomTexture = sd->bottomtexture;
 	}
 	delete[] msdf;
 }
@@ -2738,6 +2809,10 @@ void P_LoadBlockMap (MapData * map)
 	blocklinks = new FBlockNode *[count];
 	memset (blocklinks, 0, count*sizeof(*blocklinks));
 	blockmap = blockmaplump+4;
+
+	// [BC] Also, build the node list for the bot pathing module.
+	if ((( NETWORK_GetState( ) == NETSTATE_CLIENT ) || ( level.flags & LEVEL_NOBOTNODES ) || (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( sv_disallowbots ))) == false )
+		ASTAR_BuildNodes( );
 }
 
 
@@ -2765,12 +2840,20 @@ static void P_GroupLines (bool buildmap)
 	DBoundingBox		bbox;
 	bool				flaggedNoFronts = false;
 	unsigned int		ii, jj;
-		
+   // [ZDoomGL]
+   seg_t *seg;
+
 	// look up sector number for each subsector
 	clock (times[0]);
 	for (i = 0; i < numsubsectors; i++)
 	{
-		subsectors[i].sector = segs[subsectors[i].firstline].sidedef->sector;
+      // [ZDoomGL] - gl node info may be loaded here, so account for minisegs
+      for (j = 0; j < subsectors[i].numlines; j++)
+      {
+         seg = &segs[subsectors[i].firstline + j];
+         if (seg->sidedef) break;
+      }
+		subsectors[i].sector = seg->sidedef->sector;
 		subsectors[i].validcount = validcount;
 
 		double accumx = 0.0, accumy = 0.0;
@@ -3227,6 +3310,171 @@ void P_GetPolySpots (MapData * map, TArray<FNodeBuilder::FPolyStart> &spots, TAr
 	}
 }
 
+//
+// [BC] P_RemoveThings
+//
+// Remove any items that were spawned that shouldn't be due to game mode
+void P_RemoveThings( void )
+{
+	AActor						*pActor;
+	TThinkerIterator<AActor>	iterator;
+
+	while ( pActor = iterator.Next( ))
+	{
+		// No special items are spawned during instagib, shotgun battle, or LMS.
+		if ((( instagib || buckshot ) && ( deathmatch || teamgame )) || lastmanstanding || teamlms )
+		{
+			if ( pActor->flags & MF_SPECIAL )
+			{
+				// Don't destroy flags in teamgame modes.
+				if ((( ctf || oneflagctf || skulltag ) && ( pActor->GetClass( )->IsDescendantOf( PClass::FindClass( "Flag" )))) == false )
+				{
+					pActor->Destroy( );
+					continue;
+				}
+			}
+		}
+
+		// don't spawn keycards and players in deathmatch
+		if ( deathmatch && ( pActor->flags & MF_NOTDMATCH ))
+		{
+			pActor->Destroy( );
+			continue;
+		}
+
+		// [RH] don't spawn extra weapons in coop
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && (( deathmatch || teamgame ) == false ))
+		{
+			if (( pActor->SpawnFlags & MTF_COOPERATIVE ) == false )
+			{
+				pActor->Destroy( );
+				continue;
+			}
+		}
+
+		// check for appropriate game type
+		{
+			LONG	lMask;
+
+			if ( deathmatch )
+			{
+				lMask = MTF_DEATHMATCH;
+			}
+			else if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+			{
+				lMask = MTF_COOPERATIVE;
+			}
+			else
+			{
+				lMask = MTF_SINGLE;
+			}
+
+			// If an object was spawned from a mapthing, mapflags will be > 0.
+			if (( pActor->SpawnFlags > 0 ) && (( pActor->SpawnFlags & lMask ) == false ))
+			{
+				if ( pActor->flags & MF_COUNTKILL )
+					level.total_monsters--;
+
+				pActor->Destroy( );
+				continue;
+			}
+		}
+
+		// I haven't seen a need for this block of code. If I get complaints, I'll uncomment it.
+/*
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE && ( deathmatch || teamgame ) == false )
+		{
+			if (( pActor->mapflags & MTF_SINGLE ) == false )
+			{
+				pActor->Destroy( );
+				continue;
+			}
+		}
+*/
+		// don't spawn any monsters if -nomonsters
+		if ( deathmatch || teamgame || alwaysapplydmflags || ( NETWORK_GetState( ) != NETSTATE_SINGLE ))
+		{
+			if (( dmflags & DF_NO_MONSTERS ) && ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( ALostSoul )) || ( pActor->flags3 & MF3_ISMONSTER )))
+			{
+				pActor->Destroy( );
+				continue;
+			}
+		}
+
+		// [RH] Other things that shouldn't be spawned depending on dmflags
+		if ( deathmatch || teamgame || alwaysapplydmflags )
+		{
+			if ( dmflags & DF_NO_HEALTH )
+			{
+				if (( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AHealth ))) || ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AMaxHealth ))))
+				{
+					pActor->Destroy( );
+					continue;
+				}
+				if ( strcmp( pActor->GetClass( )->TypeName.GetChars( ), "Berserk" ) == 0 )
+				{
+					pActor->Destroy( );
+					continue;
+				}
+				if ( strcmp( pActor->GetClass( )->TypeName.GetChars( ), "Soulsphere" ) == 0 )
+				{
+					pActor->Destroy( );
+					continue;
+				}
+				if ( strcmp( pActor->GetClass( )->TypeName.GetChars( ), "Megasphere" ) == 0 )
+				{
+					pActor->Destroy( );
+					continue;
+				}
+			}
+/*
+			if ( dmflags & DF_NO_ITEMS )
+			{
+				if ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AArtifact )))
+				{
+					pActor->Destroy( );
+					continue;
+				}
+			}
+*/
+			if ( dmflags & DF_NO_ARMOR )
+			{
+				if ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AArmor )))
+				{
+					pActor->Destroy( );
+					continue;
+				}
+				if ( strcmp( pActor->GetClass( )->TypeName.GetChars( ), "Megasphere" ) == 0 )
+				{
+					pActor->Destroy( );
+					continue;
+				}
+			}
+
+			if ( dmflags2 & DF2_NO_RUNES )
+			{
+				if ( pActor->GetClass( )->IsDescendantOf( PClass::FindClass( "RuneGiver" )))
+				{
+					pActor->Destroy( );
+					continue;
+				}
+
+			}
+		}
+
+		// If we're in a team game, and it's not one flag CTF, make sure
+		// to delete the white flags, which are used for one flag CTF.
+		if (( teamgame ) && ( oneflagctf == false ))
+		{
+			if ( pActor->IsKindOf( PClass::FindClass( "WhiteFlag" )))
+			{
+				pActor->Destroy( );
+				continue;
+			}
+		}
+	}
+}
+
 extern polyblock_t **PolyBlockMap;
 
 void P_FreeLevelData ()
@@ -3350,7 +3598,50 @@ void P_FreeLevelData ()
 		delete[] level.Scrolls;
 		level.Scrolls = NULL;
 	}
+
+	// [BC] Clear the bots' nodes.
+	if ( ASTAR_IsInitialized( ))
+		ASTAR_ClearNodes( );
 }
+
+// [ZDoomGL]
+void GL_ClearMappedSubsectors()
+{
+   int i;
+
+   for (i = 0; i < numsubsectors; i++)
+   {
+      subsectors[i].isMapped = false;
+   }
+}
+
+// [ZDoomGL]
+void P_SetSegOffsets()
+{
+   int i;
+   seg_t *li;
+   line_t *ldef;
+
+   for (i = 0; i < numsegs; i++)
+   {
+      li = &segs[i];
+      ldef = li->linedef;
+      if (ldef != NULL)
+      {
+         if (&sides[ldef->sidenum[0]] == li->sidedef)
+         {
+            li->offset = (fixed_t)(AccurateDistance(li->v1->x - ldef->v1->x, li->v1->y - ldef->v1->y) * FRACUNIT);
+         }
+         else 
+         {
+            li->offset = (fixed_t)(AccurateDistance(li->v1->x - ldef->v2->x, li->v1->y - ldef->v2->y) * FRACUNIT);
+         }
+      }
+   }
+}
+
+// [BC] EWEWEWEWEWEWEWEWEW
+extern	bool	g_bFirstFragAwarded;
 
 extern msecnode_t *headsecnode;
 
@@ -3393,6 +3684,13 @@ void P_SetupLevel (char *lumpname, int position)
 	int numbuildthings;
 	int i;
 	bool buildmap;
+   // [ZDoomGL]
+   int gl_lumpnum, j;
+   bool foundGLNodeInfo = false;
+   char gl_lumpname[9];
+   sector_t *sector;
+   line_t *line;
+   double accumx, accumy;
 
 	wminfo.partime = 180;
 
@@ -3484,9 +3782,54 @@ void P_SetupLevel (char *lumpname, int position)
 
 		P_LoadStrifeConversations (lumpname);
 
-		clock (times[0]);
-		P_LoadVertexes (map);
-		unclock (times[0]);
+		// [ZDoomGL]
+		gl_lumpname[8] = '\0';
+		sprintf(gl_lumpname, "GL_");
+		if (sizeof(lumpname) < 6)
+		{
+			memcpy(gl_lumpname + 3, lumpname, sizeof(lumpname) + 1);
+		}
+
+		gl_lumpnum = Wads.CheckNumForName(gl_lumpname);
+
+		if (gl_lumpnum > Wads.CheckNumForName(lumpname))
+		{
+			//Printf("ZGL: Loading GL node information.\n");
+			foundGLNodeInfo = true;
+			Wads.GetLumpName(gl_lumpname, gl_lumpnum + 1); // GL_VERT
+			if (strcmp(gl_lumpname, "GL_VERT") == 0)
+			{
+				P_LoadVertexes (map);
+				P_LoadGLVertexes(gl_lumpnum + 1);
+			}
+			else
+			{
+				foundGLNodeInfo = false;
+				ForceNodeBuild = true;
+			}
+
+			// this isn't dependant on the rest of the GL_* information
+			Wads.GetLumpName(gl_lumpname, gl_lumpnum + 5); // GL_PVS
+			if (glpvs) delete[] glpvs;
+			glpvs = NULL;
+			if (strcmp(gl_lumpname, "GL_PVS") == 0)
+			{
+				//Printf("ZGL: loading PVS information.\n");
+				FMemLump pvs = Wads.ReadLump(gl_lumpnum + 5); // GL_PVS
+				if (Wads.LumpLength(gl_lumpnum + 5))
+				{
+					glpvs = new BYTE[Wads.LumpLength(gl_lumpnum + 5)];
+					memcpy(glpvs, pvs.GetMem(), Wads.LumpLength(gl_lumpnum + 5));
+					Printf( PRINT_OPENGL, "loaded PVS information.\n");
+				}
+			}
+		}
+		else
+		{
+			clock (times[0]);
+			P_LoadVertexes (map);
+			unclock (times[0]);
+		}
 		
 		// Check for maps without any BSP data at all (e.g. SLIGE)
 		clock (times[1]);
@@ -3524,7 +3867,9 @@ void P_SetupLevel (char *lumpname, int position)
 		ForceNodeBuild = true;
 	}
 
-	UsingGLNodes = false;
+	// [BC] From now on, we're ALWAYS using GL nodes!
+	UsingGLNodes = true;
+	ForceNodeBuild = true;
 	if (!ForceNodeBuild)
 	{
 		// Check for compressed nodes first, then uncompressed nodes
@@ -3574,19 +3919,58 @@ void P_SetupLevel (char *lumpname, int position)
 		}
 		else
 		{
-			clock (times[7]);
-			P_LoadSubsectors (map);
-			unclock (times[7]);
+			// [ZDoomGL]
+			if (foundGLNodeInfo)
+			{
+				Wads.GetLumpName(gl_lumpname, gl_lumpnum + 3); // GL_SSECT
+				if (strcmp(gl_lumpname, "GL_SSECT") == 0)
+				{
+					P_LoadGLSubsectors(gl_lumpnum + 3);
+				}
+				else
+				{
+					ForceNodeBuild = true;
+				}
 
-			clock (times[8]);
-			if (!ForceNodeBuild) P_LoadNodes (map);
-			unclock (times[8]);
+				Wads.GetLumpName(gl_lumpname, gl_lumpnum + 4); // GL_NODES
+				if (strcmp(gl_lumpname, "GL_NODES") == 0)
+				{
+//					P_LoadNodes(gl_lumpnum + 4);
+					P_LoadNodes(map);
+				}
+				else
+				{
+					ForceNodeBuild = true;
+				}
 
-			clock (times[9]);
-			if (!ForceNodeBuild) P_LoadSegs (map);
-			unclock (times[9]);
+				Wads.GetLumpName(gl_lumpname, gl_lumpnum + 2); // GL_SEGS
+				if (strcmp(gl_lumpname, "GL_SEGS") == 0)
+				{
+					P_LoadGLSegs(gl_lumpnum + 2);
+				}
+				else
+				{
+					ForceNodeBuild = true;
+				}
+
+				if (!foundGLNodeInfo)
+					ForceNodeBuild = true;
+			}
+			else
+			{
+				clock (times[7]);
+				P_LoadSubsectors (map);
+				unclock (times[7]);
+
+				clock (times[8]);
+				if (!ForceNodeBuild) P_LoadNodes (map);
+				unclock (times[8]);
+
+				clock (times[9]);
+				if (!ForceNodeBuild) P_LoadSegs (map);
+				unclock (times[9]);
+			}
 		}
-
 	}
 	if (ForceNodeBuild)
 	{
@@ -3602,7 +3986,8 @@ void P_SetupLevel (char *lumpname, int position)
 			lines, numlines
 		};
 		leveldata.FindMapBounds ();
-		UsingGLNodes |= genglnodes;
+		// [ZDoomGL] - always generate GL nodes
+		UsingGLNodes = true;
 		FNodeBuilder builder (leveldata, polyspots, anchors, UsingGLNodes, CPU.bSSE2);
 		delete[] vertexes;
 		builder.Extract (nodes, numnodes,
@@ -3625,6 +4010,9 @@ void P_SetupLevel (char *lumpname, int position)
 	P_GroupLines (buildmap);
 	unclock (times[12]);
 
+   // [ZDoomGL]
+   P_SetSegOffsets();
+
 	clock (times[13]);
 	P_FloodZones ();
 	unclock (times[13]);
@@ -3637,6 +4025,12 @@ void P_SetupLevel (char *lumpname, int position)
 		bodyque[i] = NULL;
 
 	deathmatchstarts.Clear ();
+	TemporaryTeamStarts.Clear( );
+	BlueTeamStarts.Clear( );
+	RedTeamStarts.Clear( );
+	GenericInvasionStarts.Clear( );
+	for ( i = 0; i < MAXPLAYERS; i++ )
+		playerstarts[i].type = 0;
 
 	if (!buildmap)
 	{
@@ -3667,21 +4061,77 @@ void P_SetupLevel (char *lumpname, int position)
 	}
 	delete map;
 
+	// [BC] Now that all the items have been loaded, potentially set the game mode.
+	GAME_CheckMode( );
+
+	// [BC] Delete things that shouldn't have been spawned depending on the game mode.
+	P_RemoveThings( );
+
 	clock (times[16]);
 	PO_Init ();	// Initialize the polyobjs
 	unclock (times[16]);
 
-	// if deathmatch, randomly spawn the active players
-	if (deathmatch)
+	// [BC] Changed the following block a bunch.
+	// Spawn active players.
+	for ( i = 0; i < MAXPLAYERS; i++ )
 	{
-		for (i=0 ; i<MAXPLAYERS ; i++)
+		if ( playeringame[i] == false )
+			continue;
+
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) ||
+			( deathmatch ) ||
+			( teamgame ))
 		{
-			if (playeringame[i])
+			players[i].mo = NULL;
+		}
+
+		// Clients don't do anything else.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			continue;
+
+		// If the player should spawn as a spectator, set that flag now.
+		{
+//			if ( PLAYER_ShouldSpawnAsSpectator( &players[i] ))
+//				players[i].bSpectating = true;
+			if (( duel == false ) || ( DUEL_IsDueler( i ) == false ))
 			{
-				players[i].mo = NULL;
-				G_DeathMatchSpawnPlayer (i);
+				// In single player, spectate if this is true, otherwise start as normal.
+				if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+					players[i].bSpectating = PLAYER_ShouldSpawnAsSpectator( &players[i] );
+				// In multiplayer games, let their spectator status persist.
+				else if ( PLAYER_ShouldSpawnAsSpectator( &players[i] ))
+					players[i].bSpectating = true;
 			}
 		}
+
+		if ( deathmatch )
+		{
+			// Set the player's state to PST_REBORNNOINVENTORY so they everything is cleared (weapons, etc.)
+			if (( players[i].playerstate != PST_ENTER ) && ( players[i].playerstate != PST_ENTERNOINVENTORY ))
+				players[i].playerstate = PST_REBORNNOINVENTORY;
+			G_DeathMatchSpawnPlayer( i, false );
+			continue;
+		}
+
+		if ( teamgame )
+		{
+			// Set the player's state to PST_REBORNNOINVENTORY so they everything is cleared (weapons, etc.)
+			if (( players[i].playerstate != PST_ENTER ) && ( players[i].playerstate != PST_ENTERNOINVENTORY ))
+				players[i].playerstate = PST_REBORNNOINVENTORY;
+
+			// The campaign could have already put them on a team.
+			if ( players[i].bOnTeam )
+			{
+				G_TeamgameSpawnPlayer( i, players[i].ulTeam, false );
+			}
+			else
+				G_TemporaryTeamSpawnPlayer( i, false );
+			continue;
+		}
+
+		clients[i].bDeadLastLevel = false;
+		if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+			P_SpawnPlayer( &playerstarts[i], false, NULL );
 	}
 
 	// set up world state
@@ -3704,10 +4154,42 @@ void P_SetupLevel (char *lumpname, int position)
 	}
 	unclock (times[17]);
 
-	if (deathmatch)
-	{
-		AnnounceGameStart ();
-	}
+   // [ZDoomGL]
+   for (i = 0; i < numsectors; i++)
+   {
+      sector = sectors + i;
+      
+      accumx = 0.0;
+      accumy = 0.0;
+      for (j = 0; j < sector->linecount; j++)
+      {
+         line = sector->lines[j];
+         accumx += sector->lines[j]->v1->x + sector->lines[j]->v2->x;
+         accumy += sector->lines[j]->v1->y + sector->lines[j]->v2->y;
+      }
+      sector->CenterX = fixed_t(accumx * 0.5 / sector->linecount);
+		sector->CenterY = fixed_t(accumy * 0.5 / sector->linecount);
+   }
+
+   // [ZDoomGL]
+   sectorMoving.Clear();
+   sectorMoving.Resize(numsectors);
+   for (i = 0; i < numsectors; i++)
+   {
+      sectorMoving[i] = false;
+   }
+
+   if (( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL ) && ( NETWORK_GetState( ) != NETSTATE_SERVER ))
+   {
+      GL_ClearMappedSubsectors();
+      GL_GenerateLevelGeometry();
+   }
+
+	// Reset announcer "frags/points left" variables.
+	ANNOUNCER_AllowNumFragsAndPointsLeftSounds( );
+
+	// Reset the first frag awarded flag.
+	g_bFirstFragAwarded = false;
 
 	P_ResetSightCounters (true);
 	//Printf ("free memory: 0x%x\n", Z_FreeMemory());
@@ -3741,6 +4223,131 @@ void P_SetupLevel (char *lumpname, int position)
 			Printf ("Time%3d:%10llu cycles (%s)\n", i, times[i], timenames[i]);
 		}
 	}
+
+	// Set these modules' state to "waiting for players", which may or may not begin the next match.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		DUEL_SetState( DS_WAITINGFORPLAYERS );
+		LASTMANSTANDING_SetState( LMSS_WAITINGFORPLAYERS );
+		POSSESSION_SetState( PSNS_WAITINGFORPLAYERS );
+		INVASION_SetState( IS_WAITINGFORPLAYERS );
+
+		// I could do SURVS_NEWMAP here, but how do we know if this was a map change done via
+		// completing the map, using the map command, or what?
+//		SURVIVAL_SetState( SURVS_WAITINGFORPLAYERS );
+//		SURVIVAL_SetState( SURVS_NEWMAP );
+
+		if ( SURVIVAL_GetState( ) == SURVS_INPROGRESS )
+			SURVIVAL_SetState( SURVS_NEWMAP );
+		else
+			SURVIVAL_SetState( SURVS_WAITINGFORPLAYERS );
+	}
+
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		if ( duel && ( DUEL_GetStartNextDuelOnLevelLoad( ) == true ) && ( CAMPAIGN_InCampaign( ) == false ))
+		{
+			// Send the loser of the duel to the spectators, starting the next duel.
+			DUEL_SendLoserToSpectators( );
+
+			// Reset the flag.
+			DUEL_SetStartNextDuelOnLevelLoad( false );
+
+			// Set number of duels to 0.
+			DUEL_SetNumDuels( 0 );
+		}
+	}
+
+	if ( lastmanstanding || teamlms )
+	{
+		// Reset the flag.
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			LASTMANSTANDING_SetStartNextMatchOnLevelLoad( false );
+	}
+}
+
+//*****************************************************************************
+//
+void P_LoadGLNodes( int iLumpNum )
+{
+#if 0
+	LONG	lIdx;
+	unsigned int startTime, endTime;
+
+	startTime = I_MSTime ();
+	TArray<FNodeBuilder::FPolyStart> polyspots, anchors;
+	P_GetPolySpots (iLumpNum+ML_THINGS, polyspots, anchors);
+	FNodeBuilder::FLevel leveldata =
+	{
+		vertexes, numvertexes,
+		sides, numsides,
+		lines, numlines
+	};
+	// [ZDoomGL] - always generate GL nodes
+	FNodeBuilder builder (leveldata, polyspots, anchors, true, CPU.bSSE2);
+	UsingGLNodes = true;
+
+	if (nodes != NULL)
+	{
+		delete[] nodes;
+		nodes = NULL;
+	}
+
+	if (segs != NULL)
+	{
+		delete[] segs;
+		segs = NULL;
+	}
+
+	if (subsectors != NULL)
+	{
+		delete[] subsectors;
+		subsectors = NULL;
+	}
+
+	if (vertexes != NULL)
+	{
+		delete[] vertexes;
+		vertexes = NULL;
+	}
+
+	if (LightStacks != NULL)
+	{
+		delete[] LightStacks;
+		LightStacks = NULL;
+	}
+	if (ExtraLights != NULL)
+	{
+		delete[] ExtraLights;
+		ExtraLights = NULL;
+	}
+
+	builder.Extract (nodes, numnodes,
+		segs, numsegs,
+		subsectors, numsubsectors,
+		vertexes, numvertexes);
+/*
+	P_LoadSideDefs (iLumpNum+ML_SIDEDEFS);
+
+	if (!HasBehavior)
+		P_LoadLineDefs (iLumpNum+ML_LINEDEFS);
+	else
+		P_LoadLineDefs2 (iLumpNum+ML_LINEDEFS);	// [RH] Load Hexen-style linedefs
+
+	P_LoadSideDefs2 (iLumpNum+ML_SIDEDEFS);
+
+	P_FinishLoadingLineDefs ();
+
+	P_LoopSidedefs ();
+*/
+	for ( lIdx = 0; lIdx < numsectors; lIdx++ )
+		sectors[lIdx].linecount = 0;
+
+	P_GroupLines (false);
+
+	endTime = I_MSTime ();
+	Printf ("BSP generation took %.3f sec (%d segs)\n", (endTime - startTime) * 0.001, numsegs);
+#endif
 }
 
 

@@ -43,6 +43,10 @@
 #include "a_sharedglobal.h"
 #include "a_doomglobal.h"
 #include "a_action.h"
+#include "cooperative.h"
+#include "deathmatch.h"
+#include "network.h"
+#include "team.h"
 
 #include "gi.h"
 
@@ -375,6 +379,10 @@ bool P_Move (AActor *actor)
 	int movefactor = ORIG_FRICTION_FACTOR;
 	int friction = ORIG_FRICTION;
 
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( false );
+
 	if (actor->flags2 & MF2_BLASTED)
 		return true;
 
@@ -552,6 +560,10 @@ bool P_Move (AActor *actor)
 
 bool P_TryWalk (AActor *actor)
 {
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( false );
+
 	if (!P_Move (actor))
 	{
 		return false;
@@ -746,6 +758,10 @@ void P_NewChaseDir(AActor * actor)
 	fixed_t deltax;
 	fixed_t deltay;
 
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	if ((actor->flags5&MF5_CHASEGOAL || actor->goal == actor->target) && actor->goal!=NULL)
 	{
 		deltax = actor->goal->x - actor->x;
@@ -849,7 +865,7 @@ void P_RandomChaseDir (AActor *actor)
 		}
 		else
 		{
-			if (!multiplayer)
+			if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 			{
 				i = 0;
 			}
@@ -992,6 +1008,10 @@ bool P_LookForMonsters (AActor *actor)
 	int count;
 	AActor *mo;
 	TThinkerIterator<AActor> iterator;
+
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( false );
 
 	if (!P_CheckSight (players[0].mo, actor, 2))
 	{ // Player can't see monster
@@ -1388,12 +1408,24 @@ bool P_LookForEnemies (AActor *actor, INTBOOL allaround)
 
 bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 {
-	int 		c;
-	int 		stop;
 	int			pnum;
 	player_t*	player;
 	angle_t 	an;
 	fixed_t 	dist;
+	// [BC] Could new variables.
+	ULONG		ulIdx;
+	bool		abSearched[MAXPLAYERS];
+	bool		bAllDone;
+
+	// [BC]
+	//
+	// This function had to be completely rewritten. Because of how it was written, for some
+	// reason, the actors passed into this function were doing far more sight checks than
+	// actually necessary (it seemed to be doing them repeatedly on a single player, with the
+	// number of times somehow linked with MAXPLAYERS). This problem became extremely apparent
+	// on levels with many, many actors (nuts2.wad for example), after I upped MAXPLAYERS to 32.
+	// The framerate became unbearable. Anyway, this function has been completely rewritten (as
+	// well as cleaned), and now works properly. Framerates are sky high once again.
 
 	if (actor->TIDtoHate != 0)
 	{
@@ -1412,26 +1444,40 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 	}
 
 	if (!(gameinfo.gametype & (GAME_Doom|GAME_Strife)) &&
-		!multiplayer &&
+		( NETWORK_GetState( ) == NETSTATE_SINGLE ) &&
 		players[0].health <= 0)
 	{ // Single player game and player is dead; look for monsters
 		return P_LookForMonsters (actor);
 	}
 
-	c = 0;
-	if (actor->TIDtoHate != 0)
+	bAllDone = false;
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+		abSearched[ulIdx] = false;
+
+	// Begin searching for players.
+	while ( 1 )
 	{
-		pnum = pr_look2() & (MAXPLAYERS-1);
-	}
-	else
-	{
-		pnum = actor->LastLook.PlayerNumber;
-	}
-	stop = (pnum - 1) & (MAXPLAYERS-1);
-		
-	for (;;)
-	{
-		pnum = (pnum + 1) & (MAXPLAYERS-1);
+		if ( bAllDone )
+		{
+			pnum = MAXPLAYERS;
+			break;
+		}
+
+		pnum = M_Random( ) % MAXPLAYERS;
+		if ( abSearched[pnum] == true )
+			continue;
+
+		abSearched[pnum] = true;
+		bAllDone = true;
+		for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+		{
+			if ( abSearched[ulIdx] == false )
+			{
+				bAllDone = false;
+				break;
+			}
+		}
+
 		if (!playeringame[pnum])
 			continue;
 
@@ -1440,36 +1486,9 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 			actor->LastLook.PlayerNumber = pnum;
 		}
 
-		if (++c == MAXPLAYERS-1 || pnum == stop)
-		{
-			// done looking
-			if (actor->target == NULL)
-			{
-				// [RH] use goal as target
-				if (actor->goal != NULL)
-				{
-					actor->target = actor->goal;
-					return true;
-				}
-				// Use last known enemy if no players sighted -- killough 2/15/98:
-				if (actor->lastenemy != NULL && actor->lastenemy->health > 0)
-				{
-					if (!actor->IsFriend(actor->lastenemy))
-					{
-						actor->target = actor->lastenemy;
-						actor->lastenemy = NULL;
-						return true;
-					}
-					else
-					{
-						actor->lastenemy = NULL;
-					}
-				}
-			}
-			return actor->target == actor->goal && actor->goal != NULL;
-		}
-
 		player = &players[pnum];
+		if ( player->mo == NULL )
+			continue;
 
 		if (!(player->mo->flags & MF_SHOOTABLE))
 			continue;			// not shootable (observer or dead)
@@ -1480,7 +1499,8 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 		if (player->health <= 0)
 			continue;			// dead
 
-		if (!P_CheckSight (actor, player->mo, 2))
+		// [BC] In invasion mode, player doesn't have to be visible to be chased by monsters.
+		if ((!P_CheckSight (actor, player->mo, 2)) && ( invasion == false ))
 			continue;			// out of sight
 
 		if (!allaround)
@@ -1524,6 +1544,37 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 		actor->target = player->mo;
 		return true;
 	}
+
+	if ( pnum == MAXPLAYERS )
+	{
+		// done looking
+		if (actor->target == NULL)
+		{
+			// [RH] use goal as target
+			if (actor->goal != NULL)
+			{
+				actor->target = actor->goal;
+				return true;
+			}
+			// Use last known enemy if no players sighted -- killough 2/15/98:
+			if (actor->lastenemy != NULL && actor->lastenemy->health > 0)
+			{
+				if (!actor->IsFriend(actor->lastenemy))
+				{
+					actor->target = actor->lastenemy;
+					actor->lastenemy = NULL;
+					return true;
+				}
+				else
+				{
+					actor->lastenemy = NULL;
+				}
+			}
+		}
+		return actor->target == actor->goal && actor->goal != NULL;
+	}
+
+	return false;
 }
 
 //
@@ -1538,6 +1589,10 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround)
 void A_Look (AActor *actor)
 {
 	AActor *targ;
+
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	// [RH] Set goal now if appropriate
 	if (actor->special == Thing_SetGoal && actor->args[0] == 0) 
@@ -1641,6 +1696,10 @@ void A_Look (AActor *actor)
 	if (actor->target && !(actor->flags & MF_INCHASE))
 	{
 		actor->SetState (actor->SeeState);
+
+		// [BC] If we are the server, tell clients about the state change.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingState( actor, STATE_SEE );
 	}
 }
 
@@ -1761,6 +1820,16 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 {
 	int delta;
 
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		// Just play the active sound and get out.
+		if ( playactive && ( pr_chase( ) < 3 ))
+			actor->PlayActiveSound( );
+
+		return;
+	}
+
 	actor->flags |= MF_INCHASE;
 
 	// [RH] Andy Baker's stealth monsters
@@ -1821,7 +1890,8 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 	}
 
 	// [RH] If the target is dead or a friend (and not a goal), stop chasing it.
-	if (actor->target && actor->target != actor->goal && (actor->target->health <= 0 || actor->IsFriend(actor->target)))
+	// [BC] Also stop chasing the target if it's a spectator.
+	if (actor->target && actor->target != actor->goal && (actor->target->health <= 0 || actor->IsFriend(actor->target) || ( actor->target->player && actor->target->player->bSpectating )))
 		actor->target = NULL;
 
 	// [RH] Friendly monsters will consider chasing whoever hurts a player if they
@@ -1837,7 +1907,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 		else
 		{
 			int i;
-			if (!multiplayer)
+			if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 			{
 				i = 0;
 			}
@@ -1879,6 +1949,11 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 			{
 				actor->SetState (actor->SpawnState);
 				actor->flags &= ~MF_INCHASE;
+
+				// [BC] If we are the server, tell clients about the state change.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetThingState( actor, STATE_SPAWN );
+
 				return;
 			}
 		}
@@ -1994,6 +2069,11 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 			actor->SetState (meleestate);
 			actor->flags &= ~MF_INCHASE;
+
+			// [BC] If we are the server, tell clients about the state change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingState( actor, STATE_MELEE );
+
 			return;
 		}
 		
@@ -2013,13 +2093,18 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 			actor->flags |= MF_JUSTATTACKED;
 			actor->flags4 |= MF4_INCOMBAT;
 			actor->flags &= ~MF_INCHASE;
+			
+			// [BC] If we are the server, tell clients about the state change.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingState( actor, STATE_MISSILE );
+
 			return;
 		}
 	}
 
  nomissile:
 	// possibly choose another target
-	if ((multiplayer || actor->TIDtoHate)
+	if ((( NETWORK_GetState( ) != NETSTATE_SINGLE ) || actor->TIDtoHate)
 		&& !actor->threshold
 		&& !P_CheckSight (actor, actor->target, 0) )
 	{
@@ -2211,6 +2296,10 @@ CVAR(Int, sv_dropstyle, 0, CVAR_SERVERINFO | CVAR_ARCHIVE);
 
 AInventory *P_DropItem (AActor *source, const PClass *type, int special, int chance)
 {
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( NULL );
+
 	if (type != NULL && pr_dropitem() <= chance)
 	{
 		AActor *mo;
@@ -2232,6 +2321,11 @@ AInventory *P_DropItem (AActor *source, const PClass *type, int special, int cha
 			}
 		}
 		mo = Spawn (type, source->x, source->y, spawnz, ALLOW_REPLACE);
+
+		// [BC] If we're the server, tell clients to spawn the thing.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SpawnThing( mo );
+
 		mo->flags |= MF_DROPPED;
 		mo->flags &= ~MF_NOGRAVITY;	// [RH] Make sure it is affected by gravity
 		if (mo->IsKindOf (RUNTIME_CLASS(AInventory)))
@@ -2251,6 +2345,10 @@ AInventory *P_DropItem (AActor *source, const PClass *type, int special, int cha
 				// The same goes for ammo from a weapon.
 				static_cast<AWeapon *>(mo)->AmmoGive1 /= 2;
 				static_cast<AWeapon *>(mo)->AmmoGive2 /= 2;
+
+				// [BC] If we're the server, tell clients that the thing is dropped.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetWeaponAmmoGive( mo );
 			}
 			if (inv->SpecialDropAction (source))
 			{
@@ -2317,6 +2415,10 @@ void A_Pain (AActor *actor)
 // killough 11/98: kill an object
 void A_Die (AActor *actor)
 {
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_DamageMobj (actor, NULL, NULL, actor->health, MOD_UNKNOWN);
 }
 
@@ -2332,6 +2434,16 @@ void A_Detonate (AActor *mo)
 	if (mo->z <= mo->floorz + (damage << FRACBITS))
 	{
 		P_HitFloor (mo);
+	}
+
+	// [BC] If this explosion originated from a player, and it hit something, give the player
+	// credit for it.
+	if (( mo->target ) && ( mo->target->player ))
+	{
+		if ( mo->target->player->bStruckPlayer )
+			PLAYER_StruckPlayer( mo->target->player );
+		else
+			mo->target->player->ulConsecutiveHits = 0;
 	}
 }
 
@@ -2350,6 +2462,16 @@ void A_Explode (AActor *thing)
 	if (thing->z <= thing->floorz + (distance<<FRACBITS))
 	{
 		P_HitFloor (thing);
+	}
+
+	// [BC] If this explosion originated from a player, and it hit something, give the player
+	// credit for it.
+	if (( thing->target ) && ( thing->target->player ))
+	{
+		if ( thing->target->player->bStruckPlayer )
+			PLAYER_StruckPlayer( thing->target->player );
+		else
+			thing->target->player->ulConsecutiveHits = 0;
 	}
 }
 
@@ -2404,6 +2526,10 @@ void A_BossDeath (AActor *actor)
 	// Ugh...
 	FName type = actor->GetClass()->ActorInfo->GetReplacee()->Class->TypeName;
 	
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	// Do generic special death actions first
 	bool checked = false;
 	FSpecialAction *sa = level.info->specialactions;
@@ -2487,7 +2613,8 @@ void A_BossDeath (AActor *actor)
 	}
 
 	// [RH] If noexit, then don't end the level.
-	if ((deathmatch || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
+	// [BC] Teamgame, too.
+	if ((deathmatch || teamgame || alwaysapplydmflags) && (dmflags & DF_NO_EXIT))
 		return;
 
 	G_ExitLevel (0, false);
@@ -2512,6 +2639,10 @@ int P_Massacre ()
 	int killcount = 0;
 	AActor *actor;
 	TThinkerIterator<AActor> iterator;
+
+	// [BC] This is handled server side.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( 0 );
 
 	while ( (actor = iterator.Next ()) )
 	{
@@ -2566,7 +2697,8 @@ bool A_RaiseMobj (AActor *actor)
 
 void A_ClassBossHealth (AActor *actor)
 {
-	if (multiplayer && !deathmatch)		// co-op only
+	// [BC] Teamgame, too.
+	if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && (( deathmatch || teamgame ) == false ))		// co-op only
 	{
 		if (!actor->special1)
 		{

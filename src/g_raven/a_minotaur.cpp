@@ -8,6 +8,8 @@
 #include "a_action.h"
 #include "gi.h"
 #include "w_wad.h"
+#include "deathmatch.h"
+#include "network.h"
 
 #define MAULATORTICS (25*35)
 
@@ -268,7 +270,7 @@ bool AMinotaurFriend::IsOkayToAttack (AActor *link)
 		{
 			return false;
 		}
-		if (multiplayer && !deathmatch && link->player)
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && link->player)
 		{
 			return false;
 		}

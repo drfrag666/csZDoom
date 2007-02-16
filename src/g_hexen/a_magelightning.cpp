@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 #define ZAGSPEED	FRACUNIT
 
@@ -108,7 +109,6 @@ IMPLEMENT_ACTOR (AMWeapLightning, Hexen, 8040, 0)
 	PROP_Weapon_HoldAtkState (S_MLIGHTNINGATK)
 	PROP_Weapon_Kickback (0)
 	PROP_Weapon_YAdjust (20)
-	PROP_Weapon_MoveCombatDist (23000000)
 	PROP_Weapon_AmmoType1 ("Mana2")
 	PROP_Weapon_ProjectileType ("LightningFloor")
 	PROP_Inventory_PickupMessage("$TXT_WEAPON_M3")
@@ -482,6 +482,10 @@ void A_LightningZap (AActor *actor)
 void A_MLightningAttack2 (AActor *actor)
 {
 	AActor *fmo, *cmo;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	fmo = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(ALightningFloor));
 	cmo = P_SpawnPlayerMissile (actor, RUNTIME_CLASS(ALightningCeiling));

@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 const fixed_t HAMMER_RANGE = MELEERANGE+MELEERANGE/2;
 
@@ -64,7 +65,7 @@ IMPLEMENT_ACTOR (AFWeapHammer, Hexen, 123, 28)
 	PROP_SpawnState (S_HAMM)
 
 	PROP_Weapon_SelectionOrder (900)
-	PROP_Weapon_Flags (WIF_AMMO_OPTIONAL|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_AMMO_OPTIONAL)
 	PROP_Weapon_AmmoUse1 (3)
 	PROP_Weapon_AmmoGive1 (25)
 	PROP_Weapon_UpState (S_FHAMMERUP)
@@ -74,7 +75,6 @@ IMPLEMENT_ACTOR (AFWeapHammer, Hexen, 123, 28)
 	PROP_Weapon_HoldAtkState (S_FHAMMERATK)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (0-10)
-	PROP_Weapon_MoveCombatDist (22000000)
 	PROP_Weapon_AmmoType1 ("Mana2")
 	PROP_Weapon_ProjectileType ("HammerMissile")
 	PROP_Inventory_PickupMessage("$TXT_WEAPON_F3")
@@ -267,6 +267,11 @@ void A_FHammerThrow (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire, false))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	mo = P_SpawnPlayerMissile (player->mo, RUNTIME_CLASS(AHammerMissile)); 
 	if (mo)
 	{

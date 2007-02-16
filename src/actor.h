@@ -286,11 +286,100 @@ enum
 	MF5_DEHEXPLOSION	= 0x00000400,	// Use the DEHACKED explosion options when this projectile explodes
 	MF5_PIERCEARMOR		= 0x00000800,	// Armor doesn't protect against damage from this actor
 
+	// [BC] More object flags for Skulltag.
+
+	// Object can only be picked up by blue team members.
+	STFL_BLUETEAM		= 0x00000001,
+
+	// Object can only be picked up by red team members.
+	STFL_REDTEAM		= 0x00000002,
+
+	// Object can be pulled by players.
+	//STFL_PULLABLE		= 0x00000004,
+
+	// Execute this object's special when player hits the use key in front of it.
+	STFL_USESPECIAL		= 0x00000008,
+
+	// Object impales players that fall on it.
+	//STFL_IMPALE			= 0x00000010,
+
+	// Execute this object's special when a players bumps into it.
+	STFL_BUMPSPECIAL	= 0x00000020,
+
+	// *** THE FOLLOWING FLAGS ARE IDENTIFERS FOR BOTS ***
+	// ... eh, there's probably a better way to do this.
+	// Object is a health item (stimpack, medkit, etc.).
+	STFL_BASEHEALTH		= 0x00000020,
+
+	// Object is a health item that can heal beyond the normal amount (soulsphere, etc.).
+	STFL_SUPERHEALTH	= 0x00000040,
+
+	// Object is an armor item (green armor, etc.).
+	STFL_BASEARMOR		= 0x00000080,
+
+	// Object is an armor item that gives armor beyond the normal amount (blue armor, etc.).
+	STFL_SUPERARMOR		= 0x00000100,
+
+	// Object is some kind of enemy. Kill it!
+	//STFL_ENEMY			= 0x00000200,
+
+	// Object is a rune.
+	//STFL_RUNE			= 0x00000400,
+
+	// Object is a powerup.
+	//STFL_POWERUP		= 0x00000800,
+
+	// Object is ammo.
+	//STFL_AMMO			= 0x00001000,
+
+	// Object is a score pillar in Skulltag.
+	STFL_SCOREPILLAR	= 0x00002000,
+
+	// Object is a weapon.
+	//STFL_WEAPON			= 0x00004000,
+
+	// Object is a key.
+	//STFL_KEY			= 0x00008000,
+
+	// Object is a node.
+	STFL_NODE			= 0x00010000,
+
+	// *** END OF IDENTIFIERS ***
+	// Object falls at 1/4 the amount of gravity.
+	STFL_QUARTERGRAVITY	= 0x00020000,
+
+	// Object explodes on death.
+	STFL_EXPLODEONDEATH	= 0x00040000,
+
+	// This object was spawned when the map loaded.
+	STFL_LEVELSPAWNED	= 0x00080000,
+
+// More flags for Skulltag... these having to do with the network.
+
+	// Update this object's position every few ticks.
+	NETFL_UPDATEPOSITION	= 0x00000001,
+
+	// This object does not have a network ID.
+	NETFL_NONETID			= 0x00000002,
+
+	// If this object is placed on a map, allow clients to spawn it on their own without
+	// the server having to tell them to spawn it.
+	NETFL_ALLOWCLIENTSPAWN	= 0x00000004,
+
+	// Tell clients what this thing's arguments are, because they are important.
+	NETFL_UPDATEARGUMENTS	= 0x00000008,
+
+	// Handle the pickup of this item in a "special" way.
+	NETFL_SPECIALPICKUP		= 0x00000008,
+
+	// [BC] End of new ST flags.
+
 // --- mobj.renderflags ---
 
 	RF_XFLIP			= 0x0001,	// Flip sprite horizontally
 	RF_YFLIP			= 0x0002,	// Flip sprite vertically
 	RF_ONESIDED			= 0x0004,	// Wall/floor sprite is visible from front only
+	RF_RANDOMPOWERUPHACK	= 0x0008,	// [BC] This actor uses the random powerup hack: offsets are centered.
 	RF_FULLBRIGHT		= 0x0010,	// Sprite is drawn at full brightness
 
 	RF_RELMASK			= 0x0300,	// ---Relative z-coord for bound actors (these obey texture pegging)
@@ -399,6 +488,11 @@ inline T *GetDefault ()
 }
 
 struct secplane_t;
+
+// [BC] Prototype these classes here so they can be included in the actor structure.
+class ABaseMonsterInvasionSpot;
+class ABasePickupInvasionSpot;
+
 struct FStrifeDialogueNode;
 
 enum
@@ -635,6 +729,13 @@ public:
 	DWORD			flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
 	DWORD			flags4;			// [RH] Even more flags!
 	DWORD			flags5;			// OMG! We need another one.
+
+	// [BC] A new set of flags that ST uses.
+	ULONG			ulSTFlags;
+
+	// [BC] A new set of flags that deal with network games.
+	ULONG			ulNetworkFlags;
+
 	int				special1;		// Special info
 	int				special2;		// Special info
 	int 			health;
@@ -725,6 +826,47 @@ public:
 
 	// [RH] Decal(s) this weapon/projectile generates on impact.
 	FDecalBase *DecalGenerator;
+
+	// [BC] Bunch of new stuff for ST.
+	// Should this actor be drawn with a different colormap?
+	LONG		lFixedColormap;
+
+	// ID used to identify this actor over network games.
+	LONG		lNetID;
+
+	// If an actor's old position differs from its current position, then it has moved and
+	// clients should be informed.
+	fixed_t		OldX;
+	fixed_t		OldY;
+	fixed_t		OldZ;
+
+	// Same goes for momentum.
+	fixed_t		OldMomX;
+	fixed_t		OldMomY;
+	fixed_t		OldMomZ;
+
+	// ... and angle/pitch.
+	angle_t		OldAngle;
+	fixed_t		OldPitch;
+
+	// ... and waterlevel.
+	ULONG		ulOldWaterlevel;
+
+	// Pointer to the pickup spot this item was spawned from.
+	union
+	{
+		ABaseMonsterInvasionSpot		*pMonsterSpot;
+		ABasePickupInvasionSpot			*pPickupSpot;
+
+	} InvasionSpot;
+
+	// What wave does this monster belong to in invasion mode?
+	ULONG		ulInvasionWave;
+
+	// If this object came from an invasion spawner, what is its ID?
+	ULONG		ulInvasionSpawnerID;
+
+	// [BC] End of ST stuff.
 
 	// [RH] Used to interpolate the view to get >35 FPS
 	fixed_t PrevX, PrevY, PrevZ;
@@ -833,5 +975,23 @@ FArchive &operator<< (FArchive &arc, FSoundIndexWord &snd);
 
 #define AR_SOUND(id) (*(FSoundIndex *)&(id))
 #define AR_SOUNDW(id) (*(FSoundIndexWord *)&(id))
+
+// [BC] Network identification stuff for multiplayer.
+void	ACTOR_ClearNetIDList( );
+
+#define	MAX_NETID				32768
+
+// List of all possible network ID's for an actor. Slot is true if it available for use.
+typedef struct
+{
+	// Is this node occupied, or free to be used by a new actor?
+	bool	bFree;
+
+	// If this node is occupied, this is the actor occupying it.
+	AActor	*pActor;
+
+} NETIDNODE_t;
+
+extern	NETIDNODE_t		g_NetIDList[MAX_NETID];
 
 #endif // __P_MOBJ_H__

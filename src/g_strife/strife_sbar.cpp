@@ -14,6 +14,7 @@
 #include "a_keys.h"
 #include "a_strifeglobal.h"
 #include "gi.h"
+#include "deathmatch.h"
 
 // Number of tics to move the popscreen up and down.
 #define POP_TIME (TICRATE/8)
@@ -561,9 +562,9 @@ private:
 		// Extrapolate the height of the popscreen for smoother movement
 		int height = clamp<int> (PopHeight + FixedMul (r_TicFrac, PopHeightChange), -POP_HEIGHT, 0);
 
-		xscale = CleanXfac;
-		yscale = CleanYfac;
-		left = screen->GetWidth()/2 - 160*CleanXfac;
+		xscale = (int)CleanXfac;
+		yscale = (int)CleanYfac;
+		left = screen->GetWidth()/2 - 160*(int)CleanXfac;
 		top = bottom + height * yscale;
 
 		screen->DrawTexture (Images[back], left, top, DTA_CleanNoMove, true, DTA_Alpha, FRACUNIT*3/4, TAG_DONE);

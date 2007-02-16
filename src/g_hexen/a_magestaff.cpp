@@ -6,6 +6,8 @@
 #include "p_enemy.h"
 #include "a_hexenglobal.h"
 #include "gstrings.h"
+#include "deathmatch.h"
+#include "network.h"
 
 static FRandom pr_mstafftrack ("MStaffTrack");
 static FRandom pr_bloodscourgedrop ("BloodScourgeDrop");
@@ -228,7 +230,6 @@ IMPLEMENT_ACTOR (AMWeapBloodscourge, Hexen, -1, 0)
 	PROP_Weapon_HoldAtkState (S_MSTAFFATK)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (20)
-	PROP_Weapon_MoveCombatDist (20000000)
 	PROP_Weapon_AmmoType1 ("Mana1")
 	PROP_Weapon_AmmoType2 ("Mana2")
 	PROP_Weapon_ProjectileType ("MageStaffFX2")
@@ -310,7 +311,7 @@ bool AMageStaffFX2::IsOkayToAttack (AActor *link)
 		{
 			return false;
 		}
-		if (multiplayer && !deathmatch && link->player && target->player)
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && link->player && target->player)
 		{
 			return false;
 		}
@@ -387,6 +388,10 @@ void A_MStaffAttack2 (AActor *actor)
 void MStaffSpawn (AActor *pmo, angle_t angle)
 {
 	AActor *mo;
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	mo = P_SpawnPlayerMissile (pmo, pmo->x, pmo->y, pmo->z+8*FRACUNIT,
 		RUNTIME_CLASS(AMageStaffFX2), angle);

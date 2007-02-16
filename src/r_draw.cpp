@@ -36,6 +36,8 @@
 #include "st_stuff.h"
 #include "a_hexenglobal.h"
 #include "g_game.h"
+#include "deathmatch.h"
+#include "team.h"
 
 #include "gi.h"
 #include "stats.h"
@@ -1418,10 +1420,11 @@ void R_InitTranslationTables ()
 {
 	static BYTE MainTranslationTables[256*
 		(NUMCOLORMAPS*16			// Shaded
-		 +MAXPLAYERS*2+1			// Players + PlayersExtra + Menu player
+		 +MAXPLAYERS*2				// Players + PlayersExtra
 		 +8							// Standard	(7 for Strife, 3 for the rest)
 		 +MAX_ACS_TRANSLATIONS		// LevelScripted
 		 +BODYQUESIZE				// PlayerCorpses
+		 +1							// Player setup menu
 		 )];
 	int i, j;
 
@@ -1436,7 +1439,7 @@ void R_InitTranslationTables ()
 
 	// Extra player translations, one for each player, unused by Doom
 	translationtables[TRANSLATION_PlayersExtra] =
-		translationtables[TRANSLATION_Players] + (MAXPLAYERS+1)*256;
+		translationtables[TRANSLATION_Players] + MAXPLAYERS*256;
 
 	// The three standard translations from Doom or Heretic (seven for Strife),
 	// plus the generic ice translation.
@@ -1448,6 +1451,10 @@ void R_InitTranslationTables ()
 
 	translationtables[TRANSLATION_PlayerCorpses] =
 		translationtables[TRANSLATION_LevelScripted] + MAX_ACS_TRANSLATIONS*256;
+
+	// [BC] New translation for the player setup menu that's seperate from the 32 player translations.
+	translationtables[TRANSLATION_PlayerSetupMenu] =
+		translationtables[TRANSLATION_PlayerCorpses] + BODYQUESIZE*256;
 
 	translationtables[TRANSLATION_Decorate] = decorate_translations;
 	translationtables[TRANSLATION_Blood] = decorate_translations + MAX_DECORATE_TRANSLATIONS*256;
@@ -1759,6 +1766,25 @@ void R_BuildPlayerTranslation (int player)
 		&translationtables[TRANSLATION_PlayersExtra][player*256]);
 }
 
+// [BC] We need a seperate function to build a player translation for the player setup
+// menu, because as we edit our color and skin at the menu, we don't actually change the
+// player's color and skin until we exit the menu and save our changes.
+// NOTE: This should be more or less the same as R_BuildPlayerTranslation.
+void R_BuildPlayerSetupPlayerTranslation( ULONG ulColor, FPlayerSkin *pSkin )
+{
+	float	h, s, v;
+
+	RGBtoHSV( RPART( ulColor ) / 255.f,
+		GPART(ulColor) / 255.f,
+		BPART(ulColor) / 255.f,
+		&h, &s, &v );
+
+	R_CreatePlayerTranslation( h, s, v,
+		pSkin,
+		&translationtables[TRANSLATION_PlayerSetupMenu][0],
+		&translationtables[TRANSLATION_PlayersExtra][consoleplayer * 256] );
+}
+
 void R_GetPlayerTranslation (int color, FPlayerSkin *skin, BYTE *table)
 {
 	float h, s, v;
@@ -2007,7 +2033,51 @@ void R_InitColumnDrawers ()
 // [RH] Choose column drawers in a single place
 EXTERN_CVAR (Bool, r_drawfuzz)
 EXTERN_CVAR (Float, transsouls)
-CVAR (Bool, r_drawtrans, true, 0)
+// [BC] Archive this so people who don't want alpha don't have to constantly reset it.
+// [BC] Also, when this is disabled, give people with the invisibility sphere the partial
+// invisibility effect.
+CUSTOM_CVAR (Bool, r_drawtrans, true, CVAR_ARCHIVE)
+{
+	ULONG		ulIdx;
+	AInventory	*pInventory;
+
+	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	{
+		if (( playeringame[ulIdx] == false ) ||
+			( players[ulIdx].mo == NULL ))
+		{
+			continue;
+		}
+
+		pInventory = players[ulIdx].mo->FindInventory( RUNTIME_CLASS( APowerTranslucency ));
+		if ( pInventory )
+		{
+			// First, strip away the effect of the powerup.
+			players[ulIdx].mo->flags &= ~MF_SHADOW;
+			players[ulIdx].mo->flags3 &= ~MF3_GHOST;
+			// [BC] If the owner is a spectating player, don't make him visible!
+			if (( players[ulIdx].mo->player == NULL ) || ( players[ulIdx].mo->player->bSpectating == false ))
+				players[ulIdx].mo->RenderStyle = STYLE_Normal;
+			else
+				players[ulIdx].mo->RenderStyle = STYLE_None;
+			players[ulIdx].mo->alpha = OPAQUE;
+
+			// Then, add it back, depending on the setting of this cvar.
+			// [BC] If r_drawtrans is false, then just give the same effect as partial invisibility.
+			if ( self == false )
+			{
+				players[ulIdx].mo->flags |= MF_SHADOW;
+				players[ulIdx].mo->alpha = FRACUNIT/5;
+				players[ulIdx].mo->RenderStyle = STYLE_OptFuzzy;
+			}
+			else
+			{
+				players[ulIdx].mo->alpha = ( FRACUNIT / 10 );
+				players[ulIdx].mo->RenderStyle = STYLE_Translucent;
+			}
+		}
+	}
+}
 
 static BYTE *basecolormapsave;
 

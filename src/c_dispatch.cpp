@@ -50,6 +50,9 @@
 #include "configfile.h"
 #include "m_crc32.h"
 #include "v_text.h"
+// [BC] new #includes.
+#include "p_local.h"
+#include "p_acs.h"
 
 bool ParsingKeyConf;
 
@@ -117,7 +120,8 @@ FButtonStatus Button_Mlook, Button_Klook, Button_Use, Button_AltAttack,
 	Button_Attack, Button_Speed, Button_MoveRight, Button_MoveLeft,
 	Button_Strafe, Button_LookDown, Button_LookUp, Button_Back,
 	Button_Forward, Button_Right, Button_Left, Button_MoveDown,
-	Button_MoveUp, Button_Jump, Button_ShowScores, Button_Crouch;
+	Button_MoveUp, Button_Jump, Button_ShowScores, Button_Crouch,
+	Button_ShowMedals;	// [BC] Added the "show medals" button.
 
 // To add new actions, go to the console and type "key <action name>".
 // This will give you the key value to use in the first column. Then
@@ -130,6 +134,7 @@ FActionMap ActionMaps[] =
 {
 	{ 0x0f26fef6, &Button_Speed,		"speed" },
 	{ 0x1ccf57bf, &Button_MoveUp,		"moveup" },
+	{ 0x21e60834, &Button_ShowMedals,	"showmedals" },	// [BC] New "show medals" button.
 	{ 0x22beba5f, &Button_Klook,		"klook" },
 	{ 0x47c02d3b, &Button_Attack,		"attack" },
 	{ 0x6dcec137, &Button_Back,			"back" },
@@ -457,7 +462,14 @@ void C_DoCommand (const char *cmd, int keynum)
 				button->ReleaseKey (keynum);
 				if (button == &Button_Mlook && lookspring)
 				{
-					Net_WriteByte (DEM_CENTERVIEW);
+					// [BC] Only write this byte if we're recording a demo. Otherwise, just do it!
+					if ( demorecording )
+						Net_WriteByte (DEM_CENTERVIEW);
+					else
+					{
+						if ( players[consoleplayer].mo )
+							players[consoleplayer].mo->pitch = 0;
+					}
 				}
 			}
 			return;
@@ -504,7 +516,22 @@ void C_DoCommand (const char *cmd, int keynum)
 			else
 			{ // Get the variable's value
 				UCVarValue val = var->GetGenericRep (CVAR_String);
-				Printf ("\"%s\" is \"%s\"\n", var->GetName(), val.String);
+
+				// [BC] If this variable is passworded, just show a bunch of stars instead of
+				// the actual string value.
+				if ( var->GetFlags( ) & CVAR_PASSWORD )
+				{
+					ULONG	ulIdx;
+					char	szString[64];
+
+					sprintf( szString, "%s", val.String );
+					for ( ulIdx = 0; ulIdx < strlen( val.String ); ulIdx++ )
+						szString[ulIdx] = '*';
+
+					Printf( "\"%s\" is \"%s\"\n", var->GetName( ), szString );
+				}
+				else
+					Printf ("\"%s\" is \"%s\"\n", var->GetName(), val.String);
 			}
 		}
 		else
@@ -846,7 +873,7 @@ void FConsoleCommand::Run (FCommandLine &argv, APlayerPawn *who, int key)
 
 FConsoleAlias::FConsoleAlias (const char *name, const char *command, bool noSave)
 	: FConsoleCommand (name, NULL),
-	  bRunning(false), bKill(false)
+	  bRunning (false), bKill (false)
 {
 	m_Command[noSave] = command;
 	m_Command[!noSave] = FString();
@@ -1050,6 +1077,10 @@ CCMD (alias)
 {
 	FConsoleCommand *prev, *alias, **chain;
 
+	// [BC] This function may not be used by ConsoleCommand.
+	if ( ACS_IsCalledFromConsoleCommand( ))
+		return;
+
 	if (argv.argc() == 1)
 	{
 		Printf ("Current alias commands:\n");
@@ -1225,7 +1256,7 @@ void FConsoleAlias::SafeDelete ()
 	}
 }
 
-extern void D_AddFile (const char *file);
+extern void D_AddFile (const char *file, bool bLoadedAutomatically);	// [BC] Changed slightly.
 static BYTE PullinBad = 2;
 static const char *PullinFile;
 
@@ -1344,7 +1375,7 @@ CCMD (pullin)
 						FixPathSeperator (path);
 					}
 				}
-				D_AddFile (path);
+				D_AddFile (path, false);	// [BC]
 				if (path != argv[i])
 				{
 					delete[] path;
@@ -1357,4 +1388,3 @@ CCMD (pullin)
 		}
 	}
 }
-

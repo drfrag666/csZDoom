@@ -210,6 +210,7 @@ enum
 	TRANSLATION_LevelScripted,
 	TRANSLATION_Decals,
 	TRANSLATION_PlayerCorpses,
+	TRANSLATION_PlayerSetupMenu,
 	TRANSLATION_Decorate,
 	TRANSLATION_Blood,
 
@@ -244,6 +245,9 @@ void R_InitTranslationTables (void);
 
 // [RH] Actually create a player's translation table.
 void R_BuildPlayerTranslation (int player);
+
+// [BC] Same thing, but for the player setup player.
+void R_BuildPlayerSetupPlayerTranslation( ULONG ulColor, FPlayerSkin *pSkin );
 
 
 // If the view size is not full screen, draws a border around it.

@@ -23,6 +23,10 @@
 #include "s_sndseq.h"
 #include "a_sharedglobal.h"
 #include "r_main.h"
+// [BC] New #includes.
+#include "network.h"
+#include "gl_main.h"
+#include "sv_commands.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -38,7 +42,7 @@ void PO_Init (void);
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
-static polyobj_t *GetPolyobj (int polyNum);
+/*static*/ polyobj_t *GetPolyobj (int polyNum);
 static int GetPolyobjMirror (int poly);
 static void UpdateSegBBox (seg_t *seg);
 static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX,
@@ -115,6 +119,7 @@ void DPolyAction::SetInterpolation ()
 	{
 		setinterpolation (INTERP_Vertex, poly->segs[i]->v1);
 		setinterpolation (INTERP_Vertex, poly->segs[i]->v2);
+      sectorMoving[ULONG( poly->segs[i]->frontsector - sectors )] = true; // [ZDoomGL]
 	}
 }
 
@@ -128,6 +133,31 @@ void DPolyAction::StopInterpolation ()
 	}
 }
 
+LONG DPolyAction::GetSpeed ()
+{
+	return ( m_Speed );
+}
+
+void DPolyAction::SetSpeed (LONG lSpeed)
+{
+	m_Speed = lSpeed;
+}
+
+LONG DPolyAction::GetDist ()
+{
+	return ( m_Dist );
+}
+
+void DPolyAction::SetDist (LONG lDist)
+{
+	m_Dist = lDist;
+}
+
+LONG DPolyAction::GetPolyObj ()
+{
+	return ( m_PolyObj );
+}
+
 DRotatePoly::DRotatePoly ()
 {
 }
@@ -135,6 +165,12 @@ DRotatePoly::DRotatePoly ()
 DRotatePoly::DRotatePoly (int polyNum)
 	: Super (polyNum)
 {
+}
+
+// [BC]
+void DRotatePoly::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoRotatePoly( m_Speed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 DMovePoly::DMovePoly ()
@@ -153,6 +189,41 @@ DMovePoly::DMovePoly (int polyNum)
 	m_Angle = 0;
 	m_xSpeed = 0;
 	m_ySpeed = 0;
+}
+
+void DMovePoly::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoMovePoly( m_xSpeed, m_ySpeed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+LONG DMovePoly::GetXSpeed ()
+{
+	return ( m_xSpeed );
+}
+
+void DMovePoly::SetXSpeed (LONG lSpeed)
+{
+	m_xSpeed = lSpeed;
+}
+
+LONG DMovePoly::GetYSpeed ()
+{
+	return ( m_ySpeed );
+}
+
+void DMovePoly::SetYSpeed (LONG lSpeed)
+{
+	m_ySpeed = lSpeed;
+}
+
+LONG DMovePoly::GetAngle ()
+{
+	return ( m_Angle );
+}
+
+void DMovePoly::SetAngle (LONG lAngle)
+{
+	m_Angle = lAngle;
 }
 
 DPolyDoor::DPolyDoor ()
@@ -175,6 +246,42 @@ DPolyDoor::DPolyDoor (int polyNum, podoortype_t type)
 	m_Close = false;
 }
 
+void DPolyDoor::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoPolyDoor( m_Type, m_xSpeed, m_ySpeed, m_Speed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+LONG DPolyDoor::GetDirection ()
+{
+	return ( m_Direction );
+}
+
+void DPolyDoor::SetDirection (LONG lDirection)
+{
+	m_Direction = lDirection;
+}
+
+LONG DPolyDoor::GetTotalDist ()
+{
+	return ( m_TotalDist );
+}
+
+void DPolyDoor::SetTotalDist (LONG lDist)
+{
+	m_TotalDist = lDist;
+}
+
+bool DPolyDoor::GetClose ()
+{
+	return ( m_Close );
+}
+
+void DPolyDoor::SetClose (bool bClose)
+{
+	m_Close = bClose;
+}
+
+
 // ===== Polyobj Event Code =====
 
 //==========================================================================
@@ -185,6 +292,13 @@ DPolyDoor::DPolyDoor (int polyNum, podoortype_t type)
 
 void DRotatePoly::Tick ()
 {
+	// [BC] For clients, just tick them and get out.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		PO_RotatePolyobj( m_PolyObj, m_Speed );
+		return;
+	}
+
 	if (PO_RotatePolyobj (m_PolyObj, m_Speed))
 	{
 		unsigned int absSpeed = abs (m_Speed);
@@ -201,6 +315,18 @@ void DRotatePoly::Tick ()
 			{
 				poly->specialdata = NULL;
 			}
+
+			// [BC] Now that our destination has been reached, tell clients.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetPolyobjRotation( m_PolyObj, poly->angle );
+
+			// [BC] Tell clients to stop the sound sequence, and destroy the rotate poly.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_STOPSEQUENCE );
+				SERVERCOMMANDS_DestroyRotatePoly( m_PolyObj );
+			}
+
 			SN_StopSequence (poly);
 			Destroy ();
 		}
@@ -237,6 +363,7 @@ bool EV_RotatePoly (line_t *line, int polyNum, int speed, int byteAngle,
 		I_Error("EV_RotatePoly: Invalid polyobj num: %d\n", polyNum);
 	}
 	pe = new DRotatePoly (polyNum);
+
 	if (byteAngle)
 	{
 		if (byteAngle == 255)
@@ -256,6 +383,10 @@ bool EV_RotatePoly (line_t *line, int polyNum, int speed, int byteAngle,
 	poly->specialdata = pe;
 	SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
 	
+	// [BC] If we're the server, tell clients to create the rotate poly.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_DoRotatePoly( pe->m_Speed, pe->m_PolyObj );
+
 	while ( (mirror = GetPolyobjMirror( polyNum)) )
 	{
 		poly = GetPolyobj(mirror);
@@ -288,6 +419,10 @@ bool EV_RotatePoly (line_t *line, int polyNum, int speed, int byteAngle,
 		pe->m_Speed = (speed*direction*(ANGLE_90/64))>>3;
 		polyNum = mirror;
 		SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
+
+		// [BC] If we're the server, tell clients to create the rotate poly.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DoRotatePoly( pe->m_Speed, pe->m_PolyObj );
 	}
 	return true;
 }
@@ -302,6 +437,13 @@ void DMovePoly::Tick ()
 {
 	polyobj_t *poly;
 
+	// [BC] For clients, just tick them and get out.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		PO_MovePolyobj( m_PolyObj, m_xSpeed, m_ySpeed );
+		return;
+	}
+
 	if (PO_MovePolyobj (m_PolyObj, m_xSpeed, m_ySpeed))
 	{
 		int absSpeed = abs (m_Speed);
@@ -313,6 +455,18 @@ void DMovePoly::Tick ()
 			{
 				poly->specialdata = NULL;
 			}
+
+			// [BC] Now that our destination has been reached, tell clients.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetPolyobjPosition( m_PolyObj, poly->startSpot[0], poly->startSpot[1] );
+
+			// [BC] Tell clients to stop the sound sequence, and destroy the move poly.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_STOPSEQUENCE );
+				SERVERCOMMANDS_DestroyMovePoly( m_PolyObj );
+			}
+
 			SN_StopSequence (poly);
 			Destroy ();
 		}
@@ -362,6 +516,10 @@ bool EV_MovePoly (line_t *line, int polyNum, int speed, angle_t angle,
 	pe->m_ySpeed = FixedMul (pe->m_Speed, finesine[pe->m_Angle]);
 	SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
 
+	// [BC] If we're the server, tell clients to create the move poly.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_DoMovePoly( pe->m_xSpeed, pe->m_ySpeed, pe->m_PolyObj );
+
 	// Do not interpolate very fast moving polyobjects. The minimum tic count is
 	// 3 instead of 2, because the moving crate effect in Massmouth 2, Hostitality
 	// that this fixes isn't quite fast enough to move the crate back to its start
@@ -392,6 +550,10 @@ bool EV_MovePoly (line_t *line, int polyNum, int speed, angle_t angle,
 		{
 			pe->StopInterpolation ();
 		}
+
+		// [BC] If we're the server, tell clients to create the move poly.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DoMovePoly( pe->m_xSpeed, pe->m_ySpeed, pe->m_PolyObj );
 	}
 	return true;
 }
@@ -406,25 +568,98 @@ void DPolyDoor::Tick ()
 {
 	int absSpeed;
 	polyobj_t *poly;
+	bool	bBlocked;
 
+	// [BC] For clients, just tick them and get out.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		switch ( m_Type )
+		{
+		case PODOOR_SLIDE:
+
+			PO_MovePolyobj( m_PolyObj, m_xSpeed, m_ySpeed );
+			break;
+		case PODOOR_SWING:
+
+			PO_RotatePolyobj( m_PolyObj, m_Speed );
+			break;
+		default:
+
+			break;
+		}
+
+		return;
+	}
+
+	// The door is currently paused after opening all the way.
 	if (m_Tics)
 	{
+		// Pause time is over! Time to set the door back in motion.
 		if (!--m_Tics)
 		{
 			poly = GetPolyobj (m_PolyObj);
+
+			// [BC] Tell clients to start the sound sequence, and to set the polyobject
+			// back in motion
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
+				SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_SEQ_DOOR );
+				if ( m_Type == PODOOR_SLIDE )
+				{
+					SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj,
+																m_xSpeed,
+																m_ySpeed,
+																poly->startSpot[0],
+																poly->startSpot[1] );
+				}
+			}
+
 			SN_StartSequence (poly, poly->seqType, SEQ_DOOR, m_Close);
 		}
 		return;
 	}
+
 	switch (m_Type)
 	{
 	case PODOOR_SLIDE:
-		if (m_Dist <= 0 || PO_MovePolyobj (m_PolyObj, m_xSpeed, m_ySpeed))
+
+		poly = GetPolyobj( m_PolyObj );
+		bBlocked = ( PO_MovePolyobj (m_PolyObj, m_xSpeed, m_ySpeed) == false );
+
+		// [BC] If the polyobject had NOT been blocked last frame, but is now, tell clients
+		// to set stop the polyobject.
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( bBlocked ) && ( poly->bBlocked == false ))
 		{
+			poly->bBlocked = true;
+			SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj,
+														m_xSpeed,
+														m_ySpeed,
+														poly->startSpot[0],
+														poly->startSpot[1] );
+		}
+
+		if (m_Dist <= 0 || ( bBlocked == false ))
+		{
+			// [BC] If the polyobject had been blocked last frame, but isn't now, tell clients
+			// to set the polyobject back in motion.
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( poly->bBlocked ))
+			{
+				poly->bBlocked = false;
+				SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj,
+															m_xSpeed,
+															m_ySpeed,
+															poly->startSpot[0],
+															poly->startSpot[1] );
+			}
+
 			absSpeed = abs (m_Speed);
 			m_Dist -= absSpeed;
 			if (m_Dist <= 0)
 			{
+				// [BC] Tell clients to stop the sound sequence.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_STOPSEQUENCE );
+
 				poly = GetPolyobj (m_PolyObj);
 				SN_StopSequence (poly);
 				if (!m_Close)
@@ -436,6 +671,16 @@ void DPolyDoor::Tick ()
 						m_Direction;
 					m_xSpeed = -m_xSpeed;
 					m_ySpeed = -m_ySpeed;					
+
+					// [BC] Tell clients that the door is now paused.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					{
+						SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj,
+																	0,
+																	0,
+																	poly->startSpot[0],
+																	poly->startSpot[1] );
+					}
 				}
 				else
 				{
@@ -443,6 +688,11 @@ void DPolyDoor::Tick ()
 					{
 						poly->specialdata = NULL;
 					}
+
+					// [BC] If we're the server, tell clients to destroy the poly door.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_DestroyPolyDoor( m_PolyObj );
+
 					Destroy ();
 				}
 			}
@@ -463,6 +713,10 @@ void DPolyDoor::Tick ()
 				m_ySpeed = -m_ySpeed;
 				m_Close = false;
 				SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
+
+				// [BC] Tell clients to play the sound sequence.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_SEQ_DOOR );
 			}
 		}
 		break;
@@ -480,6 +734,11 @@ void DPolyDoor::Tick ()
 			{
 				poly = GetPolyobj (m_PolyObj);
 				SN_StopSequence (poly);
+
+				// [BC] Tell clients to stop the sound sequence.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_STOPSEQUENCE );
+
 				if (!m_Close)
 				{
 					m_Dist = m_TotalDist;
@@ -493,6 +752,11 @@ void DPolyDoor::Tick ()
 					{
 						poly->specialdata = NULL;
 					}
+
+					// [BC] Tell clients to destroy the poly door.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_DestroyPolyDoor( m_PolyObj );
+
 					Destroy ();
 				}
 			}
@@ -510,6 +774,10 @@ void DPolyDoor::Tick ()
 				m_Speed = -m_Speed;
 				m_Close = false;
 				SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
+
+				// [BC] Tell clients to play the sound sequence.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, POLYSOUND_SEQ_DOOR );
 			}
 		}			
 		break;
@@ -543,7 +811,9 @@ bool EV_OpenPolyDoor (line_t *line, int polyNum, int speed, angle_t angle,
 	{
 		I_Error("EV_OpenPolyDoor: Invalid polyobj num: %d\n", polyNum);
 	}
+
 	pd = new DPolyDoor (polyNum, type);
+
 	if (type == PODOOR_SLIDE)
 	{
 		pd->m_WaitTics = delay;
@@ -564,6 +834,13 @@ bool EV_OpenPolyDoor (line_t *line, int polyNum, int speed, angle_t angle,
 	}
 
 	poly->specialdata = pd;
+
+	// [BC] Tell clients to create the poly door, and play a sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_DoPolyDoor( pd->m_Type, pd->m_xSpeed, pd->m_ySpeed, pd->m_Speed, pd->m_PolyObj );
+		SERVERCOMMANDS_PlayPolyobjSound( polyNum, POLYSOUND_SEQ_DOOR );
+	}
 
 	while ( (mirror = GetPolyobjMirror (polyNum)) )
 	{
@@ -592,6 +869,14 @@ bool EV_OpenPolyDoor (line_t *line, int polyNum, int speed, angle_t angle,
 			pd->m_Dist = pd->m_TotalDist = angle;
 			SN_StartSequence (poly, poly->seqType, SEQ_DOOR, 0);
 		}
+
+		// [BC] Tell clients to create the poly door, and play a sound.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_DoPolyDoor( pd->m_Type, pd->m_xSpeed, pd->m_ySpeed, pd->m_Speed, pd->m_PolyObj );
+			SERVERCOMMANDS_PlayPolyobjSound( mirror, POLYSOUND_SEQ_DOOR );
+		}
+
 		polyNum = mirror;
 	}
 	return true;
@@ -605,7 +890,7 @@ bool EV_OpenPolyDoor (line_t *line, int polyNum, int speed, angle_t angle,
 //
 //==========================================================================
 
-static polyobj_t *GetPolyobj (int polyNum)
+/*static*/ polyobj_t *GetPolyobj (int polyNum)
 {
 	int i;
 
@@ -691,7 +976,7 @@ void ThrustMobj (AActor *actor, seg_t *seg, polyobj_t *po)
 	thrustY = FixedMul (force, finesine[thrustAngle]);
 	actor->momx += thrustX;
 	actor->momy += thrustY;
-	if (po->crush)
+	if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && po->crush)
 	{
 		if (po->bHurtOnTouch || !P_CheckPosition (actor, actor->x + thrustX, actor->y + thrustY))
 		{
@@ -774,23 +1059,35 @@ bool PO_MovePolyobj (int num, int x, int y)
 
 	segList = po->segs;
 	blocked = false;
-	for (count = po->numsegs; count; count--, segList++)
+
+	// Don't check if the polyobject was blocked by something in client mode. The server will
+	// tell us if something is blocking its path.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 	{
-		if (CheckMobjBlocking(*segList, po))
+		for (count = po->numsegs; count; count--, segList++)
 		{
-			blocked = true;
-			break;
+			if (CheckMobjBlocking(*segList, po))
+			{
+				blocked = true;
+				break;
+			}
 		}
 	}
+
 	if (blocked)
 	{
 		DoMovePolyobj (po, -x, -y);
 		LinkPolyobj(po);
 		return false;
 	}
+
 	po->startSpot[0] += x;
 	po->startSpot[1] += y;
 	LinkPolyobj (po);
+
+	// Polyobject has moved.
+	po->bMoved = true;
+
 	return true;
 }
 
@@ -931,6 +1228,10 @@ bool PO_RotatePolyobj (int num, angle_t angle)
 	}
 	po->angle += angle;
 	LinkPolyobj(po);
+
+	// [BC] Polyobject has rotated.
+	po->bRotated = true;
+
 	return true;
 }
 
@@ -1071,6 +1372,9 @@ static bool CheckMobjBlocking (seg_t *seg, polyobj_t *po)
 	fixed_t tmbbox[4];
 	line_t *ld;
 	bool blocked;
+
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return ( false );
 
 	ld = seg->linedef;
 
@@ -1288,6 +1592,9 @@ static void SpawnPolyobj (int index, int tag, int type)
 			IterFindPolySegs (segs[i].v1, segs[i].v2, polyobjs[index].segs+1);
 			polyobjs[index].crush = (type != PO_SPAWN_TYPE) ? 3 : 0;
 			polyobjs[index].bHurtOnTouch = (type == PO_SPAWNHURT_TYPE);
+			polyobjs[index].bMoved = false;
+			polyobjs[index].bRotated = false;
+			polyobjs[index].bBlocked = false;
 			polyobjs[index].tag = tag;
 			polyobjs[index].seqType = segs[i].linedef->args[2];
 			if (polyobjs[index].seqType < 0 || polyobjs[index].seqType > 63)
@@ -1362,6 +1669,9 @@ static void SpawnPolyobj (int index, int tag, int type)
 			PolySegCount = polyobjs[index].numsegs; // PolySegCount used globally
 			polyobjs[index].crush = (type != PO_SPAWN_TYPE) ? 3 : 0;
 			polyobjs[index].bHurtOnTouch = (type == PO_SPAWNHURT_TYPE);
+			polyobjs[index].bMoved = false;
+			polyobjs[index].bRotated = false;
+			polyobjs[index].bBlocked = false;
 			polyobjs[index].tag = tag;
 			polyobjs[index].segs = new seg_t *[polyobjs[index].numsegs];
 			for (i = 0; i < polyobjs[index].numsegs; i++)

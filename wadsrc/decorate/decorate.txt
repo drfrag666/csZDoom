@@ -1,4 +1,3 @@
-#include "actors/shared/blood.txt"
 #include "actors/shared/debris.txt"
 #include "actors/shared/splashes.txt"
 
@@ -11,7 +10,6 @@
 #include "actors/doom/doomdecorations.txt"
 #include "actors/doom/stealthmonsters.txt"
 
-#include "actors/raven/artiegg.txt"
 #include "actors/raven/ravenartifacts.txt"
 #include "actors/raven/ravenhealth.txt"
 

@@ -235,7 +235,10 @@ enum
 	ADEF_PlayerPawn_SoundClass,
 	ADEF_PlayerPawn_ScoreIcon,
 	ADEF_PlayerPawn_MorphWeapon,
-	ADEF_LastString = ADEF_PlayerPawn_MorphWeapon,
+	// [BC] New property for the announcer entry to be played when the inventory item is
+	// picked up.
+	ADEF_Inventory_PickupAnnouncerEntry,
+	ADEF_LastString = ADEF_Inventory_PickupAnnouncerEntry,
 
 	// The rest of the properties use their type field (upper 2 bits)
 	ADEF_XScale,
@@ -254,16 +257,25 @@ enum
 	ADEF_Flags3,		// "
 	ADEF_Flags4,		// "
 	ADEF_Flags5,		// "
+	// [BC] New flags for ST.
+	ADEF_FlagsST,		// "
+	ADEF_FlagsNetwork,	// "
 	ADEF_FlagsSet,		// Or these flags with previous
 	ADEF_Flags2Set,		// "
 	ADEF_Flags3Set,		// "
 	ADEF_Flags4Set,		// "
 	ADEF_Flags5Set,		// "
+	// [BC] New flags for ST.
+	ADEF_FlagsSTSet,		// "
+	ADEF_FlagsNetworkSet,	// "
 	ADEF_FlagsClear,	// Clear these flags from previous
 	ADEF_Flags2Clear,	// "
 	ADEF_Flags3Clear,	// "
 	ADEF_Flags4Clear,	// "
 	ADEF_Flags5Clear,	// "
+	// [BC] New flags for ST.
+	ADEF_FlagsSTClear,	// "
+	ADEF_FlagsNetworkClear,	// "
 	ADEF_Alpha,
 	ADEF_RenderStyle,
 	ADEF_RenderFlags,
@@ -329,10 +341,12 @@ enum
 	ADEF_Weapon_AmmoGive2,
 	ADEF_Weapon_AmmoUse1,
 	ADEF_Weapon_AmmoUse2,
+	// [BC]
+//	ADEF_Weapon_AmmoUseDM1,
+//	ADEF_Weapon_AmmoUseDM2,
 	ADEF_Weapon_Kickback,
 	ADEF_Weapon_YAdjust,
 	ADEF_Weapon_SelectionOrder,
-	ADEF_Weapon_MoveCombatDist,
 	ADEF_Weapon_UpState,
 	ADEF_Weapon_DownState,
 	ADEF_Weapon_ReadyState,

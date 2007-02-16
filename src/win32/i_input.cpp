@@ -55,6 +55,11 @@
 #include <ctype.h>
 #include <string.h>
 
+#define USE_WINDOWS_DWORD
+#include "network.h"
+#include "chat.h"
+#include "cl_main.h"
+
 // Compensate for w32api's lack
 #ifndef GET_XBUTTON_WPARAM
 #define GET_XBUTTON_WPARAM(wParam) (HIWORD(wParam))
@@ -404,15 +409,13 @@ static void FlushDIKState (int low=0, int high=NUM_KEYS-1)
 	}
 }
 
-extern int chatmodeon;
-
 static void I_CheckGUICapture ()
 {
 	bool wantCapt;
 
 	if (menuactive == MENU_Off)
 	{
-		wantCapt = ConsoleState == c_down || ConsoleState == c_falling || chatmodeon;
+		wantCapt = ConsoleState == c_down || ConsoleState == c_falling || ( CHAT_GetChatMode( ) != CHATMODE_NONE );
 	}
 	else
 	{
@@ -751,7 +754,7 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				GSnd->ResetEnvironment();
 			}
 		}
-		else if (!noidle && !netgame)
+		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT )
 		{
 			SetPriorityClass (GetCurrentProcess (), IDLE_PRIORITY_CLASS);
 		}
@@ -1530,7 +1533,7 @@ static void SetSoundPaused (int state)
 		if (paused <= 0)
 		{
 			S_ResumeSound ();
-			if (!netgame
+			if ( NETWORK_GetState( ) == NETSTATE_SINGLE
 #ifdef _DEBUG
 				&& !demoplayback
 #endif
@@ -1545,7 +1548,7 @@ static void SetSoundPaused (int state)
 		if (paused == 0)
 		{
 			S_PauseSound (false);
-			if (!netgame
+			if ( NETWORK_GetState( ) == NETSTATE_SINGLE
 #ifdef _DEBUG
 				&& !demoplayback
 #endif

@@ -58,6 +58,7 @@
 #include "gi.h"
 #include "templates.h"
 #include "sbar.h"
+#include "gl_main.h"
 
 IMPLEMENT_ABSTRACT_CLASS (DCanvas)
 IMPLEMENT_ABSTRACT_CLASS (DFrameBuffer)
@@ -85,6 +86,7 @@ DFrameBuffer *screen;
 CVAR (Int, vid_defwidth, 640, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Int, gl_vid_bitdepth, 16, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // [ZDoomGL]
 CVAR (Bool, vid_fps, false, 0)
 CVAR (Bool, ticker, false, 0)
 CVAR (Int, vid_showpalette, 0, 0)
@@ -164,19 +166,27 @@ void DCanvas::FlatFill (int left, int top, int right, int bottom, FTexture *src)
 	int w = src->GetWidth();
 	int h = src->GetHeight();
 
-	// Repeatedly draw the texture, left-to-right, top-to-bottom. The
-	// texture is positioned so that no matter what coordinates you pass
-	// to FlatFill, the origin of the repeating pattern is always (0,0).
-	for (int y = top / h * h; y < bottom; y += h)
+	if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+		GL_DrawTextureTiled(src, left, top, right, bottom);
+	else
 	{
-		for (int x = left / w * w; x < right; x += w)
+		int w = src->GetWidth();
+		int h = src->GetHeight();
+
+		// Repeatedly draw the texture, left-to-right, top-to-bottom. The
+		// texture is positioned so that no matter what coordinates you pass
+		// to FlatFill, the origin of the repeating pattern is always (0,0).
+		for (int y = top / h * h; y < bottom; y += h)
 		{
-			DrawTexture (src, x, y,
-				DTA_ClipLeft, left,
-				DTA_ClipRight, right,
-				DTA_ClipTop, top,
-				DTA_ClipBottom, bottom,
-				TAG_DONE);
+			for (int x = left / w * w; x < right; x += w)
+			{
+				DrawTexture (src, x, y,
+					DTA_ClipLeft, left,
+					DTA_ClipRight, right,
+					DTA_ClipTop, top,
+					DTA_ClipBottom, bottom,
+					TAG_DONE);
+			}
 		}
 	}
 }
@@ -660,7 +670,8 @@ void DFrameBuffer::DrawRateStuff ()
 	}
 
 	// draws little dots on the bottom of the screen
-	if (ticker)
+	// [BC] Don't draw this in OpenGL mode.
+	if (ticker && ( OPENGL_GetCurrentRenderer( ) == RENDERER_SOFTWARE ))
 	{
 		int i = I_GetTime(false);
 		int tics = i - LastTic;
@@ -756,10 +767,10 @@ bool V_DoModeSetup (int width, int height, int bits)
 			cwidth = width * BaseRatioSizes[ratio][3] / 48;
 			cheight = height;
 		}
-		CleanXfac = MAX (cwidth / 320, 1);
-		CleanYfac = MAX (cheight / 200, 1);
+		CleanXfac = MAX ((float)cwidth / 320, 1.0f);
+		CleanYfac = MAX ((float)cheight / 200, 1.0f);
 	}
-
+/*
 	if (CleanXfac > 1 && CleanYfac > 1 && CleanXfac != CleanYfac)
 	{
 		if (CleanXfac < CleanYfac)
@@ -767,7 +778,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 		else
 			CleanXfac = CleanYfac;
 	}
-
+*/
 	CleanWidth = width / CleanXfac;
 	CleanHeight = height / CleanYfac;
 

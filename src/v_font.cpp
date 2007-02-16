@@ -52,6 +52,8 @@
 #include "cmdlib.h"
 #include "sc_man.h"
 #include "hu_stuff.h"
+// [BC] New #includes.
+#include "network.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -1862,5 +1864,8 @@ void V_InitFonts()
 	}
 	ConFont = new FSingleLumpFont ("ConsoleFont", Wads.GetNumForName ("CONFONT"));
 	V_InitCustomFonts ();
-	screen->SetFont(SmallFont);
+
+	// [BC] The server doesn't have a screen.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		screen->SetFont(SmallFont);
 }

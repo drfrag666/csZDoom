@@ -41,6 +41,8 @@
 #include "a_keys.h"
 #include "templates.h"
 #include "p_lnspec.h"
+#include "deathmatch.h"
+#include "announcer.h"
 
 // [RH] Actually handle the cheat. The cheat code in st_stuff.c now just
 // writes some bytes to the network data stream, and the network code
@@ -83,7 +85,8 @@ void cht_DoCheat (player_t *player, int cheat)
 			msg = GStrings("STSTR_DQDON");
 		else
 			msg = GStrings("STSTR_DQDOFF");
-		SB_state = screen->GetPageCount ();
+		if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+			SB_state = screen->GetPageCount ();
 		break;
 
 	case CHT_NOCLIP:
@@ -336,7 +339,7 @@ void cht_DoCheat (player_t *player, int cheat)
 		{
 			Printf ("What do you want to kill outside of a game?\n");
 		}
-		else if (!deathmatch)
+		else if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		{
 			// Don't allow this in deathmatch even with cheats enabled, because it's
 			// a very very cheap kill.
@@ -398,7 +401,9 @@ void cht_DoCheat (player_t *player, int cheat)
 	if (!*msg)              // [SO] Don't print blank lines!
 		return;
 
-	if (player == &players[consoleplayer])
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVER_Printf( PRINT_HIGH, "%s is a cheater: %s\n", player->userinfo.netname, msg );
+	else if (player == &players[consoleplayer])
 		Printf ("%s\n", msg);
 	else
 		Printf ("%s is a cheater: %s\n", player->userinfo.netname, msg);
@@ -442,7 +447,13 @@ void GiveSpawner (player_t *player, const PClass *type, int amount)
 	{
 		if (amount > 0)
 		{
-			if (type->IsDescendantOf (RUNTIME_CLASS(ABasicArmorPickup)))
+			// [BC] 
+			if (type->IsDescendantOf (RUNTIME_CLASS(ABasicMaxArmorBonus)))
+			{
+				static_cast<ABasicMaxArmorBonus*>(item)->SaveAmount *= amount;
+				static_cast<ABasicMaxArmorBonus*>(item)->lMaxBonus *= amount;
+			}
+			else if (type->IsDescendantOf (RUNTIME_CLASS(ABasicArmorPickup)))
 			{
 				if (static_cast<ABasicArmorPickup*>(item)->SaveAmount != 0)
 				{
@@ -466,6 +477,12 @@ void GiveSpawner (player_t *player, const PClass *type, int amount)
 		{
 			item->Destroy ();
 		}
+		else
+		{
+			// [BC] Play the announcer sound.
+			if ( players[consoleplayer].camera == players[consoleplayer].mo )
+				ANNOUNCER_PlayEntry( cl_announcer, item->PickupAnnouncerEntry( ));
+		}
 	}
 }
 
@@ -475,7 +492,9 @@ void cht_Give (player_t *player, char *name, int amount)
 	int i;
 	const PClass *type;
 
-	if (player != &players[consoleplayer])
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVER_Printf( PRINT_HIGH, "%s is a cheater: give %s\n", player->userinfo.netname, name );
+	else if (player != &players[consoleplayer])
 		Printf ("%s is a cheater: give %s\n", player->userinfo.netname, name);
 
 	if (player->mo == NULL || player->health <= 0)

@@ -36,10 +36,12 @@
 
 #define DOOMCOM_ID		0x12345678l
 #define MAXNETNODES		8	// max computers in a game
-#define BACKUPTICS		36	// number of tics to remember
+//#define BACKUPTICS		36	// number of tics to remember
 #define MAXTICDUP		5
 #define LOCALCMDTICS	(BACKUPTICS*MAXTICDUP)
 
+// Store up to 70 tics (two seconds) worth of input for player prediction.
+#define BACKUPTICS			70 // MAXSAVETICS
 
 #ifdef DJGPP
 // The DOS drivers provide a pretty skimpy buffer.

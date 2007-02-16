@@ -6,6 +6,9 @@
 #include "templates.h"
 #include "s_sound.h"
 #include "p_acs.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 static FRandom pr_lightning ("Lightning");
 
@@ -89,6 +92,10 @@ void DLightningThinker::LightningFlash ()
 					LightningLightLevels[j] < tempSec->lightlevel-4)
 				{
 					tempSec->lightlevel -= 4;
+
+					// [BC] If we're the server, update clients with this sector's new light level.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetSectorLightLevel( ULONG( tempSec - sectors ));
 				}
 			}
 		}					
@@ -100,6 +107,10 @@ void DLightningThinker::LightningFlash ()
 				if (LightningLightLevels[numsectors+(j>>3)] & (1<<(j&7)))
 				{
 					tempSec->lightlevel = LightningLightLevels[j];
+
+					// [BC] If we're the server, update clients with this sector's new light level.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetSectorLightLevel( ULONG( tempSec - sectors ));
 				}
 			}
 			memset (&LightningLightLevels[numsectors], 0, (numsectors+7)/8);
@@ -138,12 +149,20 @@ void DLightningThinker::LightningFlash ()
 			{
 				tempSec->lightlevel = LightningLightLevels[j];
 			}
+
+			// [BC] If we're the server, update clients with this sector's new light level.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetSectorLightLevel( ULONG( tempSec - sectors ));
 		}
 	}
 
 	level.flags |= LEVEL_SWAPSKIES;	// set alternate sky
 	S_Sound (CHAN_AUTO, "world/thunder", 1.0, ATTN_NONE);
 	FBehavior::StaticStartTypedScripts (SCRIPT_Lightning, NULL, false);	// [RH] Run lightning scripts
+
+	// [BC] If we're the server, play the thunder sound.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_Sound( CHAN_AUTO, "world/thunder", 127, ATTN_NONE );
 
 	// Calculate the next lighting flash
 	if (!NextLightningFlash)

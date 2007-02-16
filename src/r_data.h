@@ -501,6 +501,9 @@ struct FCanvasTextureInfo
 	static void EmptyList ();
 	static void Serialize (FArchive &arc);
 
+	// [BC]
+	static void UpdateToClient( ULONG ulClient );
+
 private:
 	static FCanvasTextureInfo *List;
 };

@@ -132,6 +132,7 @@ public:
 	BYTE *NextChunk (BYTE *chunk) const;
 	const ScriptPtr *FindScript (int number) const;
 	void StartTypedScripts (WORD type, AActor *activator, bool always, int arg1, bool runNow);
+	int CountTypedScripts( WORD type );
 	DWORD PC2Ofs (int *pc) const { return (DWORD)((BYTE *)pc - Data); }
 	int *Ofs2PC (DWORD ofs) const {	return (int *)(Data + ofs); }
 	ACSFormat GetFormat() const { return Format; }
@@ -157,6 +158,7 @@ public:
 	static const char *StaticLookupString (DWORD index);
 	static void StaticStartTypedScripts (WORD type, AActor *activator, bool always, int arg1=0, bool runNow=false);
 	static void StaticStopMyScripts (AActor *actor);
+	static int StaticCountTypedScripts( WORD type );
 
 private:
 	struct ArrayInfo;
@@ -321,7 +323,7 @@ public:
 		PCD_PLAYERGOLDSKULL,
 		PCD_PLAYERBLACKCARD,
 		PCD_PLAYERSILVERCARD,
-		PCD_PLAYERONTEAM,
+		PCD_ISMULTIPLAYER,
 		PCD_PLAYERTEAM,
 /*120*/	PCD_PLAYERHEALTH,
 		PCD_PLAYERARMORPOINTS,
@@ -332,11 +334,11 @@ public:
 		PCD_BLUETEAMSCORE,
 		PCD_REDTEAMSCORE,
 		PCD_ISONEFLAGCTF,
-		PCD_LSPEC6,				// These are never used. They should probably
-/*130*/	PCD_LSPEC6DIRECT,		// be given names like PCD_DUMMY.
+		PCD_GETINVASIONWAVE,
+/*130*/	PCD_GETINVASIONSTATE,
 		PCD_PRINTNAME,
 		PCD_MUSICCHANGE,
-		PCD_TEAM2FRAGPOINTS,
+		PCD_CONSOLECOMMANDDIRECT,
 		PCD_CONSOLECOMMAND,
 		PCD_SINGLEPLAYER,		// [RH] End of Skull Tag p-codes
 		PCD_FIXEDMUL,
@@ -560,7 +562,8 @@ public:
 		GAME_SINGLE_PLAYER =	0,
 		GAME_NET_COOPERATIVE =	1,
 		GAME_NET_DEATHMATCH =	2,
-		GAME_TITLE_MAP =		3
+		GAME_TITLE_MAP =		3,
+		GAME_NET_TEAMGAME =		4,
 	};
 	enum {
 		CLASS_FIGHTER =			0,
@@ -730,5 +733,10 @@ struct acsdefered_s
 typedef struct acsdefered_s acsdefered_t;
 
 FArchive &operator<< (FArchive &arc, acsdefered_s *&defer);
+
+//*****************************************************************************
+//	PROTOTYPES
+
+bool	ACS_IsCalledFromConsoleCommand( void );
 
 #endif //__P_ACS_H__

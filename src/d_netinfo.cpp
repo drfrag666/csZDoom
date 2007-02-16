@@ -52,6 +52,11 @@
 #include "sbar.h"
 #include "gi.h"
 #include "m_random.h"
+// [BC] New #includes.
+#include "network.h"
+#include "cl_main.h"
+#include "deathmatch.h"
+#include "team.h"
 
 static FRandom pr_pickteam ("PickRandomTeam");
 
@@ -62,12 +67,17 @@ CVAR (Float,	autoaim,				5000.f,		CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (String,	name,					"Player",	CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (Color,	color,					0x40cf00,	CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (String,	skin,					"base",		CVAR_USERINFO | CVAR_ARCHIVE);
-CVAR (Int,		team,					255,		CVAR_USERINFO | CVAR_ARCHIVE);
+// [BC] "team" is no longer a cvar.
 CVAR (String,	gender,					"male",		CVAR_USERINFO | CVAR_ARCHIVE);
-CVAR (Bool,		neverswitchonpickup,	false,		CVAR_USERINFO | CVAR_ARCHIVE);
+// [BC] Changed "neverswitchonpickup" to allow it to be set 3 different ways, instead of "on/off".
+CVAR (Int,		switchonpickup,			1,			CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (Float,	movebob,				0.25f,		CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (Float,	stillbob,				0.f,		CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (String,	playerclass,			"Fighter",	CVAR_USERINFO | CVAR_ARCHIVE);
+// [BC] New userinfo entries for Skulltag.
+CVAR (Int,		railcolor,				0,			CVAR_USERINFO | CVAR_ARCHIVE);
+CVAR (Int,		handicap,				0,			CVAR_USERINFO | CVAR_ARCHIVE);
+CVAR (Int,		connectiontype,			2,			CVAR_USERINFO | CVAR_ARCHIVE);
 
 enum
 {
@@ -75,22 +85,14 @@ enum
 	INFO_Autoaim,
 	INFO_Color,
 	INFO_Skin,
-	INFO_Team,
 	INFO_Gender,
-	INFO_NeverSwitchOnPickup,
+	INFO_SwitchOnPickup,
+	INFO_Railcolor,
+	INFO_Handicap,
 	INFO_MoveBob,
+	INFO_ConnectionType,
 	INFO_StillBob,
 	INFO_PlayerClass,
-};
-
-const char *TeamNames[NUM_TEAMS] =
-{
-	"Red", "Blue", "Green", "Gold"
-};
-
-float TeamHues[NUM_TEAMS] =
-{
-	0.f, 240.f, 120.f, 60.f
 };
 
 const char *GenderNames[3] = { "male", "female", "other" };
@@ -101,10 +103,12 @@ static const char *UserInfoStrings[] =
 	"autoaim",
 	"color",
 	"skin",
-	"team",
 	"gender",
-	"neverswitchonpickup",
+	"switchonpickup",
+	"railcolor",
+	"handicap",
 	"movebob",
+	"connectiontype",
 	"stillbob",
 	"playerclass",
 	NULL
@@ -112,6 +116,13 @@ static const char *UserInfoStrings[] =
 
 int D_GenderToInt (const char *gender)
 {
+	if ( !stricmp( gender, "0" ))
+		return ( GENDER_MALE );
+	if ( !stricmp( gender, "1" ))
+		return ( GENDER_FEMALE );
+	if ( !stricmp( gender, "2" ))
+		return ( GENDER_NEUTER );
+
 	if (!stricmp (gender, "female"))
 		return GENDER_FEMALE;
 	else if (!stricmp (gender, "other") || !stricmp (gender, "cyborg"))
@@ -148,8 +159,28 @@ void D_GetPlayerColor (int player, float *h, float *s, float *v)
 	RGBtoHSV (RPART(color)/255.f, GPART(color)/255.f, BPART(color)/255.f,
 		h, s, v);
 
+	if ( teamgame || teamplay || teamlms || teampossession )
+	{
+		if ( players[player].bOnTeam )
+		{
+			int		nColor;
+			char	*pszColor;
+
+			// Get the color string from the team object.
+			pszColor = TEAM_GetColor( players[player].ulTeam );
+
+			// Build the color based on the string.
+			nColor = V_GetColorFromString( NULL, pszColor );
+
+			// Convert.
+			RGBtoHSV( RPART( nColor ) / 255.f, GPART( nColor ) / 255.f, BPART( nColor ) / 255.f,
+				h, s, v );
+		}
+	}
+
 	if (teamplay && players[player].userinfo.team < NUM_TEAMS)
 	{
+/*
 		// In team play, force the player to use the team's hue
 		// and adjust the saturation and value so that the team
 		// hue is visible in the final color.
@@ -165,155 +196,49 @@ void D_GetPlayerColor (int player, float *h, float *s, float *v)
 			*s = team == 0 ? 0.6f : 0.8f;
 			*v = *v*0.4f+0.3f;
 		}
+*/
 	}
-}
-
-// Find out which teams are present. If there is only one,
-// then another team should be chosen at random.
-//
-// Otherwise, join whichever team has fewest players. If
-// teams are tied for fewest players, pick one of those
-// at random.
-
-void D_PickRandomTeam (int player)
-{
-	static char teamline[8] = "\\team\\X";
-
-	BYTE *foo = (BYTE *)teamline;
-	teamline[6] = D_PickRandomTeam() + '0';
-	D_ReadUserInfoStrings (player, &foo, teamplay);
-}
-
-int D_PickRandomTeam ()
-{
-	int teamPresent[NUM_TEAMS] = { 0 };
-	int numTeams = 0;
-	int team;
-
-	for (int i = 0; i < MAXPLAYERS; ++i)
-	{
-		if (playeringame[i])
-		{
-			if (players[i].userinfo.team < NUM_TEAMS)
-			{
-				if (teamPresent[players[i].userinfo.team]++ == 0)
-				{
-					numTeams++;
-				}
-			}
-		}
-	}
-
-	if (numTeams < 2)
-	{
-		do
-		{
-			team = pr_pickteam() % NUM_TEAMS;
-		} while (teamPresent[team] != 0);
-	}
-	else
-	{
-		int lowest = INT_MAX, lowestTie = 0, i;
-		int ties[NUM_TEAMS];
-
-		for (i = 0; i < NUM_TEAMS; ++i)
-		{
-			if (teamPresent[i] > 0)
-			{
-				if (teamPresent[i] < lowest)
-				{
-					lowest = teamPresent[i];
-					lowestTie = 0;
-					ties[0] = i;
-				}
-				else if (teamPresent[i] == lowest)
-				{
-					ties[++lowestTie] = i;
-				}
-			}
-		}
-		if (lowestTie == 0)
-		{
-			team = ties[0];
-		}
-		else
-		{
-			team = ties[pr_pickteam() % (lowestTie+1)];
-		}
-	}
-
-	return team;
-}
-
-static void UpdateTeam (int pnum, int team, bool update)
-{
-	userinfo_t *info = &players[pnum].userinfo;
-	int oldteam;
-
-	oldteam = info->team;
-	info->team = team;
-
-	if (teamplay && info->team >= NUM_TEAMS)
-	{ // Force players onto teams in teamplay mode
-		info->team = D_PickRandomTeam ();
-	}
-	if (update && oldteam != info->team)
-	{
-		if (info->team < NUM_TEAMS)
-			Printf ("%s joined the %s team\n", info->netname, TeamNames[info->team]);
-		else
-			Printf ("%s is now a loner\n", info->netname);
-	}
-	// Let the player take on the team's color
-	R_BuildPlayerTranslation (pnum);
-	if (StatusBar != NULL && StatusBar->GetPlayer() == pnum)
-	{
-		StatusBar->AttachToPlayer (&players[pnum]);
-	}
-	if ((unsigned)info->team >= NUM_TEAMS)
-		info->team = TEAM_None;
 }
 
 int D_GetFragCount (player_t *player)
 {
-	if (!teamplay || player->userinfo.team >= NUM_TEAMS)
+	if (( teamplay == false ) || player->bOnTeam == false )
 	{
 		return player->fragcount;
 	}
 	else
 	{
-		// Count total frags for this player's team
-		const int team = player->userinfo.team;
-		int count = 0;
-
-		for (int i = 0; i < MAXPLAYERS; ++i)
-		{
-			if (playeringame[i] && players[i].userinfo.team == team)
-			{
-				count += players[i].fragcount;
-			}
-		}
-		return count;
+		return ( TEAM_GetFragCount( player->ulTeam ));
 	}
 }
 
 void D_SetupUserInfo ()
 {
 	int i;
+	ULONG	ulIdx;
 	userinfo_t *coninfo = &players[consoleplayer].userinfo;
 
-	for (i = 0; i < MAXPLAYERS; i++)
-		memset (&players[i].userinfo, 0, sizeof(userinfo_t));
+	// [BC] Server doesn't do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
+	// [BC] Don't reset everyone's userinfo in client mode, since we don't want to erase
+	// EVERYONE'S userinfo if we change ours.
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		for (i = 0; i < MAXPLAYERS; i++)
+			memset (&players[i].userinfo, 0, sizeof(userinfo_t));
+	}
 
 	strncpy (coninfo->netname, name, MAXPLAYERNAME);
-	if (teamplay && team >= NUM_TEAMS)
+
+	// [BC] Remove % signs from names.
+	for ( ulIdx = 0; ulIdx < strlen( coninfo->netname ); ulIdx++ )
 	{
-		coninfo->team = D_PickRandomTeam ();
+		if ( coninfo->netname[ulIdx] == '%' )
+			coninfo->netname[ulIdx] = ' ';
 	}
-	else
-	{
-		coninfo->team = team;
-	}
+
 	if (autoaim > 35.f || autoaim < 0.f)
 	{
 		coninfo->aimdist = ANGLE_1*35;
@@ -325,10 +250,21 @@ void D_SetupUserInfo ()
 	coninfo->color = color;
 	coninfo->skin = R_FindSkin (skin, 0);
 	coninfo->gender = D_GenderToInt (gender);
-	coninfo->neverswitch = neverswitchonpickup;
+	coninfo->switchonpickup = switchonpickup;
+		
 	coninfo->MoveBob = (fixed_t)(65536.f * movebob);
 	coninfo->StillBob = (fixed_t)(65536.f * stillbob);
 	coninfo->PlayerClass = D_PlayerClassToInt (playerclass);
+
+	// [BC] Handle new ST userinfo entries.
+	coninfo->lRailgunTrailColor = railcolor;
+	coninfo->lHandicap = handicap;
+	if ( coninfo->lHandicap < 0 )
+		coninfo->lHandicap = 0;
+	else if ( coninfo->lHandicap > deh.MaxSoulsphere )
+		coninfo->lHandicap = deh.MaxSoulsphere;
+	coninfo->lConnectionType = connectiontype;
+
 	R_BuildPlayerTranslation (consoleplayer);
 }
 
@@ -336,7 +272,13 @@ void D_UserInfoChanged (FBaseCVar *cvar)
 {
 	UCVarValue val;
 	char foo[256];
+	ULONG	ulUpdateFlags;
 
+	// Server doesn't do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
+	ulUpdateFlags = 0;
 	if (cvar == &autoaim)
 	{
 		if (autoaim < 0.0f)
@@ -349,16 +291,65 @@ void D_UserInfoChanged (FBaseCVar *cvar)
 			autoaim = 5000.f;
 			return;
 		}
+
+		ulUpdateFlags |= USERINFO_AIMDISTANCE;
 	}
+	// Allow users to colorize their name.
+	else if ( cvar == &name )
+	{
+		val = cvar->GetGenericRep( CVAR_String );
+		V_ColorizeString( val.String );
+
+		ulUpdateFlags |= USERINFO_NAME;
+	}
+	else if ( cvar == &gender )
+		ulUpdateFlags |= USERINFO_GENDER;
+	else if ( cvar == &color )
+		ulUpdateFlags |= USERINFO_COLOR;
+	else if ( cvar == &skin )
+		ulUpdateFlags |= USERINFO_SKIN;
+	else if ( cvar == &railcolor )
+		ulUpdateFlags |= USERINFO_RAILCOLOR;
+	else if ( cvar == &handicap )
+	{
+		if ( handicap < 0 )
+		{
+			handicap = 0;
+			return;
+		}
+		if ( handicap > 200 )
+		{
+			handicap = 200;
+			return;
+		}
+
+		ulUpdateFlags |= USERINFO_HANDICAP;
+	}
+	else if ( cvar == &connectiontype )
+		ulUpdateFlags |= USERINFO_CONNECTIONTYPE;
+	else if (( cvar == &playerclass ) && ( gameinfo.gametype == GAME_Hexen ))
+		ulUpdateFlags |= USERINFO_PLAYERCLASS;
 
 	val = cvar->GetGenericRep (CVAR_String);
 	if (4 + strlen (cvar->GetName ()) + strlen (val.String) > 256)
 		I_Error ("User info descriptor too big");
 
-	sprintf (foo, "\\%s\\%s", cvar->GetName (), val.String);
+	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+	{
+		sprintf (foo, "\\%s\\%s", cvar->GetName (), val.String);
 
-	Net_WriteByte (DEM_UINFCHANGED);
-	Net_WriteString (foo);
+		Net_WriteByte (DEM_UINFCHANGED);
+		Net_WriteString (foo);
+	}
+	else
+	{
+		if ( gamestate != GS_STARTUP )
+			D_SetupUserInfo( );
+	}
+
+	// Send updated userinfo to the server.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) >= CTS_CONNECTED ) && ( ulUpdateFlags > 0 ))
+		CLIENT_SendUserInfo( ulUpdateFlags );
 }
 
 static const char *SetServerVar (char *name, ECVarType type, BYTE **stream, bool singlebit)
@@ -412,18 +403,6 @@ static const char *SetServerVar (char *name, ECVarType type, BYTE **stream, bool
 		delete[] value.String;
 	}
 
-	if (var == &teamplay)
-	{
-		// Put players on teams if teamplay turned on
-		for (int i = 0; i < MAXPLAYERS; ++i)
-		{
-			if (playeringame[i])
-			{
-				UpdateTeam (i, players[i].userinfo.team, true);
-			}
-		}
-	}
-
 	if (var)
 	{
 		value = var->GetGenericRep (CVAR_String);
@@ -438,6 +417,10 @@ EXTERN_CVAR (Float, sv_gravity)
 void D_SendServerInfoChange (const FBaseCVar *cvar, UCVarValue value, ECVarType type)
 {
 	size_t namelen;
+
+	// Server doesn't do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
 
 	namelen = strlen (cvar->GetName ());
 
@@ -473,6 +456,10 @@ void D_DoServerInfoChange (BYTE **stream, bool singlebit)
 	int len;
 	int type;
 
+	// Server doesn't do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	len = ReadByte (stream);
 	type = len >> 6;
 	len &= 0x3f;
@@ -482,7 +469,7 @@ void D_DoServerInfoChange (BYTE **stream, bool singlebit)
 	*stream += len;
 	name[len] = 0;
 
-	if ( (value = SetServerVar (name, (ECVarType)type, stream, singlebit)) && netgame)
+	if ( (value = SetServerVar (name, (ECVarType)type, stream, singlebit)) && ( NETWORK_GetState( ) != NETSTATE_SINGLE ))
 	{
 		Printf ("%s changed to %s\n", name, value);
 	}
@@ -507,25 +494,30 @@ void D_WriteUserInfoStrings (int i, BYTE **stream, bool compact)
 					 "\\autoaim\\%g"
 					 "\\color\\%x %x %x"
 					 "\\skin\\%s"
-					 "\\team\\%d"
 					 "\\gender\\%s"
-					 "\\neverswitchonpickup\\%d"
+					 "\\switchonpickup\\%d"
+					 "\\railcolor\\%d"
+					 "\\handicap\\%d"
 					 "\\movebob\\%g"
 					 "\\stillbob\\%g"
+					 "\\connectiontype\\%d"
 					 "\\playerclass\\%s"
 					 ,
 					 info->netname,
 					 (double)info->aimdist / (float)ANGLE_1,
 					 RPART(info->color), GPART(info->color), BPART(info->color),
-					 skins[info->skin].name, info->team,
+					 skins[info->skin].name,
 					 info->gender == GENDER_FEMALE ? "female" :
 						info->gender == GENDER_NEUTER ? "other" : "male",
-					 info->neverswitch,
+					 info->switchonpickup,
+					 info->lRailgunTrailColor,
+					 info->lHandicap,
 					 (float)(info->MoveBob) / 65536.f,
 					 (float)(info->StillBob) / 65536.f,
+					 info->lConnectionType,
 					 info->PlayerClass == -1 ? "Random" :
 						type->Meta.GetMetaString (APMETA_DisplayName)
-					);
+				);
 		}
 		else
 		{
@@ -535,23 +527,27 @@ void D_WriteUserInfoStrings (int i, BYTE **stream, bool compact)
 				"\\%g"			// autoaim
 				"\\%x %x %x"	// color
 				"\\%s"			// skin
-				"\\%d"			// team
 				"\\%s"			// gender
-				"\\%d"			// neverswitchonpickup
+				"\\%d"			// switchonpickup
+				"\\%d"			// railcolor
+				"\\%d"			// handicap
 				"\\%g"			// movebob
 				"\\%g"			// stillbob
+				"\\%d"			// connectiontype
 				"\\%s"			// playerclass
 				,
 				info->netname,
 				(double)info->aimdist / (float)ANGLE_1,
 				RPART(info->color), GPART(info->color), BPART(info->color),
 				skins[info->skin].name,
-				info->team,
 				info->gender == GENDER_FEMALE ? "female" :
 					info->gender == GENDER_NEUTER ? "other" : "male",
-				info->neverswitch,
+				info->switchonpickup,
+				info->lRailgunTrailColor,
+				info->lHandicap,
 				(float)(info->MoveBob) / 65536.f,
 				(float)(info->StillBob) / 65536.f,
+				info->lConnectionType,
 				info->PlayerClass == -1 ? "Random" :
 					type->Meta.GetMetaString (APMETA_DisplayName)
 			);
@@ -627,6 +623,7 @@ void D_ReadUserInfoStrings (int i, BYTE **stream, bool update)
 
 			case INFO_Name:
 				{
+					ULONG	ulIdx;
 					char oldname[MAXPLAYERNAME+1];
 
 					strncpy (oldname, info->netname, MAXPLAYERNAME);
@@ -634,15 +631,18 @@ void D_ReadUserInfoStrings (int i, BYTE **stream, bool update)
 					strncpy (info->netname, value, MAXPLAYERNAME);
 					info->netname[MAXPLAYERNAME] = 0;
 
+					// Remove % signs from names.
+					for ( ulIdx = 0; ulIdx < strlen( info->netname ); ulIdx++ )
+					{
+						if ( info->netname[ulIdx] == '%' )
+							info->netname[ulIdx] = ' ';
+					}
+
 					if (update && strcmp (oldname, info->netname) != 0)
 					{
-						Printf ("%s is now known as %s\n", oldname, info->netname);
+						Printf ("%s \\c-is now known as %s\n", oldname, info->netname);
 					}
 				}
-				break;
-
-			case INFO_Team:
-				UpdateTeam (i, atoi(value), update);
 				break;
 
 			case INFO_Color:
@@ -673,27 +673,46 @@ void D_ReadUserInfoStrings (int i, BYTE **stream, bool update)
 				{
 					StatusBar->SetFace (&skins[info->skin]);
 				}
+
+				// If the skin was hidden, reveal it!
+				if ( skins[info->skin].bRevealed == false )
+				{
+					Printf( "Hidden skin \"%s\\c-\" has now been revealed!\n", skins[info->skin].name );
+					skins[info->skin].bRevealed = true;
+				}
 				break;
 
 			case INFO_Gender:
 				info->gender = D_GenderToInt (value);
 				break;
 
-			case INFO_NeverSwitchOnPickup:
+			case INFO_SwitchOnPickup:
 				if (*value >= '0' && *value <= '9')
 				{
-					info->neverswitch = atoi (value) ? true : false;
+					info->switchonpickup = atoi (value);
 				}
 				else if (stricmp (value, "true") == 0)
 				{
-					info->neverswitch = 1;
+					info->switchonpickup = 2;
 				}
 				else
 				{
-					info->neverswitch = 0;
+					info->switchonpickup = 0;
 				}
 				break;
 
+			case INFO_Railcolor:
+
+				info->lRailgunTrailColor = atoi( value );
+				break;
+			case INFO_Handicap:
+
+				info->lHandicap = atoi( value );
+				if ( info->lHandicap < 0 )
+					info->lHandicap = 0;
+				if ( info->lHandicap > deh.MaxSoulsphere )
+					info->lHandicap = deh.MaxSoulsphere;
+				break;
 			case INFO_MoveBob:
 				info->MoveBob = (fixed_t)(atof (value) * 65536.f);
 				break;
@@ -702,7 +721,12 @@ void D_ReadUserInfoStrings (int i, BYTE **stream, bool update)
 				info->StillBob = (fixed_t)(atof (value) * 65536.f);
 				break;
 
+			case INFO_ConnectionType:
+
+				info->lConnectionType = atoi( value );
+				break;
 			case INFO_PlayerClass:
+
 				info->PlayerClass = D_PlayerClassToInt (value);
 				break;
 
@@ -739,7 +763,7 @@ FArchive &operator<< (FArchive &arc, userinfo_t &info)
 	{
 		arc.Read (&info.netname, sizeof(info.netname));
 	}
-	arc << info.team << info.aimdist << info.color << info.skin << info.gender << info.neverswitch;
+	arc << info.aimdist << info.color << info.skin << info.gender << info.switchonpickup;
 	return arc;
 }
 
@@ -760,15 +784,33 @@ CCMD (playerinfo)
 	else
 	{
 		int i = atoi (argv[1]);
-		Printf ("Name:        %s\n", players[i].userinfo.netname);
-		Printf ("Team:        %d\n", players[i].userinfo.team);
-		Printf ("Aimdist:     %d\n", players[i].userinfo.aimdist);
-		Printf ("Color:       %06x\n", players[i].userinfo.color);
-		Printf ("Skin:        %d\n", players[i].userinfo.skin);
-		Printf ("Gender:      %d\n", players[i].userinfo.gender);
-		Printf ("NeverSwitch: %d\n", players[i].userinfo.neverswitch);
-		Printf ("MoveBob:     %g\n", players[i].userinfo.MoveBob/65536.f);
-		Printf ("StillBob:    %g\n", players[i].userinfo.StillBob/65536.f);
-		Printf ("PlayerClass: %d\n", players[i].userinfo.PlayerClass);
+		Printf ("Name:				%s\n", players[i].userinfo.netname);
+		Printf ("Team:				%s\n", players[i].bOnTeam ? TEAM_GetName( players[i].ulTeam ) : "NONE" );
+		Printf ("Aimdist:			%d\n", players[i].userinfo.aimdist);
+		Printf ("Color:				%06x\n", players[i].userinfo.color);
+		Printf ("Skin:				%d\n", players[i].userinfo.skin);
+		Printf ("Gender:			%d\n", players[i].userinfo.gender);
+		Printf ("SwitchOnPickup:	%s\n", players[i].userinfo.switchonpickup == 0 ? "never" : players[i].userinfo.switchonpickup == 1 ? "only higher ranked" : "always" );
+		Printf ("MoveBob:			%g\n", players[i].userinfo.MoveBob/65536.f);
+		Printf ("StillBob:			%g\n", players[i].userinfo.StillBob/65536.f);
+		Printf ("PlayerClass:		%d\n", players[i].userinfo.PlayerClass);
 	}
 }
+
+#ifdef _DEBUG
+// [BC] Debugging function.
+CCMD( listinventory )
+{
+	AInventory	*pInventory;
+
+	if ( players[consoleplayer].mo == NULL )
+		return;
+
+	pInventory = players[consoleplayer].mo->Inventory;
+	while ( pInventory )
+	{
+		Printf( "%s\n", pInventory->GetClass( )->TypeName.GetChars( ));
+		pInventory = pInventory->Inventory;
+	}
+}
+#endif

@@ -45,10 +45,11 @@
 #include "i_system.h"
 #include "i_video.h"
 #include "templates.h"
+#include "gl_main.h"
 
 // [RH] Stretch values to make a 320x200 image best fit the screen
 // without using fractional steppings
-int CleanXfac, CleanYfac;
+float CleanXfac, CleanYfac;
 
 // [RH] Effective screen sizes that the above scale values give you
 int CleanWidth, CleanHeight;
@@ -65,12 +66,23 @@ void STACK_ARGS DCanvas::DrawTexture (FTexture *img, int x0, int y0, DWORD tags_
 	DWORD tag;
 	INTBOOL boolval;
 	int intval;
+	// [BC] Potentially flag the texture as being text so we can handle it differently.
+	bool	bIsText = false;
 
 	if (img == NULL || img->UseType == FTexture::TEX_Null)
 	{
 		return;
 	}
 
+	// [BC/ZDoomGL] If we're in OpenGL mode, just feed it everything.
+	if ( OPENGL_GetCurrentRenderer( ) == RENDERER_OPENGL )
+	{
+		va_list taglist;
+		va_start (taglist, *(&tags_first - 1));
+		GL_DrawTextureVA( img, x0, y0, TAG_MORE, &taglist );
+		va_end (taglist);
+		return;
+	}
 	int texwidth = img->GetScaledWidth();
 	int texheight = img->GetScaledHeight();
 
@@ -139,10 +151,15 @@ void STACK_ARGS DCanvas::DrawTexture (FTexture *img, int x0, int y0, DWORD tags_
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				x0 = (x0 - 160*FRACUNIT) * CleanXfac + (Width * (FRACUNIT/2));
-				y0 = (y0 - 100*FRACUNIT) * CleanYfac + (Height * (FRACUNIT/2));
-				destwidth = texwidth * CleanXfac * FRACUNIT;
-				destheight = texheight * CleanYfac * FRACUNIT;
+				x0 = (LONG)((x0 - 160*FRACUNIT) * CleanXfac + (Width * (FRACUNIT/2)));
+				y0 = (LONG)((y0 - 100*FRACUNIT) * CleanYfac + (Height * (FRACUNIT/2)));
+				destwidth = (LONG)( texwidth * CleanXfac * FRACUNIT );
+
+				// [BC] Text looks horrible when it's y-stretched.
+				if ( bIsText )
+					destheight = texheight * (int)CleanYfac * FRACUNIT;
+				else
+					destheight = (LONG)( texheight * CleanYfac * FRACUNIT );
 			}
 			break;
 
@@ -150,8 +167,16 @@ void STACK_ARGS DCanvas::DrawTexture (FTexture *img, int x0, int y0, DWORD tags_
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				destwidth = texwidth * CleanXfac * FRACUNIT;
-				destheight = texheight * CleanYfac * FRACUNIT;
+				if ( bIsText )
+					destwidth = texwidth * (int)CleanXfac * FRACUNIT;
+				else
+					destwidth = (LONG)( texwidth * CleanXfac * FRACUNIT );
+
+				// [BC] Text looks horrible when it's y-stretched.
+				if ( bIsText )
+					destheight = texheight * (int)CleanYfac * FRACUNIT;
+				else
+					destheight = (LONG)( texheight * CleanYfac * FRACUNIT );
 			}
 			break;
 
@@ -326,6 +351,16 @@ void STACK_ARGS DCanvas::DrawTexture (FTexture *img, int x0, int y0, DWORD tags_
 
 		case DTA_RenderStyle:
 			style = ERenderStyle(va_arg (tags, int));
+			break;
+
+		// [BC] Is what we're drawing text? If so, handle it differently.
+		case DTA_IsText:
+
+			bIsText = !!va_arg( tags, INTBOOL );
+
+			// Don't apply these text rules to the big font.
+			if ( screen->Font == BigFont )
+				bIsText = false;
 			break;
 		}
 		tag = va_arg (tags, DWORD);

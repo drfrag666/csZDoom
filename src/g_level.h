@@ -106,6 +106,8 @@
 
 #define LEVEL_PAUSE_MUSIC_IN_MENUS	UCONST64(0x200000000000)
 
+#define	LEVEL_NOBOTNODES			UCONST64(0x400000000000)	// [BC] Level does not use bot nodes.
+
 struct acsdefered_s;
 
 struct FSpecialAction
@@ -308,6 +310,9 @@ void G_SetForEndGame (char *nextmap);
 
 void G_StartTravel ();
 void G_FinishTravel ();
+
+// [BC]
+bool G_AllowTravel( void );
 
 void G_DoLoadLevel (int position, bool autosave);
 

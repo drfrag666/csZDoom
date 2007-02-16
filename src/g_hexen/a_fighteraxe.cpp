@@ -105,7 +105,7 @@ IMPLEMENT_ACTOR (AFWeapAxe, Hexen, 8010, 27)
 	PROP_SpawnState (S_AXE)
 
 	PROP_Weapon_SelectionOrder (1500)
-	PROP_Weapon_Flags (WIF_AXEBLOOD|WIF_AMMO_OPTIONAL|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_AXEBLOOD|WIF_AMMO_OPTIONAL)
 	PROP_Weapon_AmmoUse1 (2)
 	PROP_Weapon_AmmoGive1 (25)
 	PROP_Weapon_UpState (S_FAXEUP)

@@ -45,6 +45,11 @@
 #include "a_sharedglobal.h"
 #include "gi.h"
 #include "templates.h"
+// [BC] New #includes.
+#include "a_doomglobal.h"
+#include "sv_commands.h"
+#include "team.h"
+#include "a_keys.h"
 
 // List of spawnable things for the Thing_Spawn and Thing_Projectile specials.
 const PClass *SpawnableThings[MAX_SPAWNABLES];
@@ -86,19 +91,52 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 		{
 			DWORD oldFlags2 = mobj->flags2;
 			mobj->flags2 |= MF2_PASSMOBJ;
-			if (P_TestMobjLocation (mobj))
+			// [BC] Potentially spawn this thing even if it's going to be blocked.
+			bool	bSpawn = true;
+
+			// [BC] Don't spawn it if it doesn't have a good place to spawn.
+			if ( P_TestMobjLocation( mobj ) == false )
+				bSpawn = false;
+
+			// [BC] However, SKULLTAG FLAGS/SKULLS MUST BE RESPAWNED!
+			if (( mobj->GetClass( ) == TEAM_GetFlagItem( TEAM_BLUE )) || 
+				( mobj->GetClass( ) == TEAM_GetFlagItem( TEAM_RED )))
+			{
+				bSpawn = true;
+			}
+
+			if ( bSpawn )
 			{
 				rtn++;
 				mobj->angle = (angle != ANGLE_MAX ? angle : spot->angle);
 				if (fog)
 				{
-					Spawn<ATeleportFog> (spot->x, spot->y, spot->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+					// [BC]
+					AActor	*pFog;
+
+					pFog = Spawn<ATeleportFog> (spot->x, spot->y, spot->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+
+					// [BC] If we're the server, tell clients to spawn the thing.
+					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
+						SERVERCOMMANDS_SpawnThing( pFog );
 				}
-				if (mobj->flags & MF_SPECIAL)
+
+				// [BC] Respawned keys in Skulltag CANNOT be dropped items.
+				if (( mobj->flags & MF_SPECIAL ) && ( mobj->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AKey )) == false ))
 					mobj->flags |= MF_DROPPED;	// Don't respawn
 				mobj->tid = newtid;
 				mobj->AddToHash ();
 				mobj->flags2 = oldFlags2;
+
+				// [BC] Spawn the actor to clients.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				{
+					SERVERCOMMANDS_SpawnThing( mobj );
+
+					// Check and see if it's important that the client know the angle of the object.
+					if ( mobj->angle != 0 )
+						SERVERCOMMANDS_SetThingAngle( mobj );
+				}
 			}
 			else
 			{
@@ -129,6 +167,8 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 {
 	fixed_t oldx, oldy, oldz;
+	// [BC]
+	AActor	*pFog;
 
 	oldx = source->x;
 	oldy = source->y;
@@ -139,9 +179,24 @@ bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 	{
 		if (fog)
 		{
-			Spawn<ATeleportFog> (x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE);
-			Spawn<ATeleportFog> (oldx, oldy, oldz + TELEFOGHEIGHT, ALLOW_REPLACE);
+			pFog = Spawn<ATeleportFog> (x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE);
+
+			// [BC] If we're the server, tell clients to spawn the fog.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SpawnThing( pFog );
+
+			pFog = Spawn<ATeleportFog> (oldx, oldy, oldz + TELEFOGHEIGHT, ALLOW_REPLACE);
+
+			// [BC] If we're the server, tell clients to spawn the fog.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SpawnThing( pFog );
 		}
+
+
+		// [BC] If we're the server, tell clients to move the object.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_MoveThing( pFog, CM_X|CM_Y|CM_Z|CM_MOMX|CM_MOMY|CM_MOMZ );
+
 		return true;
 	}
 	else
@@ -392,6 +447,29 @@ nolead:
 					{
 						// It spawned fine.
 						rtn = 1;
+					}
+
+					// [BC] Spawn this actor to clients. It must be spawned as a missile because
+					// it can potentially have velocity, etc. 
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+					{
+						SERVERCOMMANDS_SpawnMissile( mobj );
+
+						// Determine which flags we need to update.
+						if ( mobj->flags != mobj->GetDefault( )->flags )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGS );
+						if ( mobj->flags2 != mobj->GetDefault( )->flags2 )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGS2 );
+						if ( mobj->flags3 != mobj->GetDefault( )->flags3 )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGS3 );
+						if ( mobj->flags4 != mobj->GetDefault( )->flags4 )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGS4 );
+						if ( mobj->flags5 != mobj->GetDefault( )->flags5 )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGS5 );
+						if ( mobj->ulSTFlags != mobj->GetDefault( )->ulSTFlags )
+							SERVERCOMMANDS_SetThingFlags( mobj, FLAGSET_FLAGSST );
+
+							
 					}
 				}
 			} while (dest != 0 && (targ = tit.Next()));

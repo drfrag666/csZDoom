@@ -27,6 +27,8 @@
 #include "a_doomglobal.h"
 #include "templates.h"
 #include "thingdef.h"
+#include "deathmatch.h"
+#include "network.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -222,18 +224,29 @@ void P_FireWeapon (player_t *player)
 
 	// [SO] 9/2/02: People were able to do an awful lot of damage
 	// when they were observers...
+/*
 	if (!player->isbot && bot_observer)
 	{
 		return;
 	}
+*/
 
 	weapon = player->ReadyWeapon;
 	if (weapon == NULL || !weapon->CheckAmmo (AWeapon::PrimaryFire, true))
 	{
+		// [BC] We need to do this, otherwise with the BFG10K, you can fire,
+		// run out of ammo, find new ammo, switch back, and fire without
+		// charging back up.
+		player->refire = false;
 		return;
 	}
 
 	player->mo->PlayAttacking ();
+
+	// [BC] If we're the server, tell clients to update this player's state.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetPlayerState( ULONG( player - players ), STATE_PLAYER_ATTACK, ULONG( player - players ), SVCF_SKIPTHISCLIENT );
+
 	weapon->bAltFire = false;
 	P_SetPsprite (player, ps_weapon,
 		player->refire ? weapon->GetHoldAtkState() : weapon->GetAtkState());
@@ -253,12 +266,14 @@ void P_FireWeaponAlt (player_t *player)
 {
 	AWeapon *weapon;
 
+/*
 	// [SO] 9/2/02: People were able to do an awful lot of damage
 	// when they were observers...
 	if (!player->isbot && bot_observer)
 	{
 		return;
 	}
+*/
 
 	weapon = player->ReadyWeapon;
 	if (weapon == NULL || weapon->AltAtkState == NULL || !weapon->CheckAmmo (AWeapon::AltFire, true))
@@ -308,6 +323,10 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 
 	AWeapon *weapon;
 	fixed_t bobtarget;
+
+	// [BC] Don't bob weapon if the player is spectating.
+	if ( player->bSpectating )
+		return;
 
 	weapon = player->ReadyWeapon;
 
@@ -394,6 +413,10 @@ void A_WeaponReady(AActor *actor)
 		if (!(weapon->WeaponFlags & WIF_READYSNDHALF) || pr_wpnreadysnd() < 128)
 		{
 			S_SoundID (actor, CHAN_WEAPON, weapon->ReadySound, 1, ATTN_NORM);
+
+			// [BC] If we're the server, tell other clients to play the sound.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SoundIDActor( actor, CHAN_WEAPON, weapon->ReadySound, 127, ATTN_NORM, ULONG( player - players ), SVCF_SKIPTHISCLIENT );
 		}
 	}
 
@@ -526,6 +549,14 @@ void A_Lower (AActor *actor)
 		return;
 	}
 	psp = &player->psprites[ps_weapon];
+
+	// [BC] If we're a spectator, lower weapon completely and do not raise it.
+	if ( player->bSpectating )
+	{
+		psp->sy = WEAPONBOTTOM;
+		return;
+	}
+
 	if (player->morphTics || player->cheats & CF_INSTANTWEAPSWITCH)
 	{
 		psp->sy = WEAPONBOTTOM;
@@ -595,6 +626,26 @@ void A_Raise (AActor *actor)
 	else
 	{
 		player->psprites[ps_weapon].state = NULL;
+	}
+
+	// [BC] If this player has respawn invulnerability, disable it if they're done raising
+	// a weapon that isn't the pistol or their fist.
+	if (( player->mo ) && ( NETWORK_GetState( ) != NETSTATE_CLIENT ))
+	{
+		APowerInvulnerable	*pInvulnerability;
+
+		pInvulnerability = static_cast<APowerInvulnerable *>( player->mo->FindInventory( RUNTIME_CLASS( APowerInvulnerable )));
+		if (( pInvulnerability ) &&
+			( player->ReadyWeapon ) &&
+			(( player->ReadyWeapon->WeaponFlags & WIF_ALLOW_WITH_RESPAWN_INVUL ) == false ) &&
+			(( player->mo->effects & FX_VISIBILITYFLICKER ) || ( player->mo->effects & FX_RESPAWNINVUL )))
+		{
+			pInvulnerability->Destroy( );
+
+			// If we're the server, tell clients to take this player's powerup away.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TakeInventory( ULONG( player - players ), "PowerInvulnerable", 0 );
+		}
 	}
 }
 
@@ -762,6 +813,11 @@ void P_MovePsprites (player_t *player)
 				if (psp->tics != -1)	// a -1 tic count never changes
 				{
 					psp->tics--;
+
+					// [BC] Apply double firing speed.
+					if ( psp->tics && ( player->Powers & PW_DOUBLEFIRINGSPEED ))
+						psp->tics--;
+
 					if(!psp->tics)
 					{
 						P_SetPsprite (player, i, psp->state->GetNextState());

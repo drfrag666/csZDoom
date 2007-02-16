@@ -33,6 +33,8 @@
 #include "a_sharedglobal.h"
 #include "m_random.h"
 #include "i_system.h"
+#include "sv_commands.h"
+#include "network.h"
 
 static FRandom pr_teleport ("Teleport");
 
@@ -145,8 +147,9 @@ END_DEFAULTS
 // TELEPORTATION
 //
 
+// [BC] Added the bHaltMomentum argument.
 bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
-				 bool useFog, bool sourceFog, bool keepOrientation)
+				 bool useFog, bool sourceFog, bool keepOrientation, bool bHaltMomentum)
 {
 	fixed_t oldx;
 	fixed_t oldy;
@@ -223,6 +226,14 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	{
 		angle = thing->angle;
 	}
+
+	// [BC] Teleporting spectators do not create fog.
+	if ( thing && thing->player && thing->player->bSpectating )
+	{
+		useFog = false;
+		sourceFog = false;
+	}
+
 	// Spawn teleport fog at source and destination
 	if (sourceFog)
 	{
@@ -238,11 +249,13 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 		if (thing->player)
 		{
 			// [RH] Zoom player's field of vision
-			if (telezoom && thing->player->mo == thing)
+			// [BC] && bHaltMomentum.
+			if (telezoom && thing->player->mo == thing && bHaltMomentum)
 				thing->player->FOV = MIN (175.f, thing->player->DesiredFOV + 45.f);
 		}
 	}
-	if (thing->player && (useFog || !keepOrientation))
+	// [BC] && bHaltMomentum.
+	if (thing->player && (useFog || !keepOrientation) && bHaltMomentum)
 	{
 		// Freeze player for about .5 sec
 		if (!(thing->player->Powers & PW_SPEED))
@@ -254,13 +267,19 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 		thing->momx = FixedMul (thing->Speed, finecosine[angle]);
 		thing->momy = FixedMul (thing->Speed, finesine[angle]);
 	}
-	else if (!keepOrientation) // no fog doesn't alter the player's momentum
+	// [BC] && bHaltMomentum.
+	else if (!keepOrientation && bHaltMomentum) // no fog doesn't alter the player's momentum
 	{
 		thing->momx = thing->momy = thing->momz = 0;
 		// killough 10/98: kill all bobbing momentum too
 		if (player)
 			player->momx = player->momy = 0;
 	}
+
+	// [BC] If we're the server, update clients about this teleport.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_TeleportThing( thing, sourceFog, useFog, ( useFog && bHaltMomentum ));
+
 	return true;
 }
 
@@ -351,14 +370,16 @@ static AActor *SelectTeleDest (int tid, int tag)
 	return NULL;
 }
 
+// [BC] Added the bHaltMomentum argument.
 bool EV_Teleport (int tid, int tag, line_t *line, int side, AActor *thing, bool fog,
-				  bool sourceFog, bool keepOrientation)
+				  bool sourceFog, bool keepOrientation, bool bHaltMomentum)
 {
 	AActor *searcher;
 	fixed_t z;
 	angle_t angle = 0;
 	fixed_t s = 0, c = 0;
 	fixed_t momx = 0, momy = 0;
+	angle_t	OldAngle;
 
 	if (thing == NULL)
 	{ // Teleport function called with an invalid actor
@@ -377,6 +398,10 @@ bool EV_Teleport (int tid, int tag, line_t *line, int side, AActor *thing, bool 
 	{
 		return false;
 	}
+
+	// [BC]
+	OldAngle = thing->angle;
+
 	// [RH] Lee Killough's changes for silent teleporters from BOOM
 	if (keepOrientation && line)
 	{
@@ -404,13 +429,36 @@ bool EV_Teleport (int tid, int tag, line_t *line, int side, AActor *thing, bool 
 	{
 		z = ONFLOORZ;
 	}
-	if (P_Teleport (thing, searcher->x, searcher->y, z, searcher->angle, fog, sourceFog, keepOrientation))
+	if (P_Teleport (thing, searcher->x, searcher->y, z, searcher->angle, fog, sourceFog, keepOrientation, bHaltMomentum))
 	{
 		// [RH] Lee Killough's changes for silent teleporters from BOOM
 		if (!fog && line && keepOrientation)
 		{
 			// Rotate thing according to difference in angles
 			thing->angle += angle;
+
+			// Rotate thing's momentum to come out of exit just like it entered
+			thing->momx = FixedMul(momx, c) - FixedMul(momy, s);
+			thing->momy = FixedMul(momy, c) + FixedMul(momx, s);
+		}
+
+		// [BC] Adjust the thing's momentum if we didn't halt it.
+		if ( bHaltMomentum == false )
+		{
+			// Get the angle between the exit thing and source linedef.
+			// Rotate 90 degrees, so that walking perpendicularly across
+			// teleporter linedef causes thing to exit in the direction
+			// indicated by the exit thing.
+//			angle = R_PointToAngle2 (0, 0, line->dx, line->dy) - searcher->angle + ANG90;
+			angle = thing->angle - OldAngle;
+
+			// Sine, cosine of angle adjustment
+			s = finesine[angle>>ANGLETOFINESHIFT];
+			c = finecosine[angle>>ANGLETOFINESHIFT];
+
+			// Momentum of thing crossing teleporter linedef
+			momx = thing->momx;
+			momy = thing->momy;
 
 			// Rotate thing's momentum to come out of exit just like it entered
 			thing->momx = FixedMul(momx, c) - FixedMul(momy, s);
@@ -563,6 +611,11 @@ bool EV_SilentLineTeleport (line_t *line, int side, AActor *thing, int id, INTBO
 				// Reset the delta to have the same dynamics as before
 				player->deltaviewheight = deltaviewheight;
 			}
+
+			// [BC] If we're the server, send the message that this thing has been tele-
+			// ported.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_TeleportThing( thing, false, false, false );
 
 			return true;
 		}

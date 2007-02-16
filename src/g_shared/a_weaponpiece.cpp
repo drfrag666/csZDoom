@@ -1,6 +1,8 @@
 #include "a_pickups.h"
 #include "a_weaponpiece.h"
 #include "doomstat.h"
+#include "deathmatch.h"
+#include "network.h"
 
 
 
@@ -129,7 +131,7 @@ bool AWeaponPiece::PrivateShouldStay ()
 {
 	// We want a weapon piece to behave like a weapon, so follow the exact
 	// same logic as weapons when deciding whether or not to stay.
-	if (((multiplayer &&
+	if (((( NETWORK_GetState( ) != NETSTATE_SINGLE ) &&
 		(!deathmatch && !alwaysapplydmflags)) || (dmflags & DF_WEAPONS_STAY)) &&
 		!(flags&MF_DROPPED))
 	{

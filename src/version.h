@@ -36,25 +36,30 @@
 
 // The svnrevision.h is automatically updated to grab the revision of
 // of the current source tree so that it can be included with version numbers.
-#include "svnrevision.h"
+// [BC] No need for SVN revision stuff.
+//#include "svnrevision.h"
 
 /** Lots of different version numbers **/
 
-#define DOTVERSIONSTR_NOREV "2.1.7"
+#define DOTVERSIONSTR_NOREV "0.97c2"
 
 // The version string the user actually sees.
-#define DOTVERSIONSTR DOTVERSIONSTR_NOREV " (r" SVN_REVISION_STRING ")"
+#define DOTVERSIONSTR DOTVERSIONSTR_NOREV
+
+// [BC] What version of ZDoom is this based off of?
+#define	ZDOOMVERSIONSTR		"2.1.7"
 
 // The version as seen in the Windows resource
-#define RC_FILEVERSION 2,1,7,SVN_REVISION_NUMBER
-#define RC_PRODUCTVERSION 2,1,0,0
+#define RC_FILEVERSION 0,0,0,SVN_REVISION_NUMBER
+#define RC_PRODUCTVERSION 0,0,0,97
 #define RC_FILEVERSION2 DOTVERSIONSTR
-#define RC_PRODUCTVERSION2 "2.1"
+#define RC_PRODUCTVERSION2 "97c2"
 
 // Version identifier for network games.
 // Bump it every time you do a release unless you're certain you
-// didn't change anything that will affect sync.
-#define NETGAMEVERSION 210
+// didn't change anything that will affect network protocol.
+// This has been updated for 97d.
+#define NETGAMEVERSION 003
 
 // Version stored in the ini's [LastRun] section.
 // Bump it if you made some configuration change that you want to
@@ -70,6 +75,9 @@
 // Bump it whenever you change or remove existing DEM_ commands.
 #define MINDEMOVERSION 0x205
 
+// [BC] This is what's displayed as the title for server windows.
+#define	SERVERCONSOLE_TITLESTRING	"Skulltag v0.97c Server"
+
 // SAVEVER is the version of the information stored in level snapshots.
 // Note that SAVEVER is not directly comparable to VERSION.
 // SAVESIG should match SAVEVER.
@@ -77,12 +85,12 @@
 #define SAVESIG "ZDOOMSAVE235"
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
-#define GAMESIG "ZDOOM"
-#define BASEWAD "zdoom.pk3"
+#define GAMESIG "SKULLTAG"
+#define BASEWAD "skulltag.pk3"
 
 // More stuff that needs to be different for derivatives.
-#define GAMENAME "ZDoom"
-#define FORUM_URL "http://forum.zdoom.org"
+#define GAMENAME "Skulltag"
+#define FORUM_URL "http://www.skulltag.com/forum/"
 
 #ifdef unix
 #define HOME_DIR "~/.zdoom"

@@ -81,7 +81,7 @@ FState ABeak::States[] =
 
 IMPLEMENT_ACTOR (ABeak, Heretic, -1, 0)
 	PROP_Weapon_SelectionOrder (10000)
-	PROP_Weapon_Flags (WIF_DONTBOB|WIF_BOT_MELEE)
+	PROP_Weapon_Flags (WIF_DONTBOB)
 	PROP_Weapon_UpState (S_BEAKUP)
 	PROP_Weapon_DownState (S_BEAKDOWN)
 	PROP_Weapon_ReadyState (S_BEAKREADY)
@@ -92,7 +92,7 @@ IMPLEMENT_ACTOR (ABeak, Heretic, -1, 0)
 END_DEFAULTS
 
 IMPLEMENT_STATELESS_ACTOR (ABeakPowered, Heretic, -1, 0)
-	PROP_Weapon_Flags (WIF_DONTBOB|WIF_BOT_MELEE|WIF_POWERED_UP)
+	PROP_Weapon_Flags (WIF_DONTBOB|WIF_POWERED_UP)
 	PROP_Weapon_AtkState (S_BEAKATK2)
 	PROP_Weapon_HoldAtkState (S_BEAKATK2)
 	PROP_Weapon_SisterType ("Beak")

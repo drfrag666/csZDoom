@@ -112,6 +112,7 @@ public:
 	virtual bool ShouldRespawn ();
 	virtual bool ShouldStay ();
 	virtual void Hide ();
+	virtual void HideIndefinitely ();
 	virtual bool DoRespawn ();
 	virtual bool TryPickup (AActor *toucher);
 	virtual void DoPickupSpecial (AActor *toucher);
@@ -119,6 +120,7 @@ public:
 	virtual bool DrawPowerup (int x, int y);
 
 	virtual const char *PickupMessage ();
+	virtual const char *PickupAnnouncerEntry ();	// [BC]
 	virtual void PlayPickupSound (AActor *toucher);
 
 	AInventory *PrevItem () const;	// Returns the item preceding this one in the list.
@@ -135,6 +137,9 @@ public:
 	DWORD ItemFlags;
 
 	WORD PickupSound;
+
+	// [BC]
+	char	szPickupAnnouncerEntry[32];
 
 	virtual void BecomeItem ();
 	virtual void BecomePickup ();
@@ -202,6 +207,7 @@ public:
 	int AmmoGive1, AmmoGive2;				// Amount of each ammo to get when picking up weapon
 	int MinAmmo1, MinAmmo2;					// Minimum ammo needed to switch to this weapon
 	int AmmoUse1, AmmoUse2;					// How much ammo to use with each shot
+//	int AmmoUseDM1, AmmoUseDM2;				// [BC] How much ammo should be used with each shot during deathmatch/teamgame mode?
 	int Kickback;
 	fixed_t YAdjust;						// For viewing the weapon fullscreen
 	WORD UpSound, ReadySound;				// Sounds when coming up and idle
@@ -275,6 +281,10 @@ enum
 
 	WIF_STAFF2_KICKBACK =	0x00002000, // the powered-up Heretic staff has special kickback
 
+	// [BC] New weapon info definitions.
+	WIF_ALLOW_WITH_RESPAWN_INVUL	= 0x00004000,	// The player can continue to wield this weapon even with respawn invulnerability active.
+	WIF_RADIUSDAMAGE_BOSSES			= 0x00008000,	// This weapon does damage to bosses and other monsters that have the MF3_NORADIUSDMG flag.
+
 	WIF_CHEATNOTWEAPON	=	1<<27,		// Give cheat considers this not a weapon (used by Sigil)
 
 	// Flags used only by bot AI:
@@ -307,6 +317,16 @@ public:
 	virtual AInventory *CreateTossable ();
 	virtual bool HandlePickup (AInventory *item);
 	virtual bool Use (bool pickup);
+};
+
+// [BC] New class definitions for the max. health class.
+// Max. health increases the maximum amount of health players can have, and also
+// gives the player health when picked up.
+class AMaxHealth : public AHealth
+{
+	DECLARE_STATELESS_ACTOR( AMaxHealth, AHealth )
+public:
+	virtual bool TryPickup( AActor *pOther );
 };
 
 // Armor absorbs some damage for the player.
@@ -356,6 +376,21 @@ public:
 	fixed_t SavePercent;	// The default, for when you don't already have armor
 	int MaxSaveAmount;
 	int SaveAmount;
+};
+
+// [BC] BasicMaxArmorBonus is like BasicMaxArmorBonus, except it also increases the player's
+// max. armor bonus.
+class ABasicMaxArmorBonus : public ABasicArmorBonus
+{
+	DECLARE_STATELESS_ACTOR( ABasicMaxArmorBonus, ABasicArmorBonus )
+public:
+	virtual bool Use( bool bPickup );
+
+	// This is the amount that gets added to the player's max. armor bonus.
+	LONG	lMaxBonus;
+
+	// This is the most that can be added to the player's max. armor bonus.
+	LONG	lMaxBonusMax;
 };
 
 // Hexen armor consists of four separate armor types plus a conceptual armor

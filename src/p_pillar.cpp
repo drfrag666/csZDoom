@@ -37,11 +37,24 @@
 #include "p_spec.h"
 #include "g_level.h"
 #include "s_sndseq.h"
+// [BC] New #includes.
+#include "network.h"
+#include "sv_commands.h"
 
 IMPLEMENT_CLASS (DPillar)
 
 DPillar::DPillar ()
 {
+}
+
+// [BC]
+DPillar::DPillar(sector_t *sector)
+	: Super (sector)
+{
+	sector->floordata = this;
+	sector->ceilingdata = this;
+	setinterpolation (INTERP_SectorFloor, sector);
+	setinterpolation (INTERP_SectorCeiling, sector);
 }
 
 void DPillar::Serialize (FArchive &arc)
@@ -53,6 +66,54 @@ void DPillar::Serialize (FArchive &arc)
 		<< m_FloorTarget
 		<< m_CeilingTarget
 		<< m_Crush;
+}
+
+// [BC]
+void DPillar::UpdateToClient( ULONG ulClient )
+{
+	SERVERCOMMANDS_DoPillar( m_Type, m_Sector, m_FloorSpeed, m_CeilingSpeed, m_FloorTarget, m_CeilingTarget, m_lPillarID, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+// [BC]
+LONG DPillar::GetID( void )
+{
+	return ( m_lPillarID );
+}
+
+// [BC]
+void DPillar::SetID( LONG lID )
+{
+	m_lPillarID = lID;
+}
+
+// [BC]
+void DPillar::SetType( EPillar Type )
+{
+	m_Type = Type;
+}
+
+// [BC]
+void DPillar::SetFloorSpeed( LONG lSpeed )
+{
+	m_FloorSpeed = lSpeed;
+}
+
+// [BC]
+void DPillar::SetCeilingSpeed( LONG lSpeed )
+{
+	m_CeilingSpeed = lSpeed;
+}
+
+// [BC]
+void DPillar::SetFloorTarget( LONG lTarget )
+{
+	m_FloorTarget = lTarget;
+}
+
+// [BC]
+void DPillar::SetCeilingTarget( LONG lTarget )
+{
+	m_CeilingTarget = lTarget;
 }
 
 void DPillar::Tick ()
@@ -76,6 +137,19 @@ void DPillar::Tick ()
 
 	if (r == pastdest && s == pastdest)
 	{
+		// [BC] If we're the server, tell clients to destroy the pillar, and to stop
+		// the sector sound sequence.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_StopSectorSequence( m_Sector );
+			SERVERCOMMANDS_DestroyPillar( m_lPillarID );
+
+			// Also, since this sector has reached its destination, verify that all the clients
+			// have the correct floor/ceiling height for this sector.
+			SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+			SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+		}
+
 		SN_StopSequence (m_Sector);
 		Destroy ();
 	}
@@ -177,6 +251,8 @@ bool EV_DoPillar (DPillar::EPillar type, int tag, fixed_t speed, fixed_t height,
 {
 	bool rtn = false;
 	int secnum = -1;
+	// [BC]
+	DPillar		*pPillar;
 
 	while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
 	{
@@ -197,7 +273,66 @@ bool EV_DoPillar (DPillar::EPillar type, int tag, fixed_t speed, fixed_t height,
 			continue;
 
 		rtn = true;
-		new DPillar (sec, type, speed, height, height2, crush);
+		pPillar = new DPillar (sec, type, speed, height, height2, crush);
+
+		if ( pPillar )
+		{
+			// [BC] Assign the mover's network ID. However, don't do this on the client end.
+			if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+				pPillar->m_lPillarID = P_GetFirstFreePillarID( );
+			else
+				pPillar->m_lPillarID = -1;
+
+			// [BC] If we're the server, tell clients to create the pillar.
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_DoPillar( pPillar->m_Type, sec, pPillar->m_FloorSpeed, pPillar->m_CeilingSpeed, pPillar->m_FloorTarget, pPillar->m_CeilingTarget, pPillar->m_lPillarID );
+		}
 	}
 	return rtn;
+}
+
+//*****************************************************************************
+//
+DPillar *P_GetPillarByID( LONG lID )
+{
+	DPillar		*pPillar;
+
+	TThinkerIterator<DPillar>		Iterator;
+
+	while (( pPillar = Iterator.Next( )))
+	{
+		if ( pPillar->GetID( ) == lID )
+			return ( pPillar );
+	}
+
+	return ( NULL );
+}
+
+//*****************************************************************************
+//
+LONG P_GetFirstFreePillarID( void )
+{
+	LONG		lIdx;
+	DPillar		*pPillar;
+	bool		bIDIsAvailable;
+
+	for ( lIdx = 0; lIdx < 8192; lIdx++ )
+	{
+		TThinkerIterator<DPillar>		Iterator;
+
+		bIDIsAvailable = true;
+		while (( pPillar = Iterator.Next( )))
+		{
+			if ( pPillar->GetID( ) == lIdx )
+			{
+				bIDIsAvailable = false;
+				break;
+			}
+		}
+
+		if ( bIDIsAvailable )
+			return ( lIdx );
+	}
+
+	return ( -1 );
 }

@@ -35,6 +35,7 @@
 #include "actor.h"
 #include "info.h"
 #include "p_effect.h"
+#include "network.h"
 
 class AParticleFountain : public AActor
 {
@@ -84,5 +85,10 @@ void AParticleFountain::Deactivate (AActor *activator)
 {
 	Super::Deactivate (activator);
 	effects &= ~FX_FOUNTAINMASK;
+
+	// [BC] In client mode, mark this as being dormant so that when PostBeginPlay() is
+	// called, it doesn't try to activate the fountain.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		SpawnFlags |= MTF_DORMANT;
 }
 

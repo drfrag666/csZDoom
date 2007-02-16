@@ -8,6 +8,9 @@
 #include "gi.h"
 #include "doomstat.h"
 #include "gstrings.h"
+// [BC] New #includes.
+#include "deathmatch.h"
+#include "cooperative.h"
 
 static FRandom pr_spawnpuffx ("SpawnPuffX");
 
@@ -41,6 +44,7 @@ IMPLEMENT_ACTOR (AExplosiveBarrel, Doom, 2035, 125)
 	PROP_Flags3 (MF3_DONTGIB)
 	PROP_Flags4 (MF4_NOICEDEATH)
 	PROP_Flags5 (MF5_OLDRADIUSDMG)
+	PROP_FlagsNetwork( NETFL_UPDATEPOSITION )
 
 	PROP_SpawnState (S_BAR)
 	PROP_DeathState (S_BEXP)
@@ -51,6 +55,13 @@ END_DEFAULTS
 
 void A_BarrelDestroy (AActor *actor)
 {
+	// [BC] Just always destroy it in client mode.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	{
+		actor->Destroy( );
+		return;
+	}
+
 	if ((dmflags2 & DF2_BARRELS_RESPAWN) &&
 		(deathmatch || alwaysapplydmflags))
 	{
@@ -60,7 +71,17 @@ void A_BarrelDestroy (AActor *actor)
 	}
 	else
 	{
-		actor->Destroy ();
+		// [BC] We may need to preserve these.
+		if ( survival || duel || lastmanstanding || teamlms || invasion )
+		{
+			actor->SetState( &AInventory::States[17] );
+
+			actor->height = actor->GetDefault()->height;
+			actor->renderflags |= RF_INVISIBLE;
+			actor->flags &= ~MF_SOLID;
+		}
+		else
+			actor->Destroy ();
 	}
 }
 
@@ -69,6 +90,8 @@ void A_BarrelRespawn (AActor *actor)
 	fixed_t x = actor->SpawnPoint[0] << FRACBITS;
 	fixed_t y = actor->SpawnPoint[1] << FRACBITS;
 	sector_t *sec;
+	// [BC]
+	AActor	*pFog;
 
 	actor->flags |= MF_SOLID;
 	sec = R_PointInSubsector (x, y)->sector;
@@ -81,7 +104,15 @@ void A_BarrelRespawn (AActor *actor)
 		actor->flags2 = defs->flags2;
 		actor->SetState (actor->SpawnState);
 		actor->renderflags &= ~RF_INVISIBLE;
-		Spawn<ATeleportFog> (x, y, actor->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+		// [BC] pFog =
+		pFog = Spawn<ATeleportFog> (x, y, actor->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+
+		// [BC] If we're the server, set the barrel's flags2, and spawn the fog.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_SpawnThing( actor );
+			SERVERCOMMANDS_SpawnThing( pFog );
+		}
 	}
 	else
 	{
@@ -104,6 +135,8 @@ IMPLEMENT_ACTOR (ABulletPuff, Doom, -1, 131)
 	PROP_Flags4 (MF4_ALLOWPARTICLES)
 	PROP_RenderStyle (STYLE_Translucent)
 	PROP_Alpha (TRANSLUC50)
+	// [BC] No need to tag it with a network ID.
+	PROP_FlagsNetwork( NETFL_NONETID )
 
 	PROP_SpawnState (0)
 	PROP_MeleeState (2)

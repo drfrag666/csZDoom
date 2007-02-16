@@ -7,6 +7,10 @@
 #define INVERSECOLOR 0x00345678
 #define GOLDCOLOR 0x009abcde
 
+// [BC] More hacks!
+#define REDCOLOR 0x00beefee
+#define GREENCOLOR 0x00beefad
+
 #define STREAM_ENUM(e) \
 	inline FArchive &operator<< (FArchive &arc, e &i) \
 	{ \
@@ -192,6 +196,176 @@ class APowerFrightener : public APowerup
 protected:
 	void InitEffect ();
 	void EndEffect ();
+};
+
+// [BC] Start of new Skulltag powerup types.
+class APowerTimeFreezer : public APowerup
+{
+	DECLARE_STATELESS_ACTOR( APowerTimeFreezer, APowerup )
+protected:
+	void InitEffect( );
+	void DoEffect( );
+	void EndEffect( );
+};
+
+class APowerQuadDamage : public APowerup
+{
+	DECLARE_STATELESS_ACTOR( APowerQuadDamage, APowerup )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class APowerQuarterDamage : public APowerup
+{
+	DECLARE_STATELESS_ACTOR( APowerQuarterDamage, APowerup )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class APowerPossessionArtifact : public APowerup
+{
+	DECLARE_STATELESS_ACTOR( APowerPossessionArtifact, APowerup )
+protected:
+	void InitEffect( );
+	void DoEffect( );
+	void EndEffect( );
+};
+
+class APowerTerminatorArtifact : public APowerup
+{
+	DECLARE_STATELESS_ACTOR( APowerTerminatorArtifact, APowerup )
+protected:
+	void InitEffect( );
+	void DoEffect( );
+	void EndEffect( );
+};
+
+class APowerTranslucency : public APowerInvisibility
+{
+	DECLARE_STATELESS_ACTOR (APowerTranslucency, APowerInvisibility)
+protected:
+	void InitEffect ();
+};
+
+// [BC] A rune is like a powerup, except its effect lasts until a new rune is picked up,
+// or the owner dies. Only one rune may be carried at once.
+class ARune : public AInventory
+{
+	DECLARE_STATELESS_ACTOR (ARune, AInventory)
+public:
+	virtual void Tick ();
+	virtual void Destroy ();
+	virtual bool HandlePickup (AInventory *item);
+	virtual AInventory *CreateCopy (AActor *other);
+	virtual AInventory *CreateTossable ();
+	virtual void Serialize (FArchive &arc);
+	virtual void OwnerDied ();
+	virtual PalEntry GetBlend ();
+	virtual bool DrawPowerup (int x, int y);
+	virtual void DetachFromOwner( );
+
+	int EffectTics;
+	PalEntry BlendColor;
+
+protected:
+	virtual void InitEffect ();
+	virtual void DoEffect ();
+	virtual void EndEffect ();
+};
+
+class ARuneGiver : public AInventory
+{
+	DECLARE_STATELESS_ACTOR (ARuneGiver, AInventory)
+public:
+	virtual bool Use (bool pickup);
+	virtual void Serialize (FArchive &arc);
+
+	const PClass *RuneType;
+	int EffectTics;			// Non-0 to override the powerup's default tics
+	PalEntry BlendColor;	// Non-0 to override the powerup's default blend
+};
+
+class ARuneDoubleDamage : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneDoubleDamage, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneDoubleFiringSpeed : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneDoubleFiringSpeed, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneDrain : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneDrain, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneSpread : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneSpread, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneHalfDamage : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneHalfDamage, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneRegeneration : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneRegeneration, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneProsperity : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneProsperity, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneReflection : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneReflection, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneHighJump : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneHighJump, ARune )
+protected:
+	void InitEffect( );
+	void EndEffect( );
+};
+
+class ARuneSpeed25 : public ARune
+{
+	DECLARE_STATELESS_ACTOR( ARuneSpeed25, ARune )
+protected:
+	void InitEffect( );
+	void DoEffect( );
+	void EndEffect( );
 };
 
 

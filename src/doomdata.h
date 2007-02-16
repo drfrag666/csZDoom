@@ -169,6 +169,7 @@ static inline int GET_SPAC (int flags)
 #define ML_BLOCK_FLOATERS_STRIFE	0x0400
 
 
+#define ML_BLOCKPLAYERS				0x00004000	// [BC] Line blocks just players.
 #define ML_BLOCKEVERYTHING			0x00008000	// [RH] Line blocks everything
 #define ML_ZONEBOUNDARY				0x00010000
 #define ML_RAILING					0x00020000

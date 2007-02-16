@@ -46,6 +46,9 @@
 #include "i_system.h"
 #include "vectors.h"
 #include "a_sharedglobal.h"
+#include "gl_main.h"
+// [BC] New #includes.
+#include "sv_commands.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -734,7 +737,7 @@ void R_ExecuteSetViewSize ()
 //
 //==========================================================================
 
-CUSTOM_CVAR (Int, screenblocks, 10, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CUSTOM_CVAR (Int, screenblocks, 11, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 {
 	if (self > 12)
 		self = 12;
@@ -862,6 +865,8 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 	viewx = iview->oviewx + FixedMul (frac, iview->nviewx - iview->oviewx);
 	viewy = iview->oviewy + FixedMul (frac, iview->nviewy - iview->oviewy);
 	viewz = iview->oviewz + FixedMul (frac, iview->nviewz - iview->oviewz);
+	// [BC] This makes the mouse incredibly jerky for client games.
+/*
 	if (player != NULL &&
 		player - players == consoleplayer &&
 		camera == player->mo &&
@@ -873,13 +878,14 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 		player->mo->reactiontime == 0 &&
 		!NoInterpolateView &&
 		!paused &&
-		(!netgame || !cl_noprediction) &&
+		( NETWORK_GetState( ) != NETSTATE_CLIENT || !cl_noprediction) &&
 		!LocalKeyboardTurner)
 	{
 		viewangle = iview->nviewangle + (LocalViewAngle & 0xFFFF0000);
 		viewpitch = clamp<int> (iview->nviewpitch - (LocalViewPitch & 0xFFFF0000), -ANGLE_1*MAX_UP_ANGLE, +ANGLE_1*MAX_DN_ANGLE);
 	}
 	else
+*/
 	{
 		viewpitch = iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch);
 		viewangle = iview->oviewangle + FixedMul (frac, iview->nviewangle - iview->oviewangle);
@@ -986,10 +992,12 @@ void R_SetupFrame (AActor *actor)
 		{
 			camera = player->camera = player->mo;
 		}
+/*
 		if (camera == actor)
 		{
 			P_PredictPlayer (player);
 		}
+*/
 	}
 	else
 	{
@@ -1155,6 +1163,14 @@ void R_SetupFrame (AActor *actor)
 			fixedcolormap = InverseColormap;
 			break;
 
+		case REDCOLORMAP:
+			fixedcolormap = RedColormap;
+			break;
+
+		case GREENCOLORMAP:
+			fixedcolormap = GreenColormap;
+			break;
+
 		case GOLDCOLORMAP:
 			fixedcolormap = GoldColormap;
 			break;
@@ -1228,7 +1244,7 @@ void R_SetupFrame (AActor *actor)
 		}
 	}
 
-	P_UnPredictPlayer ();
+//	P_UnPredictPlayer ();
 	framecount++;
 	validcount++;
 
@@ -1686,6 +1702,22 @@ void FCanvasTextureInfo::Serialize (FArchive &arc)
 
 //==========================================================================
 //
+// [BC] FCanvasTextureInfo :: UpdateToClient
+//
+// Tell incoming clients about any camera->texture assignments.
+//
+//==========================================================================
+
+void FCanvasTextureInfo::UpdateToClient( ULONG ulClient )
+{
+	FCanvasTextureInfo	*pProbe;
+
+	for ( pProbe = List; pProbe != NULL; pProbe = pProbe->Next )
+		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name, pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+//==========================================================================
+//
 // R_MultiresInit
 //
 // Called from V_SetResolution()
@@ -1920,6 +1952,17 @@ void setinterpolation(EInterpType type, void *posptr)
 	interp->Next = *interp_p;
 	*interp_p = interp;
 	interp->CopyInterpToOld ();
+
+   // [ZDoomGL]
+   switch (type)
+   {
+   case INTERP_SectorFloor:
+   case INTERP_SectorCeiling:
+      sectorMoving[(sector_t *)posptr - sectors] = true;
+      break;
+   default:
+      break;
+   }
 }
 
 void stopinterpolation(EInterpType type, void *posptr)

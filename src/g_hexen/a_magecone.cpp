@@ -10,6 +10,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 const int SHARDSPAWN_LEFT	= 1;
 const int SHARDSPAWN_RIGHT	= 2;
@@ -70,7 +71,6 @@ IMPLEMENT_ACTOR (AMWeapFrost, Hexen, 53, 36)
 	PROP_Weapon_HoldAtkState (S_CONEATK+2)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (20)
-	PROP_Weapon_MoveCombatDist (19000000)
 	PROP_Weapon_AmmoType1 ("Mana1")
 	PROP_Weapon_ProjectileType ("FrostMissile")
 	PROP_Inventory_PickupMessage("$TXT_WEAPON_M2")
@@ -172,6 +172,10 @@ void A_FireConePL1 (AActor *actor)
 			return;
 	}
 	S_Sound (actor, CHAN_WEAPON, "MageShardsFire", 1, ATTN_NORM);
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
 
 	damage = 90+(pr_cone()&15);
 	for (i = 0; i < 16; i++)

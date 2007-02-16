@@ -9,6 +9,7 @@
 #include "p_pspr.h"
 #include "gstrings.h"
 #include "a_hexenglobal.h"
+#include "network.h"
 
 static FRandom pr_quietusdrop ("QuietusDrop");
 static FRandom pr_fswordflame ("FSwordFlame");
@@ -200,7 +201,6 @@ IMPLEMENT_ACTOR (AFWeapQuietus, Hexen, -1, 0)
 	PROP_Weapon_HoldAtkState (S_FSWORDATK)
 	PROP_Weapon_Kickback (150)
 	PROP_Weapon_YAdjust (10)
-	PROP_Weapon_MoveCombatDist (20000000)
 	PROP_Weapon_AmmoType1 ("Mana1")
 	PROP_Weapon_AmmoType2 ("Mana2")
 	PROP_Weapon_ProjectileType ("FSwordMissile")
@@ -306,6 +306,11 @@ void A_FSwordAttack (AActor *actor)
 		if (!weapon->DepleteAmmo (weapon->bAltFire))
 			return;
 	}
+
+	// [BC] Weapons are handled by the server.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
 	P_SpawnPlayerMissile (actor, actor->x, actor->y, actor->z-10*FRACUNIT, RUNTIME_CLASS(AFSwordMissile), actor->angle+ANGLE_45/4);
 	P_SpawnPlayerMissile (actor, actor->x, actor->y, actor->z-5*FRACUNIT, RUNTIME_CLASS(AFSwordMissile), actor->angle+ANGLE_45/8);
 	P_SpawnPlayerMissile (actor, actor->x, actor->y, actor->z, RUNTIME_CLASS(AFSwordMissile), actor->angle);

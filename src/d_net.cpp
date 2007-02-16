@@ -51,6 +51,11 @@
 #include "p_acs.h"
 #include "p_trace.h"
 #include "a_sharedglobal.h"
+// [BC] New #includes.
+#include "deathmatch.h"
+#include "network.h"
+#include "team.h"
+#include "chat.h"
 
 int P_StartScript (AActor *who, line_t *where, int script, char *map, bool backSide,
 					int arg0, int arg1, int arg2, int always, bool wantResultCode, bool net);
@@ -407,6 +412,7 @@ int ExpandTics (int low)
 //
 void HSendPacket (int node, int len)
 {
+/*
 	if (debugfile && node != 0)
 	{
 		int i, k, realretrans;
@@ -465,7 +471,7 @@ void HSendPacket (int node, int len)
 		}
 		fprintf (debugfile, "]]\n");
 	}
-
+*/
 	if (node == 0)
 	{
 		memcpy (reboundstore, netbuffer, len);
@@ -476,8 +482,8 @@ void HSendPacket (int node, int len)
 	if (demoplayback)
 		return;
 
-	if (!netgame)
-		I_Error ("Tried to transmit to another node");
+//	if (!netgame)
+//		I_Error ("Tried to transmit to another node");
 
 #if SIMULATEERRORS
 	if (rand() < SIMULATEERRORS)
@@ -509,7 +515,7 @@ bool HGetPacket (void)
 		return true;
 	}
 
-	if (!netgame)
+//	if (!netgame)
 		return false;
 
 	if (demoplayback)
@@ -520,7 +526,7 @@ bool HGetPacket (void)
 	
 	if (doomcom.remotenode == -1)
 		return false;
-		
+/*		
 	if (debugfile)
 	{
 		int i, k, realretrans;
@@ -572,7 +578,7 @@ bool HGetPacket (void)
 				fprintf (debugfile, "\n");
 		}
 	}
-
+*/
 	if (doomcom.datalength != NetbufferSize ())
 	{
 		if (debugfile)
@@ -636,13 +642,10 @@ void PlayerIsGone (int netnode, int netconsole)
 	FBehavior::StaticStartTypedScripts (SCRIPT_Disconnect, NULL, true, netconsole);
 	if (netconsole == Net_Arbitrator)
 	{
-		bglobal.RemoveAllBots (true);
-		Printf ("Removed all bots\n");
-
 		// Pick a new network arbitrator
 		for (int i = 0; i < MAXPLAYERS; i++)
 		{
-			if (playeringame[i] && !players[i].isbot)
+			if (playeringame[i] )// && !players[i].isbot)
 			{
 				Net_Arbitrator = i;
 				Printf ("%s is the new arbitrator\n", players[i].userinfo.netname);
@@ -840,7 +843,7 @@ void GetPackets (void)
 
 			for (i = 0; i < numplayers; ++i)
 			{
-				int node = !players[playerbytes[i]].isbot ?
+				int node = !players[playerbytes[i]].bIsBot ?
 					nodeforplayer[playerbytes[i]] : netnode;
 
 				SkipTicCmd (&start, nettics[node] - realstart);
@@ -856,7 +859,7 @@ void GetPackets (void)
 			// packet.
 			for (i = 0; i < numplayers; ++i)
 			{
-				if (!players[playerbytes[i]].isbot)
+//				if (!players[playerbytes[i]].isbot)
 				{
 					nettics[nodeforplayer[playerbytes[i]]] = realend;
 				}
@@ -867,6 +870,7 @@ void GetPackets (void)
 
 void AdjustBots (int gameticdiv)
 {
+/*
 	// [RH] This loop adjusts the bots' rotations for ticcmds that have
 	// been already created but not yet executed. This way, the bot is still
 	// able to create ticcmds that accurately reflect the state it wants to
@@ -884,10 +888,12 @@ void AdjustBots (int gameticdiv)
 			}
 		}
 	}
+*/
 }
 
 void UnadjustBots ()
 {
+/*
 	for (int i = 0; i < MAXPLAYERS; i++)
 	{
 		if (playeringame[i] && players[i].isbot && players[i].mo)
@@ -896,6 +902,7 @@ void UnadjustBots ()
 			players[i].mo->pitch = players[i].savedpitch;
 		}
 	}
+*/
 }
 
 //
@@ -914,6 +921,10 @@ void NetUpdate (void)
 	int 	realstart;
 	BYTE	*cmddata;
 	bool	resendOnly;
+
+	// [BC] No need to do this in server mode.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
 
 	if (ticdup == 0)
 	{
@@ -954,11 +965,13 @@ void NetUpdate (void)
 		
 		//Printf ("mk:%i ",maketic);
 		G_BuildTiccmd (&localcmds[maketic % LOCALCMDTICS]);
+/*
 		if (maketic % ticdup == 0)
 		{
 			//Added by MC: For some of that bot stuff. The main bot function.
 			bglobal.Main ((maketic / ticdup) % BACKUPTICS);
 		}
+*/
 		maketic++;
 
 		if (ticdup == 1 || maketic == 0)
@@ -1050,7 +1063,7 @@ void NetUpdate (void)
 	// send the packet to the other nodes
 	int count = 1;
 	int quitcount = 0;
-
+/*
 	if (consoleplayer == Net_Arbitrator)
 	{
 		for (j = 0; j < MAXPLAYERS; j++)
@@ -1091,7 +1104,7 @@ void NetUpdate (void)
 			}
 		}
 	}
-
+*/
 	for (i = 0; i < doomcom.numnodes; i++)
 	{
 		BYTE playerbytes[MAXPLAYERS];
@@ -1188,11 +1201,13 @@ void NetUpdate (void)
 				{
 					if (playeringame[j] && j != playerfornode[i] && j != consoleplayer)
 					{
+/*
 						if (players[j].isbot || NetMode == NET_PacketServer)
 						{
 							playerbytes[l++] = j;
 							netbuffer[k++] = j;
 						}
+*/
 					}
 				}
 			}
@@ -1227,7 +1242,8 @@ void NetUpdate (void)
 					}
 					else if (i != 0)
 					{
-						if (players[playerbytes[l]].isbot)
+//						if (players[playerbytes[l]].isbot)
+						if (0)
 						{
 
 							WriteWord (0, &cmddata);	// fake consistancy word
@@ -1271,6 +1287,10 @@ bool CheckAbort (void)
 {
 	event_t *ev;
 	bool res = false;
+
+	// [BC] Server doesn't do this.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return ( false );
 
 	PrintString (PRINT_HIGH, "");	// [RH] Give the console a chance to redraw itself
 	// This WaitForTic is to avoid flooding the network with packets on startup.
@@ -1610,14 +1630,18 @@ void D_CheckNetGame (void)
 		debugfile = fopen (filename,"w");
 	}
 
-	if (netgame)
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
-		GameConfig->ReadNetVars ();	// [RH] Read network ServerInfo cvars
-		D_ArbitrateNetStart ();
+//		GameConfig->ReadNetVars ();	// [RH] Read network ServerInfo cvars
+//		D_ArbitrateNetStart ();
 	}
 
 	// read values out of doomcom
 	ticdup = doomcom.ticdup;
+
+	// Server overrides ticdup.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		ticdup = 1;
 
 	for (i = 0; i < doomcom.numplayers; i++)
 		playeringame[i] = true;
@@ -1638,7 +1662,7 @@ void D_QuitNetGame (void)
 {
 	int i, j, k;
 
-	if (!netgame || !usergame || consoleplayer == -1 || demoplayback)
+	if (( NETWORK_GetState( ) == NETSTATE_SINGLE ) || !usergame || consoleplayer == -1 || demoplayback)
 		return;
 
 	// send a bunch of packets for security
@@ -1686,170 +1710,262 @@ void D_QuitNetGame (void)
 //
 void TryRunTics (void)
 {
-	int 		i;
-	int 		lowtic;
-	int 		realtics;
-	int 		availabletics;
-	int 		counts;
-	int 		numplaying;
-
-	// If paused, do not eat more CPU time than we need, because it
-	// will all be wasted anyway.
-	bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
-
-	// get real tics
-	if (doWait)
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 	{
-		entertic = I_WaitForTic (oldentertics);
-	}
-	else
-	{
-		entertic = I_GetTime (false);
-	}
-	realtics = entertic - oldentertics;
-	oldentertics = entertic;
+		int			entertic;
+		static	int	oldentertics;
+		int 		i;
+		int 		lowtic;
+		int 		realtics;
+		int 		availabletics;
+		int 		counts;
+		int 		numplaying;
 
-	// get available tics
-	NetUpdate ();
+		// If paused, do not eat more CPU time than we need, because it
+		// will all be wasted anyway.
+		bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
 
-	lowtic = INT_MAX;
-	numplaying = 0;
-	for (i = 0; i < doomcom.numnodes; i++)
-	{
-		if (nodeingame[i])
+		// get real tics
+		if (doWait)
 		{
-			numplaying++;
-			if (nettics[i] < lowtic)
-				lowtic = nettics[i];
+			entertic = I_WaitForTic (oldentertics);
 		}
-	}
-
-	if (ticdup == 1)
-	{
-		availabletics = lowtic - gametic;
-	}
-	else
-	{
-		availabletics = lowtic - gametic / ticdup;
-	}
-
-	// decide how many tics to run
-	if (realtics < availabletics-1)
-		counts = realtics+1;
-	else if (realtics < availabletics)
-		counts = realtics;
-	else
-		counts = availabletics;
-	
-	if (counts == 0 && !doWait)
-	{
-		return;
-	}
-
-	if (counts < 1)
-		counts = 1;
-
-	frameon++;
-
-	if (debugfile)
-		fprintf (debugfile,
-				 "=======real: %i  avail: %i  game: %i\n",
-				 realtics, availabletics, counts);
-
-	if (!demoplayback)
-	{
-		// ideally nettics[0] should be 1 - 3 tics above lowtic
-		// if we are consistantly slower, speed up time
-
-		// [RH] I had erroneously assumed frameskip[] had 4 entries
-		// because there were 4 players, but that's not the case at
-		// all. The game is comparing the lag behind the master for
-		// four runs of TryRunTics. If our tic count is ahead of the
-		// master all 4 times, the next run of NetUpdate will not
-		// process any new input. If we have less input than the
-		// master, the next run of NetUpdate will process extra tics
-		// (because gametime gets decremented here).
-
-		// the key player does not adapt
-		if (consoleplayer != Net_Arbitrator)
+		else
 		{
-			// I'm not sure about this when using a packet server, because
-			// if left unmodified from the P2P version, it can make the game
-			// very jerky. The way I have it written right now basically means
-			// that it won't adapt. Fortunately, player prediction helps
-			// alleviate the lag somewhat.
-
-			if (NetMode != NET_PacketServer)
-			{
-				mastertics = nettics[nodeforplayer[Net_Arbitrator]];
-			}
-			if (nettics[0] <= mastertics)
-			{
-				gametime--;
-				if (debugfile) fprintf (debugfile, "-");
-			}
-			if (NetMode != NET_PacketServer)
-			{
-				frameskip[frameon&3] = (oldnettics > mastertics);
-			}
-			else
-			{
-				frameskip[frameon&3] = (oldnettics - mastertics) > 3;
-			}
-			if (frameskip[0] && frameskip[1] && frameskip[2] && frameskip[3])
-			{
-				skiptics = 1;
-				if (debugfile) fprintf (debugfile, "+");
-			}
-			oldnettics = nettics[0];
+			entertic = I_GetTime (false);
 		}
-	}// !demoplayback
+		realtics = entertic - oldentertics;
+		oldentertics = entertic;
 
-	// wait for new tics if needed
-	while (lowtic < gametic + counts)
-	{
+		// get available tics
 		NetUpdate ();
+
 		lowtic = INT_MAX;
-
+		numplaying = 0;
 		for (i = 0; i < doomcom.numnodes; i++)
-			if (nodeingame[i] && nettics[i] < lowtic)
-				lowtic = nettics[i];
-
-		lowtic = lowtic * ticdup;
-
-		if (lowtic < gametic)
-			I_Error ("TryRunTics: lowtic < gametic");
-
-		// don't stay in here forever -- give the menu a chance to work
-		if (I_GetTime (false) - entertic >= TICRATE/3)
 		{
-			C_Ticker ();
-			M_Ticker ();
+			if (nodeingame[i])
+			{
+				numplaying++;
+				if (nettics[i] < lowtic)
+					lowtic = nettics[i];
+			}
+		}
+
+		if (ticdup == 1)
+		{
+			availabletics = lowtic - gametic;
+		}
+		else
+		{
+			availabletics = lowtic - gametic / ticdup;
+		}
+
+		// decide how many tics to run
+		if (realtics < availabletics-1)
+			counts = realtics+1;
+		else if (realtics < availabletics)
+			counts = realtics;
+		else
+			counts = availabletics;
+		
+		if (counts == 0 && !doWait)
+		{
 			return;
 		}
+
+		if (counts < 1)
+			counts = 1;
+
+		frameon++;
+
+		// run the count tics
+		while (counts--)
+		{
+			if (advancedemo)
+			{
+				D_DoAdvanceDemo ();
+			}
+			DObject::BeginFrame ();
+			C_Ticker ();
+			M_Ticker ();
+			I_GetTime (true);
+			G_Ticker ();
+			DObject::EndFrame ();
+			gametic++;
+
+			NetUpdate ();	// check for new console commands
+		}
+
+//		DObject::EndFrame ();
 	}
-
-	// run the count tics
-	while (counts--)
+	else
 	{
-		if (gametic > lowtic)
-		{
-			I_Error ("gametic>lowtic");
-		}
-		if (advancedemo)
-		{
-			D_DoAdvanceDemo ();
-		}
-		if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
-		DObject::BeginFrame ();
-		C_Ticker ();
-		M_Ticker ();
-		I_GetTime (true);
-		G_Ticker ();
-		DObject::EndFrame ();
-		gametic++;
+		int 		i;
+		int 		lowtic;
+		int 		realtics;
+		int 		availabletics;
+		int 		counts;
+		int 		numplaying;
 
-		NetUpdate ();	// check for new console commands
+		// If paused, do not eat more CPU time than we need, because it
+		// will all be wasted anyway.
+		bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
+
+		// get real tics
+		if (doWait)
+		{
+			entertic = I_WaitForTic (oldentertics);
+		}
+		else
+		{
+			entertic = I_GetTime (false);
+		}
+		realtics = entertic - oldentertics;
+		oldentertics = entertic;
+
+		// get available tics
+		NetUpdate ();
+
+		lowtic = INT_MAX;
+		numplaying = 0;
+		for (i = 0; i < doomcom.numnodes; i++)
+		{
+			if (nodeingame[i])
+			{
+				numplaying++;
+				if (nettics[i] < lowtic)
+					lowtic = nettics[i];
+			}
+		}
+
+		if (ticdup == 1)
+		{
+			availabletics = lowtic - gametic;
+		}
+		else
+		{
+			availabletics = lowtic - gametic / ticdup;
+		}
+
+		// decide how many tics to run
+		if (realtics < availabletics-1)
+			counts = realtics+1;
+		else if (realtics < availabletics)
+			counts = realtics;
+		else
+			counts = availabletics;
+		
+		if (counts == 0 && !doWait)
+		{
+			return;
+		}
+
+		if (counts < 1)
+			counts = 1;
+
+		frameon++;
+
+		if (debugfile)
+			fprintf (debugfile,
+					 "=======real: %i  avail: %i  game: %i\n",
+					 realtics, availabletics, counts);
+
+		if (!demoplayback)
+		{
+			// ideally nettics[0] should be 1 - 3 tics above lowtic
+			// if we are consistantly slower, speed up time
+
+			// [RH] I had erroneously assumed frameskip[] had 4 entries
+			// because there were 4 players, but that's not the case at
+			// all. The game is comparing the lag behind the master for
+			// four runs of TryRunTics. If our tic count is ahead of the
+			// master all 4 times, the next run of NetUpdate will not
+			// process any new input. If we have less input than the
+			// master, the next run of NetUpdate will process extra tics
+			// (because gametime gets decremented here).
+
+			// the key player does not adapt
+			if (consoleplayer != Net_Arbitrator)
+			{
+				// I'm not sure about this when using a packet server, because
+				// if left unmodified from the P2P version, it can make the game
+				// very jerky. The way I have it written right now basically means
+				// that it won't adapt. Fortunately, player prediction helps
+				// alleviate the lag somewhat.
+
+				if (NetMode != NET_PacketServer)
+				{
+					mastertics = nettics[nodeforplayer[Net_Arbitrator]];
+				}
+				if (nettics[0] <= mastertics)
+				{
+					gametime--;
+					if (debugfile) fprintf (debugfile, "-");
+				}
+				if (NetMode != NET_PacketServer)
+				{
+					frameskip[frameon&3] = (oldnettics > mastertics);
+				}
+				else
+				{
+					frameskip[frameon&3] = (oldnettics - mastertics) > 3;
+				}
+				if (frameskip[0] && frameskip[1] && frameskip[2] && frameskip[3])
+				{
+					skiptics = 1;
+					if (debugfile) fprintf (debugfile, "+");
+				}
+				oldnettics = nettics[0];
+			}
+		}// !demoplayback
+
+		// wait for new tics if needed
+		while (lowtic < gametic + counts)
+		{
+			NetUpdate ();
+			lowtic = INT_MAX;
+
+			for (i = 0; i < doomcom.numnodes; i++)
+				if (nodeingame[i] && nettics[i] < lowtic)
+					lowtic = nettics[i];
+
+			lowtic = lowtic * ticdup;
+
+			if (lowtic < gametic)
+				I_Error ("TryRunTics: lowtic < gametic");
+
+			// don't stay in here forever -- give the menu a chance to work
+			if (I_GetTime (false) - entertic >= TICRATE/3)
+			{
+				C_Ticker ();
+				M_Ticker ();
+				return;
+			}
+		}
+
+		// run the count tics
+		while (counts--)
+		{
+			if (gametic > lowtic)
+			{
+				I_Error ("gametic>lowtic");
+			}
+			if (advancedemo)
+			{
+				D_DoAdvanceDemo ();
+			}
+			if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
+			DObject::BeginFrame ();
+			C_Ticker ();
+			M_Ticker ();
+			I_GetTime (true);
+			G_Ticker ();
+			DObject::EndFrame ();
+			gametic++;
+
+			NetUpdate ();	// check for new console commands
+		}
 	}
 }
 
@@ -1940,6 +2056,7 @@ BYTE *FDynamicBuffer::GetData (int *len)
 // [RH] Execute a special "ticcmd". The type byte should
 //		have already been read, and the stream is positioned
 //		at the beginning of the command's actual data.
+EXTERN_CVAR( Bool, cl_showweapnameoncycle )
 void Net_DoCommand (int type, BYTE **stream, int player)
 {
 	BYTE pos = 0;
@@ -1950,34 +2067,12 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 	{
 	case DEM_SAY:
 		{
-			const char *name = players[player].userinfo.netname;
-			BYTE who = ReadByte (stream);
+			LONG	lMode;
 
-			s = ReadString (stream);
-			if (((who & 1) == 0) || players[player].userinfo.team == TEAM_None)
-			{ // Said to everyone
-				if (who & 2)
-				{
-					Printf (PRINT_CHAT, TEXTCOLOR_BOLD "* %s%s\n", name, s);
-				}
-				else
-				{
-					Printf (PRINT_CHAT, "%s: %s\n", name, s);
-				}
-				S_Sound (CHAN_VOICE, gameinfo.chatSound, 1, ATTN_NONE);
-			}
-			else if (players[player].userinfo.team == players[consoleplayer].userinfo.team)
-			{ // Said only to members of the player's team
-				if (who & 2)
-				{
-					Printf (PRINT_TEAMCHAT, TEXTCOLOR_BOLD "* (%s)%s\n", name, s);
-				}
-				else
-				{
-					Printf (PRINT_TEAMCHAT, "(%s): %s\n", name, s);
-				}
-				S_Sound (CHAN_VOICE, gameinfo.chatSound, 1, ATTN_NONE);
-			}
+			lMode = ReadByte( stream );
+			s = ReadString( stream );
+
+			CHAT_PrintChatString( player, lMode, s );
 		}
 		break;
 
@@ -2036,6 +2131,10 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 		// Using LEVEL_NOINTERMISSION tends to throw the game out of sync.
 		// That was a long time ago. Maybe it works now?
 		level.flags |= LEVEL_CHANGEMAPCHEAT;
+
+		// [BC] Clear out the botspawn table.
+		BOTSPAWN_ClearTable( );
+
 		G_ExitLevel (pos, false);
 		break;
 
@@ -2045,14 +2144,10 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 
 	case DEM_ADDBOT:
 		{
-			BYTE num = ReadByte (stream);
-			bglobal.DoAddBot (num, s = ReadString (stream));
 		}
 		break;
 
 	case DEM_KILLBOTS:
-		bglobal.RemoveAllBots (true);
-		Printf ("Removed all bots\n");
 		break;
 
 	case DEM_CENTERVIEW:
@@ -2227,7 +2322,7 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 		// Do not autosave in multiplayer games or when dead.
 		// For demo playback, DEM_DOAUTOSAVE already exists in the demo if the
 		// autosave happened. And if it doesn't, we must not generate it.
-		if (multiplayer ||
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) ||
 			demoplayback ||
 			players[consoleplayer].playerstate != PST_LIVE ||
 			disableautosave >= 2 ||

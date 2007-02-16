@@ -95,7 +95,7 @@ static int DoomSpecificInfo (char *buffer, char *end)
 	SDL_Quit();
 
 	p = 0;
-	p += snprintf (buffer+p, size-p, "ZDoom version " DOTVERSIONSTR " (" __DATE__ ")\n");
+	p += snprintf (buffer+p, size-p, "Skulltag version " DOTVERSIONSTR " (" __DATE__ ")\n");
 	p += snprintf (buffer+p, size-p, "\nCommand line:");
 	for (i = 0; i < Args.NumArgs(); ++i)
 	{
