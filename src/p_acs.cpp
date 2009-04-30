@@ -7441,6 +7441,11 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 
 	Link ();
 
+	if (level.flags2 & LEVEL2_HEXENHACK)
+	{
+		PutLast();
+	}
+
 	DPrintf ("Script %d started.\n", num);
 }
 
