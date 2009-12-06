@@ -458,6 +458,8 @@ bool P_Move (AActor *actor)
 	}
 	FCheckPosition tm;
 
+	tm.FromPMove = true;
+
 	try_ok = true;
 	for(int i=1; i < steps; i++)
 	{
@@ -469,7 +471,7 @@ bool P_Move (AActor *actor)
 	if (try_ok) try_ok = P_TryMove (actor, tryx, tryy, false, false, tm);
 
 	// [GrafZahl] Interpolating monster movement as it is done here just looks bad
-	// so make it switchable!
+	// so make it switchable
 	if (nomonsterinterpolation)
 	{
 		actor->PrevX = actor->x;
