@@ -2062,8 +2062,14 @@ void P_LoadLineDefs (MapData * map)
 		}
 		else
 		{
-			if (LittleShort(mld->sidenum[0]) != NO_INDEX)
-				sidecount++;
+			// patch missing first sides instead of crashing out.
+			// Visual glitches are better than not being able to play.
+			if (LittleShort(mld->sidenum[0]) == NO_INDEX)
+			{
+				Printf("Line %d has no first side.\n", i);
+				mld->sidenum[0] = 0;
+			}
+			sidecount++;
 			if (LittleShort(mld->sidenum[1]) != NO_INDEX)
 				sidecount++;
 			linemap[i] = i+skipped;
@@ -2135,8 +2141,14 @@ void P_LoadLineDefs2 (MapData * map)
 		}
 		else
 		{
-			if (LittleShort(mld->sidenum[0]) != NO_INDEX)
-				sidecount++;
+			// patch missing first sides instead of crashing out.
+			// Visual glitches are better than not being able to play.
+			if (LittleShort(mld->sidenum[0]) == NO_INDEX)
+			{
+				Printf("Line %d has no first side.\n", i);
+				mld->sidenum[0] = 0;
+			}
+			sidecount++;
 			if (LittleShort(mld->sidenum[1]) != NO_INDEX)
 				sidecount++;
 			linemap[i] = i+skipped;
