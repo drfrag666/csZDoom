@@ -478,6 +478,7 @@ EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_disallowbots );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
+EXTERN_CVAR( Bool, sv_limitcommands )
 
 // From sv_master.cpp
 EXTERN_CVAR( Bool, sv_updatemaster );
