@@ -10624,6 +10624,7 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 {
 	LONG			lSectorID;
 	sector_t		*pSector;
+	BYTE			type;
 	LONG			lSpeed;
 	LONG			lDirection;
 	LONG			lLightTag;
@@ -10632,6 +10633,9 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 
 	// Read in the sector ID.
 	lSectorID = NETWORK_ReadShort( pByteStream );
+
+	// Read in the door type.
+	type = NETWORK_ReadByte( pByteStream );
 
 	// Read in the speed.
 	lSpeed = NETWORK_ReadLong( pByteStream );
@@ -10667,7 +10671,7 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 	}
 
 	// Create the new door.
-	if ( (pDoor = new DDoor( pSector, DDoor::doorRaise, lSpeed, 0, lLightTag, g_ConnectionState != CTS_ACTIVE )) )
+	if ( (pDoor = new DDoor( pSector, (DDoor::EVlDoor)type, lSpeed, 0, lLightTag, g_ConnectionState != CTS_ACTIVE )) )
 	{
 		pDoor->SetID( lDoorID );
 		pDoor->SetDirection( lDirection );
