@@ -157,7 +157,7 @@ static	bool	server_InventoryDrop( BYTESTREAM_s *pByteStream );
 static	bool	server_Puke( BYTESTREAM_s *pByteStream );
 static	bool	server_MorphCheat( BYTESTREAM_s *pByteStream );
 static	bool	server_CheckForClientMinorCommandFlood( ULONG ulClient );
-static	bool	server_ProcessMoveCommand( CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient );
+static	bool	server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient );
 static	bool	server_CheckJoinPassword( const FString& clientPassword );
 static	bool	server_Linetarget( BYTESTREAM_s* pByteStream );
 
@@ -586,7 +586,7 @@ void SERVER_Tick( void )
 
 			// [BB] Since the commands are in a priority queue, we process
 			// the commands based on their gametic, lowest first.
-			for ( unsigned int i = 0; i < MIN ( g_aClients[ulIdx].MoveCMDs.size(), 2u ); ++i )
+			for ( unsigned int i = 0; i < MIN<unsigned int> ( g_aClients[ulIdx].MoveCMDs.size(), 2u ); ++i )
 			{
 				server_ProcessMoveCommand( g_aClients[ulIdx].MoveCMDs.top(), ulIdx );
 				g_aClients[ulIdx].MoveCMDs.pop();
@@ -4864,7 +4864,7 @@ static bool server_ClientMove( BYTESTREAM_s *pByteStream )
 	return false;
 }
 
-static bool server_ProcessMoveCommand( CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient )
+static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient )
 {
 	player_t *pPlayer = &players[ulClient];
 	ticcmd_t *pCmd = &pPlayer->cmd;
