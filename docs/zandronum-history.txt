@@ -59,7 +59,7 @@
 -	- Fixed: CVAR cl_announcepickups didn't work in certain cases. [Leonard]
 -	- Fixed: Custom attenuation values did not work online. [Dusk, Edward-san]
 !	- Changed intermission proceeding to not rely on spectators if there is active players. [Water]
-!	- Changed how a sentinel variable is handled which makes it much harder for clients to purposely drop packets, thus stopping a speed hack. [Water]
+!	- Changed how a sentinel variable is handled which makes it much harder for clients to purposely drop packets, thus stopping a speed hack. [Water, Torr Samaho]
 !	- Changed: Free spectators can now use the noclip cheat in demos. [Leonard]
 !	- Changed the CTF flag height from 16 to 48, which will prevent players from clipping through them without picking them up on stairwells or uneven terrain. [Striker]
 !	- Reduced the time interval between each join and each team switch to 3 seconds. [Edward-san]
