@@ -1072,3 +1072,8 @@ if( MSVC )
 	# Compile this one file with SSE2 support.
 	set_source_files_properties( nodebuild_classify_sse2.cpp PROPERTIES COMPILE_FLAGS "/arch:SSE2" )
 endif( MSVC )
+
+if( MSVC )
+	set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO")
+endif( MSVC )
+
