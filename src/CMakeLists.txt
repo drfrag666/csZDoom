@@ -1075,5 +1075,9 @@ endif( MSVC )
 
 if( MSVC )
 	set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO")
+	add_custom_command(TARGET zdoom POST_BUILD
+		COMMAND "mt.exe" -manifest \"${CMAKE_CURRENT_SOURCE_DIR}\\win32\\zdoom.exe.manifest\" -outputresource:\"$(TargetDir)$(TargetFileName)\"\;\#2
+		COMMENT "Adding manifest..."
+	)
 endif( MSVC )
 
