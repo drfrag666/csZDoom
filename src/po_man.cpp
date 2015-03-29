@@ -1435,10 +1435,10 @@ static void LinkPolyobj (FPolyObj *po)
 			bottomY = (*tempSeg)->v1->y;
 		}
 	}
-	po->bbox[BOXRIGHT] = (rightX-bmaporgx)>>MAPBLOCKSHIFT;
-	po->bbox[BOXLEFT] = (leftX-bmaporgx)>>MAPBLOCKSHIFT;
-	po->bbox[BOXTOP] = (topY-bmaporgy)>>MAPBLOCKSHIFT;
-	po->bbox[BOXBOTTOM] = (bottomY-bmaporgy)>>MAPBLOCKSHIFT;
+	po->bbox[BOXRIGHT] = GetSafeBlockX(rightX - bmaporgx);
+	po->bbox[BOXLEFT] = GetSafeBlockX(leftX - bmaporgx);
+	po->bbox[BOXTOP] = GetSafeBlockY(topY - bmaporgy);
+	po->bbox[BOXBOTTOM] = GetSafeBlockY(bottomY - bmaporgy);
 	// add the polyobj to each blockmap section
 	for(j = po->bbox[BOXBOTTOM]*bmapwidth; j <= po->bbox[BOXTOP]*bmapwidth;
 		j += bmapwidth)
@@ -1504,10 +1504,10 @@ static bool CheckMobjBlocking (seg_t *seg, FPolyObj *po)
 
 	ld = seg->linedef;
 
-	top = (ld->bbox[BOXTOP]-bmaporgy+MAXRADIUS)>>MAPBLOCKSHIFT;
-	bottom = (ld->bbox[BOXBOTTOM]-bmaporgy-MAXRADIUS)>>MAPBLOCKSHIFT;
-	left = (ld->bbox[BOXLEFT]-bmaporgx-MAXRADIUS)>>MAPBLOCKSHIFT;
-	right = (ld->bbox[BOXRIGHT]-bmaporgx+MAXRADIUS)>>MAPBLOCKSHIFT;
+	top = GetSafeBlockY(ld->bbox[BOXTOP]-bmaporgy+MAXRADIUS);
+	bottom = GetSafeBlockY(ld->bbox[BOXBOTTOM]-bmaporgy-MAXRADIUS);
+	left = GetSafeBlockX(ld->bbox[BOXLEFT]-bmaporgx-MAXRADIUS);
+	right = GetSafeBlockX(ld->bbox[BOXRIGHT]-bmaporgx+MAXRADIUS);
 
 	blocked = false;
 	checker.Clear();
