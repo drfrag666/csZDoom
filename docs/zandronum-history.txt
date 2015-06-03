@@ -28,6 +28,7 @@
 -	- Fixed: SetPlayerProperty could still change certain flags on a spectator. [Leonard]
 -	- Fixed: Players were kicked for excessive movement commands instead of simply ignoring the excessive commands. [Torr Samaho]
 -	- Fixed some weapon sync issues related to the client movement buffer. [Torr Samaho]
+-	- Fixed: Some dehacked weapon attack sounds could not work. [Edward-san]
 +	- Added CVAR sv_limitcommands which can be set to false to disable various flooding limits (allow constant suiciding, team changing, disable command flood auto-kick, etc). Should not be set to false in public servers. [Dusk]
 +	- Added a Network Options menu which will contain all new network options. [Water, Torr Samaho]
 +	- The authentication mechanism for non-map related lumps now allows Freedoom 0.9/Doom clients to join Doom/Freedoom 0.9 servers. [Torr Samaho] 
