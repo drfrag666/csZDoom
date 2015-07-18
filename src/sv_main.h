@@ -191,6 +191,20 @@ struct CLIENT_MOVE_COMMAND_s
 };
 
 //*****************************************************************************
+class ClientCommand
+{
+public:
+	ClientCommand () {};
+
+	virtual bool process ( const ULONG ulClient ) const = 0;
+
+	virtual bool isMoveCmd ( ) const
+	{
+		return false;
+	}
+};
+
+//*****************************************************************************
 typedef struct
 {
 	// The network address of this client.
@@ -308,7 +322,7 @@ typedef struct
 	LONG			lLastActionTic;
 
 	// [BB] Buffer storing all movement commands received from the client we haven't executed yet.
-	std::priority_queue<CLIENT_MOVE_COMMAND_s>	MoveCMDs;
+	TArray<ClientCommand*>	MoveCMDs;
 
 } CLIENT_s;
 

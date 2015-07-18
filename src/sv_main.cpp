@@ -157,7 +157,6 @@ static	bool	server_InventoryDrop( BYTESTREAM_s *pByteStream );
 static	bool	server_Puke( BYTESTREAM_s *pByteStream );
 static	bool	server_MorphCheat( BYTESTREAM_s *pByteStream );
 static	bool	server_CheckForClientMinorCommandFlood( ULONG ulClient );
-static	bool	server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient );
 static	bool	server_CheckJoinPassword( const FString& clientPassword );
 static	bool	server_Linetarget( BYTESTREAM_s* pByteStream );
 
@@ -579,20 +578,26 @@ void SERVER_Tick( void )
 		// Recieve packets.
 		SERVER_GetPackets( );
 
-		// [BB] Process up to two movement commands for each client or only one in case we already 
-		// processed the first movement command of this gametic immediately after receiving it.
+		// [BB] Process up to two movement commands for each client.
 		for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
 		{
 			if ( SERVER_IsValidClient( ulIdx ) == false )
 				continue;
 
-			// [BB] Since the commands are in a priority queue, we process
-			// the commands based on their gametic, lowest first.
-			const unsigned int maxTicsToProcess = ( g_aClients[ulIdx].ulLastCommandTic < gametic ) ? 2u : 1u;
-			for ( unsigned int i = 0; i < MIN<unsigned int> ( g_aClients[ulIdx].MoveCMDs.size(), maxTicsToProcess ); ++i )
+			int numMoveCMDs = 0;
+			for ( unsigned int i = 0; i < g_aClients[ulIdx].MoveCMDs.Size(); ++i )
 			{
-				server_ProcessMoveCommand( g_aClients[ulIdx].MoveCMDs.top(), ulIdx );
-				g_aClients[ulIdx].MoveCMDs.pop();
+				g_aClients[ulIdx].MoveCMDs[0]->process ( ulIdx );
+
+				// [BB] Only limit the amount of movement commands.
+				if ( g_aClients[ulIdx].MoveCMDs[0]->isMoveCmd() )
+					++numMoveCMDs;
+
+				delete g_aClients[ulIdx].MoveCMDs[0];
+				g_aClients[ulIdx].MoveCMDs.Delete(0);
+
+				if ( numMoveCMDs == 2 )
+					break;
 			}
 		}
 
@@ -4565,6 +4570,24 @@ void SERVER_UpdateThingMomentum( AActor *pActor, bool updateZ, bool updateXY )
 
 //*****************************************************************************
 //
+template <typename CommandType>
+static bool server_ParseBufferedCommand ( BYTESTREAM_s *pByteStream )
+{
+	CommandType *cmd = new CommandType ( pByteStream );
+
+	if ( sv_useticbuffer )
+	{
+		g_aClients[g_lCurrentClient].MoveCMDs.Push ( cmd );
+		return false;
+	}
+
+	const bool retValue = cmd->process ( g_lCurrentClient );
+	delete cmd;
+	return retValue;
+}
+
+//*****************************************************************************
+//
 static bool server_Ignore( BYTESTREAM_s *pByteStream )
 {
 	ULONG	ulTargetIdx = NETWORK_ReadByte( pByteStream );
@@ -4783,18 +4806,40 @@ static bool server_Say( BYTESTREAM_s *pByteStream )
 }
 
 //*****************************************************************************
+class ClientMoveCommand : public ClientCommand
+{
+	CLIENT_MOVE_COMMAND_s moveCmd;
+public:
+	ClientMoveCommand ( BYTESTREAM_s *pByteStream );
+
+	bool process ( const ULONG ulClient ) const;
+
+	virtual bool isMoveCmd ( ) const
+	{
+		return true;
+	}
+};
+
+//*****************************************************************************
 //
 static bool server_ClientMove( BYTESTREAM_s *pByteStream )
 {
+	// Don't timeout.
+	g_aClients[g_lCurrentClient].ulLastCommandTic = gametic;
+
 	// [BB] We don't process the movement command immediately, but store it
 	// in a buffer. This way we can limit the amount of movement commands
 	// we process for a player in a given tic to prevent the player from
 	// seemingly teleporting in case too many movement commands arrive at once.
-	CLIENT_MOVE_COMMAND_s clientMoveCmd;
-	ticcmd_t *pCmd = &clientMoveCmd.cmd;
+	return server_ParseBufferedCommand<ClientMoveCommand> ( pByteStream );
+}
+
+ClientMoveCommand::ClientMoveCommand ( BYTESTREAM_s *pByteStream )
+{
+	ticcmd_t *pCmd = &moveCmd.cmd;
 
 	// Read in the client's gametic.
-	clientMoveCmd.ulGametic = NETWORK_ReadLong( pByteStream );
+	moveCmd.ulGametic = NETWORK_ReadLong( pByteStream );
 
 	// Read in the information the client is sending us.
 	const ULONG ulBits = NETWORK_ReadByte( pByteStream );
@@ -4835,8 +4880,8 @@ static bool server_ClientMove( BYTESTREAM_s *pByteStream )
 		pCmd->ucmd.upmove = 0;
 
 	// Always read in the angle and pitch.
-	clientMoveCmd.angle = NETWORK_ReadLong( pByteStream );
-	clientMoveCmd.pitch = NETWORK_ReadLong( pByteStream );
+	moveCmd.angle = NETWORK_ReadLong( pByteStream );
+	moveCmd.pitch = NETWORK_ReadLong( pByteStream );
 
 	// [BB] Extra scope to create a local variable.
 	{
@@ -4858,36 +4903,18 @@ static bool server_ClientMove( BYTESTREAM_s *pByteStream )
 	}
 	// [BB] If the client is attacking, he always sends the name of the weapon he's using.
 	if ( pCmd->ucmd.buttons & BT_ATTACK )
-		clientMoveCmd.usWeaponNetworkIndex = NETWORK_ReadShort( pByteStream );
+		moveCmd.usWeaponNetworkIndex = NETWORK_ReadShort( pByteStream );
 	else
-		clientMoveCmd.usWeaponNetworkIndex = 0;
-
-	// [BB] Put the command into the buffer.
-	g_aClients[g_lCurrentClient].MoveCMDs.push ( clientMoveCmd );
-
-	// [BB] We didn't process a command of this client during this tic yet,
-	// so process the new one immediately if the buffer contains only the new command.
-	// Otherwise, let the buffer do its work, which is necessary for the sorting
-	// and smoothens the movement of clients with unstable connections.
-	if ( ( ( g_aClients[g_lCurrentClient].MoveCMDs.size() == 1 ) && ( g_aClients[g_lCurrentClient].ulLastCommandTic < gametic ) )
-		|| ( sv_useticbuffer == false ) )
-	{
-		// Don't timeout.
-		g_aClients[g_lCurrentClient].ulLastCommandTic = gametic;
-		server_ProcessMoveCommand( g_aClients[g_lCurrentClient].MoveCMDs.top(), g_lCurrentClient );
-		g_aClients[g_lCurrentClient].MoveCMDs.pop();
-	}
-
-	return false;
+		moveCmd.usWeaponNetworkIndex = 0;
 }
 
-static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCmd, const ULONG ulClient )
+bool ClientMoveCommand::process( const ULONG ulClient ) const
 {
 	player_t *pPlayer = &players[ulClient];
 	ticcmd_t *pCmd = &pPlayer->cmd;
-	memcpy( pCmd, &ClientMoveCmd.cmd, sizeof( ticcmd_t ));
+	memcpy( pCmd, &moveCmd, sizeof( ticcmd_t ));
 
-	g_aClients[ulClient].ulClientGameTic = ClientMoveCmd.ulGametic;
+	g_aClients[ulClient].ulClientGameTic = moveCmd.ulGametic;
 
 	// If the client is attacking, he always sends the name of the weapon he's using.
 	if ( pCmd->ucmd.buttons & BT_ATTACK )
@@ -4895,7 +4922,7 @@ static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCm
 		// If the name of the weapon the client is using doesn't match the name of the
 		// weapon we think he's using, do something to rectify the situation.
 		// [BB] Only do this if the client is fully spawned and authenticated.
-		if ( ( SERVER_GetClient( ulClient )->State == CLS_SPAWNED ) && ( ( pPlayer->ReadyWeapon == NULL ) || ( pPlayer->ReadyWeapon->GetClass( )->getActorNetworkIndex() != ClientMoveCmd.usWeaponNetworkIndex ) ) )
+		if ( ( SERVER_GetClient( ulClient )->State == CLS_SPAWNED ) && ( ( pPlayer->ReadyWeapon == NULL ) || ( pPlayer->ReadyWeapon->GetClass( )->getActorNetworkIndex() != moveCmd.usWeaponNetworkIndex ) ) )
 		{
 			// [BB] Directly after a map change this workaround seems to do more harm than good,
 			// (client and server are possibly changing weapons and one of them is slightly ahead)
@@ -4905,7 +4932,7 @@ static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCm
 			if ( ( level.maptime > 3*TICRATE )
 				|| ( ( SERVER_GetClient( ulClient )->State == CLS_SPAWNED ) && ( pPlayer->ReadyWeapon == NULL ) && ( pPlayer->PendingWeapon == WP_NOCHANGE ) ) )
 			{
-				const PClass *pType = NETWORK_GetClassFromIdentification( ClientMoveCmd.usWeaponNetworkIndex );
+				const PClass *pType = NETWORK_GetClassFromIdentification( moveCmd.usWeaponNetworkIndex );
 				if (( pType ) && ( pType->IsDescendantOf( RUNTIME_CLASS( AWeapon ))))
 				{
 					if ( pPlayer->mo )
@@ -4930,7 +4957,7 @@ static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCm
 				}
 				else
 				{
-					if( ClientMoveCmd.usWeaponNetworkIndex == 0 )
+					if( moveCmd.usWeaponNetworkIndex == 0 )
 					{
 						// [BB] For some reason the clients think he as no ready weapon, 
 						// but the server thinks he as one. Although this should not happen,
@@ -4962,8 +4989,8 @@ static bool server_ProcessMoveCommand( const CLIENT_MOVE_COMMAND_s &ClientMoveCm
 			// [BB] Ignore the angle and pitch sent by the client if the client isn't authenticated yet.
 			// In this case the client still sends these values based on the previous map.
 			if ( SERVER_GetClient( ulClient )->State == CLS_SPAWNED ) {
-				pPlayer->mo->angle = ClientMoveCmd.angle;
-				pPlayer->mo->pitch = ClientMoveCmd.pitch;
+				pPlayer->mo->angle = moveCmd.angle;
+				pPlayer->mo->pitch = moveCmd.pitch;
 			}
 
 			// Makes sure the pitch is valid (should we kick them if it's not?)
@@ -5132,18 +5159,36 @@ static bool server_UpdateClientPing( BYTESTREAM_s *pByteStream )
 }
 
 //*****************************************************************************
+class ClientWeaponSelectCommand : public ClientCommand
+{
+	const USHORT usActorNetworkIndex;
+public:
+	ClientWeaponSelectCommand ( BYTESTREAM_s *pByteStream );
+
+	bool process ( const ULONG ulClient ) const;
+};
+
+//*****************************************************************************
 //
 static bool server_WeaponSelect( BYTESTREAM_s *pByteStream )
 {
-	USHORT			usActorNetworkIndex;
+	// [BB] To keep weapon sync when buffering movement commands, the weapon 
+	// select commands also need to be stored in the same buffer the keep
+	// the proper order of the commands.
+	return server_ParseBufferedCommand<ClientWeaponSelectCommand> ( pByteStream );
+}
+
+ClientWeaponSelectCommand::ClientWeaponSelectCommand ( BYTESTREAM_s *pByteStream )
+	// Read in the identification of the weapon the player is selecting.
+	: usActorNetworkIndex ( NETWORK_ReadShort( pByteStream ) ) { }
+
+bool ClientWeaponSelectCommand::process( const ULONG ulClient ) const
+{
 	const PClass	*pType;
 	AInventory		*pInventory;
 
-	// Read in the identification of the weapon the player is selecting.
-	usActorNetworkIndex = NETWORK_ReadShort( pByteStream );
-
 	// If the player doesn't have a body, break out.
-	if ( players[g_lCurrentClient].mo == NULL )
+	if ( players[ulClient].mo == NULL )
 		return ( false );
 
 	// Try to find the class that corresponds to the name of the weapon the client
@@ -5153,39 +5198,39 @@ static bool server_WeaponSelect( BYTESTREAM_s *pByteStream )
 	if (( pType == NULL ) ||
 		( pType->IsDescendantOf( RUNTIME_CLASS( AWeapon )) == false ))
 	{
-		SERVER_KickPlayer( g_lCurrentClient, "Tried to switch to unknown weapon type." );
+		SERVER_KickPlayer( ulClient, "Tried to switch to unknown weapon type." );
 		return ( true );
 	}
 
-	pInventory = players[g_lCurrentClient].mo->FindInventory( pType );
+	pInventory = players[ulClient].mo->FindInventory( pType );
 	if ( pInventory == NULL )
 	{
-//		SERVER_KickPlayer( g_lCurrentClient, "Tried to select unowned weapon." );
+//		SERVER_KickPlayer( ulClient, "Tried to select unowned weapon." );
 //		return ( true );
 		return ( false );
 	}
 
 	// [BB] Morph workaround: If the player is morphed, he can't change his weapon.
-	if ( players[g_lCurrentClient].morphTics )
+	if ( players[ulClient].morphTics )
 		return false;
 
 	// [BB] Since the server is not giving the player a weapon while spawning, P_BringUpWeapon doesn't call A_Raise for
 	// the player's spawn weapon. If the player doesn't have a weapon right now, assume that he just selects his spawn
 	// weapon and call P_BringUpWeapon here.
-	const bool bFirstWeaponSelect = ( players[g_lCurrentClient].PendingWeapon == WP_NOCHANGE ) && ( players[g_lCurrentClient].ReadyWeapon == NULL );
+	const bool bFirstWeaponSelect = ( players[ulClient].PendingWeapon == WP_NOCHANGE ) && ( players[ulClient].ReadyWeapon == NULL );
 
 	// Finally, switch the player's pending weapon.
-	players[g_lCurrentClient].PendingWeapon = static_cast<AWeapon *>( pInventory );
+	players[ulClient].PendingWeapon = static_cast<AWeapon *>( pInventory );
 	// [BB] Keep in mind that the client selected a weapon.
-	players[g_lCurrentClient].bClientSelectedWeapon = true;
-	SERVER_GetClient ( g_lCurrentClient )->bWeaponChangeRequested = false;
+	players[ulClient].bClientSelectedWeapon = true;
+	SERVER_GetClient ( ulClient )->bWeaponChangeRequested = false;
 
 	// [BB] Tell the other clients about the change. This should fix the spectator bug and the railgun pistol sound bug.
-	SERVERCOMMANDS_SetPlayerPendingWeapon( g_lCurrentClient, g_lCurrentClient, SVCF_SKIPTHISCLIENT );
+	SERVERCOMMANDS_SetPlayerPendingWeapon( ulClient, ulClient, SVCF_SKIPTHISCLIENT );
 
 	// [BB] Needs to be done after calling SERVERCOMMANDS_SetPlayerPendingWeapon because P_BringUpWeapon clears PendingWeapon to WP_NOCHANGE.
 	if ( bFirstWeaponSelect )
-		P_BringUpWeapon ( &players[g_lCurrentClient] );
+		P_BringUpWeapon ( &players[ulClient] );
 
 	return ( false );
 }
