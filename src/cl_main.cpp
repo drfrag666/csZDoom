@@ -2903,10 +2903,9 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	CLIENT_SetConnectionState( CTS_DISCONNECTED );
 
 	// Go back to the full console.
+	// [BB] This is what the CCMD endgame is doing and thus should be
+	// enough to handle all non-network related things.
 	gameaction = ga_fullconsole;
-
-	// View is no longer active.
-	viewactive = false;
 
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
@@ -2915,9 +2914,6 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 
 	// Set the network state back to single player.
 	NETWORK_SetState( NETSTATE_SINGLE );
-
-	// [BB] This prevents the status bar from showing up shortly, if you start a new game, while connected to a server.
-	gamestate = GS_FULLCONSOLE;
 
 	// [BB] Reset gravity to its default, discarding the setting the server used.
 	// Although this is not done for any other sv_* CVAR, it is necessary here,
@@ -12485,9 +12481,7 @@ CCMD( disconnect )
 	if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
 		return;
 
-	// [BB] While disconnecting is not an error, I_Error is a convenient way to abort the current game and reset everything.
-	// [Dusk] Use a whitespace to suppress GCC warnings.
-	I_Error ( " " );
+	CLIENT_QuitNetworkGame ( NULL );
 }
 
 //*****************************************************************************
