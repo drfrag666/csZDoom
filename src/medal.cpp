@@ -242,6 +242,10 @@ void MEDAL_Render( void )
 
 	ulPlayer = ULONG( pPlayer - players );
 
+	// [TP] Sanity check
+	if ( PLAYER_IsValidPlayer( ulPlayer ) == false )
+		return;
+
 	// If the player doesn't have a medal to be drawn, don't do anything.
 	if ( g_MedalQueue[ulPlayer][0].ulTick == 0 )
 		return;
