@@ -3471,6 +3471,10 @@ void M_StartSkirmishGame( void )
 	if ( stricmp( szLevelName, "(null)" ) == 0 )
 		return;
 
+	// Tell the server we're leaving the game.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENT_QuitNetworkGame( NULL );
+
 	// Go into single player mode.
 	NETWORK_SetState( NETSTATE_SINGLE );
 
