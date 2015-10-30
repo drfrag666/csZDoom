@@ -995,6 +995,10 @@ void gl_InitializeActorLights()
 
 void gl_SetActorLights(AActor *actor)
 {
+	// [BB] The server never displays dynamic lights.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor);
 
 	All.Clock();
