@@ -177,14 +177,14 @@ CUSTOM_CVAR(Float, con_alpha, 0.75f, CVAR_ARCHIVE)
 CVAR (String, con_ctrl_d, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 // [BC] Allow users to specify a virtual width and height when text scaling is enabled.
-CUSTOM_CVAR( Int, con_virtualwidth, 0, CVAR_ARCHIVE )
+CUSTOM_CVAR( Int, con_virtualwidth, 640, CVAR_ARCHIVE )
 {
 	// [RC] Less than 4 crashes in the menu, less than 8 in game. Set to 32 to be safe.
 	if ( self < 32 )
 		self = 32;
 }
 
-CUSTOM_CVAR( Int, con_virtualheight, 0, CVAR_ARCHIVE )
+CUSTOM_CVAR( Int, con_virtualheight, 480, CVAR_ARCHIVE )
 {
 	// [RC] Less than 4 crashes in the menu, less than 8 in game. Set to 32 to be safe.
 	if ( self < 32 )
