@@ -523,19 +523,10 @@ void CLIENTCOMMANDS_RequestInventoryUse( AInventory *item )
 //
 void CLIENTCOMMANDS_RequestInventoryDrop( AInventory *pItem )
 {
-	if ( sv_limitcommands )
+	if ( sv_limitcommands && ( g_ulLastDropTime > 0 ) && ( (ULONG)gametic < g_ulLastDropTime + TICRATE ))
 	{
-		if ( !(GAMEMODE_GetFlags( GAMEMODE_GetCurrentMode( )) & GMF_COOPERATIVE) )
-		{
-			Printf( "Dropping is not allowed in non-cooperative game modes.\n" );
-			return;
-		}
-
-		if (( g_ulLastDropTime > 0 ) && ( (ULONG)gametic < ( g_ulLastDropTime + ( TICRATE ))))
-		{
-			Printf( "You must wait at least one second before using drop again.\n" );
-			return;
-		}
+		Printf( "You must wait at least one second before using drop again.\n" );
+		return;
 	}
 
 	if ( pItem == NULL )
