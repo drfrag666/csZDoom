@@ -356,7 +356,7 @@ CUSTOM_CVAR( Int, sv_maxpacketsize, 1024, CVAR_ARCHIVE )
 // [TP] Whether to enforce command limits. Set this false to disable
 // flood protection.
 //
-CUSTOM_CVAR( Bool, sv_limitcommands, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+CUSTOM_CVAR( Bool, sv_limitcommands, true, CVAR_ARCHIVE | CVAR_NOSETBYACS | CVAR_SERVERINFO )
 {
 	// [TP] The client also enforces command limits so this cvar must be synced.
 	if ( NETWORK_GetState() == NETSTATE_SERVER )
