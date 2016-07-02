@@ -6006,6 +6006,10 @@ static bool server_CallVote( BYTESTREAM_s *pByteStream )
 	// VERIFICATION
 	//==============
 
+	// [TP] Don't allow clients, who aren't fully in yet, call votes.
+	if ( SERVER_IsValidClient( g_lCurrentClient ) == false )
+		return ( false );
+
 	// [BB] If the client is flooding the server with commands, the client is
 	// kicked and we don't need to handle the command.
 	if ( server_CheckForClientCommandFlood ( g_lCurrentClient ) == true )

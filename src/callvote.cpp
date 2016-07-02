@@ -277,6 +277,10 @@ bool CALLVOTE_VoteYes( ULONG ulPlayer )
 	if ( g_VoteState != VOTESTATE_INVOTE )
 		return ( false );
 
+	// [TP] Don't allow improper clients vote (they could be calling this without having been authenticated)
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( SERVER_IsValidClient( ulPlayer ) == false ))
+		return ( false );
+
 	// [RC] If this is our vote, hide the vote screen soon.
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( static_cast<LONG>(ulPlayer) == consoleplayer ) )
 		g_ulShowVoteScreenTicks = 1 * TICRATE;
@@ -363,6 +367,10 @@ bool CALLVOTE_VoteNo( ULONG ulPlayer )
 
 	// Don't allow the vote unless we're in the middle of a vote.
 	if ( g_VoteState != VOTESTATE_INVOTE )
+		return ( false );
+
+	// [TP] Don't allow improper clients vote (they could be calling this without having been authenticated)
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( SERVER_IsValidClient( ulPlayer ) == false ))
 		return ( false );
 
 	// [RC] If this is our vote, hide the vote screen soon.
