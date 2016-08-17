@@ -2189,10 +2189,19 @@ bool G_CheckSpot (int playernum, FMapThing *mthing)
 	// if (!P_CheckPosition (players[playernum].mo, x, y))
 	//    return false;
 
+	// [EP] Spectator flags must be disabled for the position checking, too.
+	DWORD oldflags2 = players[playernum].mo->flags2;
+	if ( players[playernum].mo->ulSTFlags & STFL_OBSOLETE_SPECTATOR_BODY )
+		players[playernum].mo->flags2 &= ~MF2_THRUACTORS;
+
 	players[playernum].mo->flags |=  MF_SOLID;
 	i = P_CheckPosition(players[playernum].mo, x, y);
 	players[playernum].mo->flags &= ~MF_SOLID;
 	players[playernum].mo->z = oldz;	// [RH] Restore corpse's height
+
+	// [EP] Restore spectator flags.
+	players[playernum].mo->flags2 = oldflags2;
+
 	if (!i)
 		return false;
 

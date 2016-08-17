@@ -21,6 +21,7 @@
 -	- Fixed: Invisible and translucent map things lost their visual effect on map restarts. [Edward-san]
 -	- Fixed: Free spectate mode would crash the game. [Dusk]
 -	- Fixed: The client could change the value of sv_limitcommands for itself, allowing it to skip some sanity checks. [Dusk]
+-	- Fixed: joining spectators could cause spawn telefrags more often than they were intended. [Edward-san]
 !	- Dropping is now allowed in competitive gamemodes, unless sv_nodrop explicitly disallows it. [Dusk]
 -	- Fixed: Online clients trying to run an offline skirmish were not disconnected properly. [Edward-san]
 -	- Fixed the remaining jitter and weapon sync problems caused by the client movement buffer. [Torr Samaho]
