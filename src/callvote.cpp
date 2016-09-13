@@ -667,37 +667,37 @@ static bool callvote_CheckForFlooding( FString &Command, FString &Parameters, UL
 	time( &tNow );
 
 	// Remove old votes that no longer affect flooding.
-	while ( g_PreviousVotes.size( ) > 0 && (( tNow - g_PreviousVotes.front( ).tTimeCalled ) > VOTE_LONGEST_INTERVAL * MINUTE ))
+	while ( g_PreviousVotes.size( ) > 0 && (( tNow - g_PreviousVotes.front( ).tTimeCalled ) > ( sv_votecooldown * 2) * MINUTE ))
 		g_PreviousVotes.pop_front( );
 
 	// [BB] If the server doesn't want to limit the number of votes, there is no check anything.
 	// [TP] sv_limitcommands == false also implies limitless voting.
-	if ( sv_limitnumvotes == false || sv_limitcommands == false )
+	if ( sv_votecooldown == 0 || sv_limitcommands == false )
 		return true;
 
 	// Run through the vote cache (backwards, from recent to old) and search for grounds on which to reject the vote.
 	for( std::list<VOTE_s>::reverse_iterator i = g_PreviousVotes.rbegin(); i != g_PreviousVotes.rend(); ++i )
 	{
 		// One *type* of vote per voter per ## minutes (excluding kick votes if they passed).
-		if ( !( callvote_IsKickVote ( i->ulVoteType ) && i->bPassed ) && NETWORK_CompareAddress( i->Address, Address, true ) && ( ulVoteType == i->ulVoteType ) && (( tNow - i->tTimeCalled ) < VOTER_VOTETYPE_INTERVAL * MINUTE ))
+		if ( !( callvote_IsKickVote ( i->ulVoteType ) && i->bPassed ) && NETWORK_CompareAddress( i->Address, Address, true ) && ( ulVoteType == i->ulVoteType ) && (( tNow - i->tTimeCalled ) < ( sv_votecooldown * 2 ) * MINUTE ))
 		{
-			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + VOTER_VOTETYPE_INTERVAL * MINUTE - tNow ) / MINUTE );
+			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + ( sv_votecooldown * 2 ) * MINUTE - tNow ) / MINUTE );
 			SERVER_PrintfPlayer( PRINT_HIGH, ulPlayer, "You must wait %d minute%s to call another %s vote.\n", iMinutesLeft, ( iMinutesLeft == 1 ? "" : "s" ), Command.GetChars() );
 			return false;
 		}
 
 		// One vote per voter per ## minutes.
-		if ( NETWORK_CompareAddress( i->Address, Address, true ) && (( tNow - i->tTimeCalled ) < VOTER_NEWVOTE_INTERVAL * MINUTE ))
+		if ( NETWORK_CompareAddress( i->Address, Address, true ) && (( tNow - i->tTimeCalled ) < sv_votecooldown * MINUTE ))
 		{
-			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + VOTER_NEWVOTE_INTERVAL * MINUTE - tNow ) / MINUTE );
+			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + sv_votecooldown * MINUTE - tNow ) / MINUTE );
 			SERVER_PrintfPlayer( PRINT_HIGH, ulPlayer, "You must wait %d minute%s to call another vote.\n", iMinutesLeft, ( iMinutesLeft == 1 ? "" : "s" ));
 			return false;
 		}
 
 		// Specific votes ("map map30") that fail can't be re-proposed for ## minutes.
-		if (( ulVoteType == i->ulVoteType ) && ( !i->bPassed ) && (( tNow - i->tTimeCalled ) < VOTE_LITERALREVOTE_INTERVAL * MINUTE ))
+		if (( ulVoteType == i->ulVoteType ) && ( !i->bPassed ) && (( tNow - i->tTimeCalled ) < ( sv_votecooldown * 2 ) * MINUTE ))
 		{
-			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + VOTE_LITERALREVOTE_INTERVAL * MINUTE - tNow ) / MINUTE );
+			int iMinutesLeft = static_cast<int>( 1 + ( i->tTimeCalled + ( sv_votecooldown * 2 ) * MINUTE - tNow ) / MINUTE );
 
 			// Kickvotes (can't give the IP to clients!).
 			if ( callvote_IsKickVote ( i->ulVoteType ) && ( !i->bPassed ) && NETWORK_CompareAddress( i->KickAddress, g_KickVoteVictimAddress, true ))
@@ -897,7 +897,7 @@ CVAR( Bool, sv_notimelimitvote, false, CVAR_ARCHIVE );
 CVAR( Bool, sv_nowinlimitvote, false, CVAR_ARCHIVE );
 CVAR( Bool, sv_noduellimitvote, false, CVAR_ARCHIVE );
 CVAR( Bool, sv_nopointlimitvote, false, CVAR_ARCHIVE );
-CVAR( Bool, sv_limitnumvotes, true, CVAR_ARCHIVE );
+CVAR( Int, sv_votecooldown, 5, CVAR_ARCHIVE );
 CVAR( Bool, cl_showfullscreenvote, false, CVAR_ARCHIVE );
 
 CCMD( callvote )

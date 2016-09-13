@@ -60,12 +60,6 @@
 #define	VOTE_COUNTDOWN_TIME				15
 #define	VOTE_PASSED_TIME				4
 
-// [RC]	Time restraints on revoting. (In minutes)
-#define VOTER_NEWVOTE_INTERVAL			5
-#define VOTER_VOTETYPE_INTERVAL			10
-#define VOTE_LITERALREVOTE_INTERVAL		10
-#define VOTE_LONGEST_INTERVAL			10	// Sets when old votes are removed from the flood cache. Set to the longest interval of the above.
-
 //*****************************************************************************
 enum
 {
@@ -152,6 +146,6 @@ EXTERN_CVAR( Bool, sv_notimelimitvote );
 EXTERN_CVAR( Bool, sv_nowinlimitvote );
 EXTERN_CVAR( Bool, sv_noduellimitvote );
 EXTERN_CVAR( Bool, sv_nopointlimitvote );
-EXTERN_CVAR( Bool, sv_limitnumvotes );
+EXTERN_CVAR( Int, sv_votecooldown );
 EXTERN_CVAR( Bool, cl_showfullscreenvote )
 #endif	// __CALLVOTE_H__

@@ -18,6 +18,7 @@
 -	- Fixed an ACS related server and client crash. [Torr Samaho]
 -	- Fixed: the server could crash if a morph powerup is taken away when the morphed player exhausts the ammo. [Edward-san]
 -	- Fixed: A too long value of sv_hostname could crash the Windows server when it was minimized to the system tray. [Torr Samaho]
+!	- sv_limitnumvotes renamed to sv_votecooldown and changed to integer that determines the time to wait before a player can revote. All vote limits and times are double this value. [Ru5tK1ng]
 -	- Fixed: Changing the CVAR 'fullscreen' crashed the server. [Torr Samaho]
 +	- Added CVAR sv_limitcommands which can be set to false to disable various flooding limits (allow constant suiciding, team changing, disable command flood auto-kick, etc). Should not be set to false in public servers. [Dusk]
 +	- Added a Network Options menu which will contain all new network options. [Water, Torr Samaho]
