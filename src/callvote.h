@@ -147,5 +147,6 @@ EXTERN_CVAR( Bool, sv_nowinlimitvote );
 EXTERN_CVAR( Bool, sv_noduellimitvote );
 EXTERN_CVAR( Bool, sv_nopointlimitvote );
 EXTERN_CVAR( Int, sv_votecooldown );
+EXTERN_CVAR( Int, sv_voteconnectwait );
 EXTERN_CVAR( Bool, cl_showfullscreenvote )
 #endif	// __CALLVOTE_H__

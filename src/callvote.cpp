@@ -675,6 +675,14 @@ static bool callvote_CheckForFlooding( FString &Command, FString &Parameters, UL
 	if ( sv_votecooldown == 0 || sv_limitcommands == false )
 		return true;
 
+	// [RK] Make recently connected clients wait before they can call a vote.
+	if ( static_cast<int>( players[ulPlayer].ulTime ) <= ( sv_voteconnectwait * TICRATE ))
+	{
+		int iSecondsLeft = static_cast<int>( sv_voteconnectwait );
+		SERVER_PrintfPlayer( PRINT_HIGH, ulPlayer, "You must wait %i second%s after connecting to call a vote.\n", iSecondsLeft, ( iSecondsLeft == 1 ? "" : "s" ));
+		return false;
+	}
+
 	// Run through the vote cache (backwards, from recent to old) and search for grounds on which to reject the vote.
 	for( std::list<VOTE_s>::reverse_iterator i = g_PreviousVotes.rbegin(); i != g_PreviousVotes.rend(); ++i )
 	{
@@ -898,6 +906,7 @@ CVAR( Bool, sv_nowinlimitvote, false, CVAR_ARCHIVE );
 CVAR( Bool, sv_noduellimitvote, false, CVAR_ARCHIVE );
 CVAR( Bool, sv_nopointlimitvote, false, CVAR_ARCHIVE );
 CVAR( Int, sv_votecooldown, 5, CVAR_ARCHIVE );
+CVAR( Int, sv_voteconnectwait, 0, CVAR_ARCHIVE );  // [RK] The amount of seconds after client connect to wait before voting
 CVAR( Bool, cl_showfullscreenvote, false, CVAR_ARCHIVE );
 
 CCMD( callvote )
