@@ -287,7 +287,9 @@ void COOP_GiveStoredUVDPickupsToPlayer ( const ULONG ulPlayer )
 //*****************************************************************************
 //	CONSOLE COMMANDS/VARIABLES
 
-CUSTOM_CVAR( Bool, cooperative, true, CVAR_SERVERINFO | CVAR_LATCH | CVAR_CAMPAIGNLOCK )
+// [BB] Since cooperative defaults to true and its default value sets deathmatch
+// and teamgame to false, we have to initialize it last.
+CUSTOM_CVAR( Bool, cooperative, true, CVAR_SERVERINFO | CVAR_LATCH | CVAR_CAMPAIGNLOCK | CVAR_NOINITCALL )
 {
 	UCVarValue	Val;
 

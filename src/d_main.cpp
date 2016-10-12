@@ -98,6 +98,7 @@
 // [BC] New #includes.
 #include "announcer.h"
 #include "chat.h"
+#include "cooperative.h"
 #include "deathmatch.h"
 #include "duel.h"
 #include "scoreboard.h"
@@ -2173,6 +2174,9 @@ void D_DoomMain (void)
 
 	// Base systems have been inited; enable cvar callbacks
 	FBaseCVar::EnableCallbacks ();
+
+	// [BB] Make sure that the callback of cooperative is first called after the ones of deathmatch and teamgame.
+	cooperative.Callback();
 
 	// [RC] Start the G15 LCD module here.
 	G15_Construct ();
