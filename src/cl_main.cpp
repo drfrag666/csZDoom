@@ -12364,7 +12364,9 @@ CCMD( connect )
 	}
 
 	// Potentially disconnect from the current server.
-	CLIENT_QuitNetworkGame( NULL );
+	// [EP] Makes sense only for clients.
+	if ( NETWORK_GetState() == NETSTATE_CLIENT )
+		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
 	NETWORK_SetState( NETSTATE_CLIENT );
