@@ -250,7 +250,8 @@ void JOINQUEUE_PopQueue( LONG lNumSlots )
 		return;
 
 	// [BB] Players are not allowed to join.
-	if ( GAMEMODE_PreventPlayersFromJoining() )
+	// [TP] The client does not decide when players join.
+	if ( GAMEMODE_PreventPlayersFromJoining() || NETWORK_InClientMode() )
 		return;
 
 	// Try to find the next person in line.
