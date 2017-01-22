@@ -802,6 +802,12 @@ AWeapon *APlayerPawn::PickNewWeapon (const PClass *ammotype)
 
 	if (best != NULL)
 	{
+		// [EP] We can't rely on the 'this->player' pointer when doing network stuff,
+		// because 'this' may be the morphed player body and can be destroyed if
+		// the 'Deselect' state in the dropped weapon destroys the morph item, hence
+		// making the player unmorph.
+		int playernum = player - players;
+
 		player->PendingWeapon = best;
 		if (player->ReadyWeapon != NULL)
 		{
@@ -813,7 +819,7 @@ AWeapon *APlayerPawn::PickNewWeapon (const PClass *ammotype)
 		}
 
 		// [BC] In client mode, tell the server which weapon we're using.
-		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( player - players == consoleplayer ))
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( playernum == consoleplayer ))
 		{
 			CLIENTCOMMANDS_WeaponSelect( best->GetClass( ));
 
@@ -824,8 +830,8 @@ AWeapon *APlayerPawn::PickNewWeapon (const PClass *ammotype)
 			}
 		}
 		// [BB] The server needs to tell the clients about bot weapon changes.
-		else if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( player->bIsBot == true ) )
-			SERVERCOMMANDS_SetPlayerPendingWeapon( static_cast<ULONG> ( player - players ) );
+		else if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( players[playernum].bIsBot == true ) )
+			SERVERCOMMANDS_SetPlayerPendingWeapon( static_cast<ULONG> ( playernum ) );
 	}
 	return best;
 }
