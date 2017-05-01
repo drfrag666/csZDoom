@@ -3977,8 +3977,8 @@ void SERVER_ErrorCleanup( void )
 	// [BC] Remove all the bots from this game.
 	BOTS_RemoveAllBots( false );
 
-	// Reload the map.
-	sprintf( szString, "map %s", level.mapname );
+	// Reload the map, [BB] but make sure the current map is valid.
+	sprintf( szString, "map %s", P_CheckMapData ( level.mapname ) ? level.mapname : CalcMapName ( 1, 1 ).GetChars() );
 	AddCommandString( szString );
 }
 
