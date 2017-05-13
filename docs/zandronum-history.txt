@@ -19,6 +19,7 @@
 -	- Fixed: Friendly fire obituaries did not appear online in competitive gamemodes. [Dusk]
 -	- Fixed: Amount of total monsters went out of count upon map resets. [Dusk]
 -	- Fixed: Invisible and translucent map things lost their visual effect on map restarts. [Edward-san]
+!	- Changed the default value of sv_defaultdmflags to false. [Torr Samaho]
 -	- Fixed: Free spectate mode would crash the game. [Dusk]
 -	- Fixed: The client could change the value of sv_limitcommands for itself, allowing it to skip some sanity checks. [Dusk]
 -	- Fixed: joining spectators could cause spawn telefrags more often than they were intended. [Edward-san]
