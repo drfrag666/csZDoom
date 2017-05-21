@@ -536,7 +536,8 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 			NotifyIconData.hIcon = g_hSmallIcon;
 			
 			Val = sv_hostname.GetGenericRep( CVAR_String );
-			sprintf( szString, "%s", Val.String );
+			strncpy( szString, Val.String, 63 );
+			szString[63] = 0;
 			lstrcpy( NotifyIconData.szTip, szString );
 
 			Shell_NotifyIcon( NIM_ADD, &NotifyIconData );
@@ -587,7 +588,8 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 				NotifyIconData.hIcon = g_hSmallIcon;//LoadIcon( g_hInst, MAKEINTRESOURCE( IDI_ICONST ));
 
 				Val = sv_hostname.GetGenericRep( CVAR_String );
-				sprintf( szString, "%s", Val.String );
+				strncpy( szString, Val.String, 63 );
+				szString[63] = 0;
 				lstrcpy( g_NotifyIconData.szTip, szString );
 
 				Shell_NotifyIcon( NIM_DELETE, &NotifyIconData );
