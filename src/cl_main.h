@@ -182,7 +182,6 @@ bool				CLIENT_CanClipMovement( AActor *pActor );
 
 void				CLIENT_PREDICT_Construct( void );
 void				CLIENT_PREDICT_PlayerPredict( void );
-void				CLIENT_PREDICT_SaveCmd( void );
 void				CLIENT_PREDICT_PlayerTeleported( void );
 bool				CLIENT_PREDICT_IsPredicting( void );
 

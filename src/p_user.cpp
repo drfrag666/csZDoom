@@ -2488,7 +2488,7 @@ CUSTOM_CVAR (Float, sv_aircontrol, 0.00390625f, CVAR_SERVERINFO|CVAR_NOSAVE)
 	}
 }
 
-void P_MovePlayer (player_t *player, ticcmd_t *cmd)
+void P_MovePlayer (player_t *player)
 {
 	// [BB] A client doesn't know enough about the other players to make their movement.
 	if ((( NETWORK_GetState( ) == NETSTATE_CLIENT ) || ( CLIENTDEMO_IsPlaying( ))) &&
@@ -2497,6 +2497,7 @@ void P_MovePlayer (player_t *player, ticcmd_t *cmd)
 		return;
 	}
 
+	ticcmd_t *cmd = &player->cmd;
 	APlayerPawn *mo = player->mo;
 
 	// [RH] 180-degree turn overrides all other yaws
@@ -3044,7 +3045,7 @@ void P_CrouchMove(player_t * player, int direction)
 
 CVAR( Bool, cl_disallowfullpitch, false, CVAR_ARCHIVE )
 
-void P_PlayerThink (player_t *player, ticcmd_t *pCmd)
+void P_PlayerThink (player_t *player)
 {
 	ticcmd_t *cmd;
 
@@ -3198,7 +3199,7 @@ void P_PlayerThink (player_t *player, ticcmd_t *pCmd)
 		if ( player->mo->reactiontime )
 			player->mo->reactiontime--;
 		else
-			P_MovePlayer( player, &player->cmd );
+			P_MovePlayer( player );
 
 		// [RH] check for jump
 		// [Dusk] Apply cl_spectatormove
@@ -3250,12 +3251,7 @@ void P_PlayerThink (player_t *player, ticcmd_t *pCmd)
 	{
 		player->mo->flags &= ~MF_NOCLIP;
 	}
-
-	// If we're predicting, use the ticcmd we pass in.
-	if ( CLIENT_PREDICT_IsPredicting( ))
-		cmd = pCmd;
-	else
-		cmd = &player->cmd;
+	cmd = &player->cmd;
 
 	// Make unmodified copies for ACS's GetPlayerInput.
 	player->original_oldbuttons = player->original_cmd.buttons;
@@ -3444,7 +3440,7 @@ void P_PlayerThink (player_t *player, ticcmd_t *pCmd)
 	}
 	else
 	{
-		P_MovePlayer (player, cmd);
+		P_MovePlayer (player);
 
 		if (cmd->ucmd.upmove == -32768)
 		{ // Only land if in the air

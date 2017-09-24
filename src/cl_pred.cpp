@@ -64,7 +64,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 
-void P_MovePlayer (player_t *player, ticcmd_t *cmd);
+void P_MovePlayer (player_t *player);
 void P_CalcHeight (player_t *player);
 void P_DeathThink (player_t *player);
 bool	P_AdjustFloorCeil (AActor *thing);
@@ -257,13 +257,6 @@ void CLIENT_PREDICT_PlayerPredict( void )
 
 //*****************************************************************************
 //
-void CLIENT_PREDICT_SaveCmd( void )
-{
-	memcpy( &g_SavedTiccmd[gametic % CLIENT_PREDICTION_TICS], &players[consoleplayer].cmd, sizeof( ticcmd_t ));
-}
-
-//*****************************************************************************
-//
 void CLIENT_PREDICT_PlayerTeleported( void )
 {
 	ULONG	ulIdx;
@@ -376,9 +369,10 @@ static void client_predict_DoPrediction( player_t *pPlayer, ULONG ulTicks )
 		pPlayer->turnticks = g_lSavedTurnTicks[lTick % CLIENT_PREDICTION_TICS];
 		pPlayer->mo->reactiontime = g_lSavedReactionTime[lTick % CLIENT_PREDICTION_TICS];
 		pPlayer->mo->waterlevel = g_lSavedWaterLevel[lTick % CLIENT_PREDICTION_TICS];
+		memcpy( &pPlayer->cmd, &g_SavedTiccmd[lTick % CLIENT_PREDICTION_TICS], sizeof( ticcmd_t ));
 
 		// Tick the player.
-		P_PlayerThink( pPlayer, &g_SavedTiccmd[lTick % CLIENT_PREDICTION_TICS] );
+		P_PlayerThink( pPlayer );
 		pPlayer->mo->Tick( );
 
 		// [BB] The effect of all DPushers needs to be manually predicted.
@@ -407,4 +401,5 @@ static void client_predict_EndPrediction( player_t *pPlayer )
 	pPlayer->turnticks = g_lSavedTurnTicks[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	pPlayer->mo->reactiontime = g_lSavedReactionTime[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	pPlayer->mo->waterlevel = g_lSavedWaterLevel[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	memcpy( &pPlayer->cmd, &g_SavedTiccmd[g_ulGameTick % CLIENT_PREDICTION_TICS], sizeof( ticcmd_t ));
 }
