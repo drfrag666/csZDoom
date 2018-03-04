@@ -484,6 +484,10 @@ static void ClearInventory (AActor *activator)
 	// [BB]
 	bool bSuccess = true;
 
+	// [BB] Added sanity check.
+	if ( actor == NULL )
+		return false;
+
 	AWeapon *savedPendingWeap = actor->player != NULL
 		? actor->player->PendingWeapon : NULL;
 	bool hadweap = actor->player != NULL ? actor->player->ReadyWeapon != NULL : true;

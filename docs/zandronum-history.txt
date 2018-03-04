@@ -15,6 +15,7 @@
 1.4
 ---
 
+-	- Fixed an ACS related server and client crash. [Torr Samaho]
 -	- Fixed: the server could crash if a morph powerup is taken away when the morphed player exhausts the ammo. [Edward-san]
 -	- Fixed: A too long value of sv_hostname could crash the Windows server when it was minimized to the system tray. [Torr Samaho]
 -	- Fixed: Changing the CVAR 'fullscreen' crashed the server. [Torr Samaho]
