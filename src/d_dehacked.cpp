@@ -2111,7 +2111,7 @@ void DoDehPatch (const char *patchfile, bool autoloading, int lump)
 	cont = 0;
 	if (0 == strncmp (PatchFile, "Patch File for DeHackEd v", 25))
 	{
-		if (PatchFile[25] < '3' && PatchFile[25] != '2' && PatchFile[27] != '3')
+		if (PatchFile[25] < '3' && (PatchFile[25] < '2' || PatchFile[27] < '3'))
 		{
 			if (PatchName != NULL) delete[] PatchName;
 			delete[] PatchFile;
