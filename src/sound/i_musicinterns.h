@@ -533,4 +533,5 @@ MusInfo *MOD_OpenSong(FILE *file, char *musiccache, int len);
 extern MusInfo *currSong;
 extern int		nomusic;
 
+EXTERN_CVAR (Float, snd_mastervolume)
 EXTERN_CVAR (Float, snd_musicvolume)

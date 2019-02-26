@@ -1675,8 +1675,11 @@ static valueenum_t Resamplers[] =
 
 static menuitem_t SoundItems[] =
 {
+	{ slider,	"Master volume",		{&snd_mastervolume},	{0.0}, {1.0},	{0.05}, {NULL} },
+	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ slider,	"Sounds volume",		{&snd_sfxvolume},		{0.0}, {1.0},	{0.05}, {NULL} },
 	{ slider,	"Music volume",			{&snd_musicvolume},		{0.0}, {1.0},	{0.05}, {NULL} },
+	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ discrete, "MIDI device",			{&snd_mididevice},		{0.0}, {0.0},	{0.0}, {NULL} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ discrete, "Underwater reverb",	{&snd_waterreverb},		{2.0}, {0.0},	{0.0}, {OnOff} },
@@ -1705,7 +1708,7 @@ static menu_t SoundMenu =
 	SoundItems,
 };
 
-#define MIDI_DEVICE_ITEM 2
+#define MIDI_DEVICE_ITEM 5 // [Doc] Edited due to the addition of the master volume
 
 /*=======================================
  *
