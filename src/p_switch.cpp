@@ -540,15 +540,15 @@ bool P_ChangeSwitchTexture (side_t *side, int useAgain, BYTE special, bool *ques
 		texture = side_t::top;
 		ulShift = 0;
 	}
-	else if ((i = TryFindSwitch (side, side_t::bottom)) != -1)
-	{
-		texture = side_t::bottom;
-		ulShift = 2;
-	}
 	else if ((i = TryFindSwitch (side, side_t::mid)) != -1)
 	{
 		texture = side_t::mid;
 		ulShift = 1;
+	}
+	else if ((i = TryFindSwitch (side, side_t::bottom)) != -1)
+	{
+		texture = side_t::bottom;
+		ulShift = 2;
 	}
 	else
 	{
