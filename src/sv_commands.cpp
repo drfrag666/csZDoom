@@ -7554,7 +7554,7 @@ void SERVERCOMMANDS_SRPUserProcessChallenge ( const ULONG ulClient )
 	command.addByte ( pClient->salt.Size() );
 	for ( unsigned int i = 0; i < pClient->salt.Size(); ++i )
 		command.addByte ( pClient->salt[i] );
-	command.addShort ( pClient->bytesB.Size() );
+	command.addLong ( pClient->bytesB.Size() );
 	for ( unsigned int i = 0; i < pClient->bytesB.Size(); ++i )
 		command.addByte ( pClient->bytesB[i] );
 	command.sendCommandToClients ( ulClient, SVCF_ONLYTHISCLIENT );
@@ -7569,7 +7569,7 @@ void SERVERCOMMANDS_SRPUserVerifySession ( const ULONG ulClient )
 	CLIENT_s *pClient = SERVER_GetClient ( ulClient );
 	NetCommand command ( SVC_EXTENDEDCOMMAND );
 	command.addByte ( SVC2_SRP_USER_VERIFY_SESSION );
-	command.addShort ( pClient->bytesHAMK.Size() );
+	command.addLong ( pClient->bytesHAMK.Size() );
 	for ( unsigned int i = 0; i < pClient->bytesHAMK.Size(); ++i )
 		command.addByte ( pClient->bytesHAMK[i] );
 	command.sendCommandToClients ( ulClient, SVCF_ONLYTHISCLIENT );
