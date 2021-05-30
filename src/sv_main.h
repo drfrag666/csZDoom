@@ -305,7 +305,6 @@ typedef struct
 
 	// [BB] Variables for the account system
 	FString username;
-	unsigned int clientSessionID;
 	int SRPsessionID;
 	bool loggedIn;
 	TArray<unsigned char> bytesA;
