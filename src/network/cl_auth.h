@@ -51,8 +51,7 @@
 //*****************************************************************************
 enum
 {
-	CLC_SRP_USER_REQUEST_LOGIN = NUM_CLIENT_COMMANDS,
-	CLC_SRP_USER_START_AUTHENTICATION,
+	CLC_SRP_USER_START_AUTHENTICATION = NUM_CLIENT_COMMANDS,
 	CLC_SRP_USER_PROCESS_CHALLENGE,
 };
 
