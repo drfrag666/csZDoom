@@ -303,15 +303,6 @@ typedef struct
 	// [BB] Buffer storing all movement commands received from the client we haven't executed yet.
 	TArray<CLIENT_MOVE_COMMAND_s>	MoveCMDs;
 
-	// [BB] Variables for the account system
-	FString username;
-	int SRPsessionID;
-	bool loggedIn;
-	TArray<unsigned char> bytesA;
-	TArray<unsigned char> bytesB;
-	TArray<unsigned char> bytesM;
-	TArray<unsigned char> bytesHAMK;
-	TArray<unsigned char> salt;
 } CLIENT_s;
 
 //*****************************************************************************
@@ -487,7 +478,6 @@ EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_disallowbots );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
-EXTERN_CVAR( Bool, sv_forcelogintojoin )
 
 // From sv_master.cpp
 EXTERN_CVAR( Bool, sv_updatemaster );
