@@ -613,7 +613,7 @@ FString FGameConfigFile::GetConfigPath (bool tryProg)
 	if (path.IsEmpty())
 	{
 		if (Args->CheckParm ("-cdrom"))
-			return CDROM_DIR "\\"GAMENAMELOWERCASE".ini";
+			return CDROM_DIR "\\" GAMENAMELOWERCASE ".ini";
 
 		path = progdir;
 		path += GAMENAMELOWERCASE".ini";

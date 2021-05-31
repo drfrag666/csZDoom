@@ -21,7 +21,7 @@ void ReturnToMainMenu();
 
 CUSTOM_CVAR(Bool, gl_nogl, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
-	Printf("This won't take effect until "GAMENAME" is restarted.\n");
+	Printf("This won't take effect until " GAMENAME " is restarted.\n");
 }
 
 CVAR(Bool, gl_vid_compatibility, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
@@ -243,7 +243,7 @@ menuitem_t GLShaderItems[] = {
 
 menuitem_t OpenGLDisabled[] = {
 	{ redtext,	"This won't take effect",			{NULL},	{0.0}, {0.0}, {0.0}, {NULL} },
-	{ redtext,	"until "GAMENAME" is restarted.",		{NULL},	{0.0}, {0.0}, {0.0}, {NULL} },
+	{ redtext,	"until " GAMENAME " is restarted.",		{NULL},	{0.0}, {0.0}, {0.0}, {NULL} },
 	{ more,     "",									{NULL}, {0.0}, {0.0},	{0.0}, {(value_t *)ReturnToMainMenu} },
 };
 

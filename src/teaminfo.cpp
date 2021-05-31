@@ -169,7 +169,7 @@ void TEAMINFO_ParseTeam (FScanner &sc)
 		case 2:
 			sc.MustGetString( );
 			// [CW] 'Logo' isn't supported by Skulltag.
-			Printf( "WARNING: 'Logo' is not a supported TEAMINFO option in "GAMENAME".\n" );
+			Printf( "WARNING: 'Logo' is not a supported TEAMINFO option in " GAMENAME ".\n" );
 			break;
 
 		case 3:

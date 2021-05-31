@@ -203,7 +203,7 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 			SendMessage( GetDlgItem( hDlg, IDC_MAPMODE ), WM_SETFONT, (WPARAM) CreateFont( 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Tahoma" ), (LPARAM) 1 );
 
 			// Initialize the server console text.
-			SetDlgItemText( hDlg, IDC_CONSOLEBOX, "=== "GAMENAME " server ===" );
+			SetDlgItemText( hDlg, IDC_CONSOLEBOX, "=== " GAMENAME " server ===" );
 			Printf( "\nRunning version: %s\n", DOTVERSIONSTR_REV );
 
 			// Append the time.
@@ -219,9 +219,9 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 
 			// Initialize the title string.
 			if ( BUILD_ID == BUILD_RELEASE )
-				SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)4, (LPARAM) "v"DOTVERSIONSTR_NOREV );
+				SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)4, (LPARAM) "v" DOTVERSIONSTR_NOREV );
 			else
-				SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)4, (LPARAM) "v"DOTVERSIONSTR_NOREV" (r"SVN_REVISION_STRING")" );
+				SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)4, (LPARAM) "v" DOTVERSIONSTR_NOREV " (r" SVN_REVISION_STRING ")" );
 			SetDlgItemText( hDlg, IDC_MAPMODE, "Please wait..." );
 
 			// Set the text limits for the console and input boxes.

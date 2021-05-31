@@ -99,7 +99,7 @@ CUSTOM_CVAR (Int, vid_renderer, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINI
 			break;
 		}
 		//changerenderer = true;
-		Printf("You must restart "GAMENAME" to switch the renderer\n");
+		Printf("You must restart " GAMENAME " to switch the renderer\n");
 	}
 }
 
