@@ -121,7 +121,6 @@
 #include "gamemode.h"
 #include "sectinfo.h"
 #include "md5.h"
-#include "za_database.h"
 
 #include "st_start.h"
 #include "templates.h"
@@ -2496,9 +2495,6 @@ void D_DoomMain (void)
 		CLIENT_PREDICT_Construct( );
 		CLIENTSTATISTICS_Construct( );
 	}
-
-	// [BB]
-	DATABASE_Construct( );
 
 	// [BC] Initialize the browser module.
 	BROWSER_Construct( );

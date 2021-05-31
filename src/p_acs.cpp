@@ -82,7 +82,6 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "network/nettraffic.h"
-#include "za_database.h"
 #include "cl_commands.h"
 
 #include "g_shared/a_pickups.h"
@@ -179,16 +178,6 @@ TArray<FString>
 
 #define STRINGBUILDER_START(Builder) if (*Builder.GetChars() || ACS_StringBuilderStack.Size()) { ACS_StringBuilderStack.Push(Builder); Builder = ""; }
 #define STRINGBUILDER_FINISH(Builder) if (!ACS_StringBuilderStack.Pop(Builder)) Builder = "";
-
-// [BB] Extracted from PCD_SAVESTRING.
-int ACS_PushAndReturnDynamicString ( const FString &Work )
-{
-	unsigned int str_otf = ACS_StringsOnTheFly.Push(strbin1(Work));
-	if (str_otf > 0xffff)
-		return (-1);
-	else
-		return ((SDWORD)str_otf|ACSSTRING_OR_ONTHEFLY);
-}
 
 //============================================================================
 //
@@ -3492,14 +3481,7 @@ enum EACSFunctions
 	ACSF_SetPlayerLivesLeft,
 	ACSF_KickFromGame,
 	ACSF_GetGamemodeState,
-	ACSF_SetDBEntry,
-	ACSF_GetDBEntry,
-	ACSF_SetDBEntryString,
-	ACSF_GetDBEntryString,
-	ACSF_IncrementDBEntry,
 	ACSF_RequestScriptPuke,
-	ACSF_BeginDBTransaction,
-	ACSF_EndDBTransaction,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,
@@ -3808,49 +3790,8 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args)
 				return GAMEMODE_GetState();
 			}
 
-		// [BB]
-		case ACSF_SetDBEntry:
-			{
-				DATABASE_SaveSetEntryInt ( FBehavior::StaticLookupString(args[0]), FBehavior::StaticLookupString(args[1]), args[2] );
-				return 1;
-			}
-
-		// [BB]
-		case ACSF_GetDBEntry:
-			{
-				return DATABASE_SaveGetEntry ( FBehavior::StaticLookupString(args[0]), FBehavior::StaticLookupString(args[1]) ).ToLong();
-			}
-
-		// [BB]
-		case ACSF_SetDBEntryString:
-			{
-				DATABASE_SaveSetEntry ( FBehavior::StaticLookupString(args[0]), FBehavior::StaticLookupString(args[1]), FBehavior::StaticLookupString(args[2]) );
-				return 1;
-			}
-
-		// [BB]
-		case ACSF_GetDBEntryString:
-			{
-				return ACS_PushAndReturnDynamicString ( DATABASE_SaveGetEntry ( FBehavior::StaticLookupString(args[0]), FBehavior::StaticLookupString(args[1]) ) );
-			}
-
-		// [BB]
-		case ACSF_IncrementDBEntry:
-			{
-				DATABASE_SaveIncrementEntryInt ( FBehavior::StaticLookupString(args[0]), FBehavior::StaticLookupString(args[1]), args[2] );
-				return 1;
-			}
-
 		case ACSF_RequestScriptPuke:
 			return RequestScriptPuke( activeBehavior, activator, args );
-
-		case ACSF_BeginDBTransaction:
-			DATABASE_BeginTransaction();
-			break;
-
-		case ACSF_EndDBTransaction:
-			DATABASE_EndTransaction();
-			break;
 
 		default:
 			break;
