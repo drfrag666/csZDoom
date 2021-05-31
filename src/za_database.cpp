@@ -154,18 +154,6 @@ public:
 	{
 		return sqlite3_column_int ( _stmt, ColumnIndex );
 	}
-
-	void iterateAndGetReturnedEntries ( TArray<std::pair<FString, FString> > &Entries )
-	{
-		while ( step( ) )
-		{
-			std::pair<FString, FString> value;
-			value.first.Format ( "%s", getText(1) );
-			value.second.Format ( "%s", getText(2) );
-			Entries.Push ( value );
-		}
-		finalize();
-	}
 };
 
 //*****************************************************************************
@@ -534,23 +522,15 @@ int DATABASE_GetSortedEntries ( const char *Namespace, const int N, const int Of
 	cmd.bindString ( 1, Namespace );
 	cmd.bindInt ( 2, N );
 	cmd.bindInt ( 3, Offset );
-	cmd.iterateAndGetReturnedEntries ( Entries );
-	return Entries.Size();
-}
-
-//*****************************************************************************
-//
-int DATABASE_GetEntries ( const char *Namespace, TArray<std::pair<FString, FString> > &Entries )
-{
-	if ( DATABASE_IsAvailable ( "DATABASE_GetEntries" ) == false )
+	while ( cmd.step( ) )
 	{
-		Entries.Clear();
-		return 0;
+		std::pair<FString, FString> value;
+		value.first.Format ( "%s", cmd.getText(1) );
+		value.second.Format ( "%s", cmd.getText(2) );
+		Entries.Push ( value );
 	}
+	cmd.finalize();
 
-	DataBaseCommand cmd ( "SELECT * from "TABLENAME" WHERE Namespace=?1" );
-	cmd.bindString ( 1, Namespace );
-	cmd.iterateAndGetReturnedEntries ( Entries );
 	return Entries.Size();
 }
 

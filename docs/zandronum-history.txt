@@ -90,7 +90,6 @@
         int GetDBEntryRank ( string Namespace, string Key, bool Descending )
         void BeginDBTransaction ( )
         void EndDBTransaction ( )
-        int GetDBEntries ( string Namespace )
       allow mods to access the underlying database. [Torr Samaho]
 +	- Added new dmflag sv_sharekeys. When enabled, any keys picked are shared between players. Also, players joining the game get the keys others have as well. [Dusk]
 +	- The ACS commands TakeInventory, SetActorProperty (only for speed and gravity) and SetAmmoCapacity don't cause network traffic unless they actually make a change to the affected actor. [Torr Samaho]
