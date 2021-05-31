@@ -47,7 +47,6 @@
 
 #include "c_cvars.h"
 #include "c_dispatch.h"
-#include <utility>
 
 //*****************************************************************************
 //	PROTOTYPES
@@ -56,7 +55,6 @@ void	DATABASE_Construct ( void );
 void	DATABASE_Destruct ( void );
 void	DATABASE_Init ( void );
 bool	DATABASE_IsAvailable ( const char *CallingFunction = NULL );
-void	DATABASE_SetMaxPageCount ( const unsigned int MaxPageCount );
 void	DATABASE_BeginTransaction ( void );
 void	DATABASE_EndTransaction ( void );
 void	DATABASE_CreateTable ( );
@@ -73,5 +71,3 @@ void	DATABASE_SaveSetEntry ( const char *Namespace, const char *EntryName, const
 void	DATABASE_SaveSetEntryInt ( const char *Namespace, const char *EntryName, int EntryValue );
 FString	DATABASE_SaveGetEntry ( const char *Namespace, const char *EntryName );
 void	DATABASE_SaveIncrementEntryInt ( const char *Namespace, const char *EntryName, int Increment );
-int		DATABASE_GetEntryRank ( const char *Namespace, const char *EntryName, const bool Descending );
-int		DATABASE_GetSortedEntries ( const char *Namespace, const int N, const int Offset, const bool Descending, TArray<std::pair<FString, FString> > &Entries );
