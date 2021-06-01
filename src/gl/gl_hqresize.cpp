@@ -40,7 +40,7 @@
 #include "c_cvars.h"
 // [BB] hqnx scaling is only supported with the MS compiler.
 #ifdef _MSC_VER
-#include "../hqnx/hqnx.h"
+#include "./hqnx/hqnx.h"
 #endif
 
 CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)

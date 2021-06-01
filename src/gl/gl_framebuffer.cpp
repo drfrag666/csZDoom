@@ -57,7 +57,7 @@
 #include "vectors.h"
 // [BB] Added include.
 #ifdef _MSC_VER
-#include "../hqnx/hqnx.h"
+#include "./hqnx/hqnx.h"
 #endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)

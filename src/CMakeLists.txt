@@ -621,13 +621,6 @@ if( NOT NO_GL )
 		gl/gl_glow.cpp
 		gl/gl_hirestex.cpp
 		gl/gl_hqresize.cpp
-# [BB] Maxim Stepin's hq2x/3x/4x pixel upsampling algorithm as library. Currently only used with VC++.
-if( MSVC )
-		gl/hqnx/Image.cpp
-		gl/hqnx/hq2x.cpp 
-		gl/hqnx/hq3x.cpp
-		gl/hqnx/hq4x.cpp
-endif( MSVC )
 		gl/gl_light.cpp
 		gl/gl_menu.cpp
 		gl/gl_missingtexture.cpp
@@ -652,6 +645,14 @@ endif( MSVC )
 		gl/gl_wipe.cpp
 		gl/r_render/r_opengl.cpp
 	)
+# [BB] Maxim Stepin's hq2x/3x/4x pixel upsampling algorithm as library. Currently only used with VC++.
+if( MSVC )
+	set( GL_SOURCES ${GL_SOURCES}
+		gl/hqnx/Image.cpp
+		gl/hqnx/hq2x.cpp
+		gl/hqnx/hq3x.cpp
+		gl/hqnx/hq4x.cpp )
+endif( MSVC )
 else( NOT NO_GL )
 	set( GL_SOURCES sdl/glstubs.cpp )
 endif( NOT NO_GL )
