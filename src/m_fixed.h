@@ -14,8 +14,8 @@
 
 #if defined(__GNUC__) && defined(__i386__)
 #include "gccinlines.h"
-#elif defined(_MSC_VER) && defined(_M_IX86)
-#include "mscinlines.h"
+#elif defined(_MSC_VER) && defined(_M_IX86) && (_MSC_VER <= 1800)
+#include "mscinlines.h" // modern VS misoptimizes this
 #else
 #include "basicinlines.h"
 #endif
