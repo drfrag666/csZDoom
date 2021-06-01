@@ -5444,7 +5444,7 @@ void DLL InitLUTs()
     RGBtoYUV[ 65536 + (i << 11) + (j << 5) + k ] = (Y<<16) + (u<<8) + v;
   }
 }
-
+/*
 int DLL hq4x_32 ( CImage &ImageIn, CImage &ImageOut )
 {
   if ( ImageIn.Convert32To17() != 0 )
@@ -5465,3 +5465,4 @@ int DLL hq4x_32 ( CImage &ImageIn, CImage &ImageOut )
   printf( "\nOK\n" );
   return 0;
 }
+*/
