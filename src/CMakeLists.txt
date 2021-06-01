@@ -413,6 +413,10 @@ if( MSVC )
 	set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:\"fmodex${X64}.dll\"" )
 endif( MSVC )
 
+if ( MSVC AND NOT NO_ASM )
+	set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO" )
+endif()
+
 # Check for functions that may or may not exist.
 
 CHECK_FUNCTION_EXISTS( filelength FILELENGTH_EXISTS )
@@ -1088,4 +1092,3 @@ if( MSVC )
 		COMMENT "Adding manifest..."
 	)
 endif( MSVC )
-
