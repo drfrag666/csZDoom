@@ -179,6 +179,16 @@ TArray<FString>
 #define STRINGBUILDER_START(Builder) if (*Builder.GetChars() || ACS_StringBuilderStack.Size()) { ACS_StringBuilderStack.Push(Builder); Builder = ""; }
 #define STRINGBUILDER_FINISH(Builder) if (!ACS_StringBuilderStack.Pop(Builder)) Builder = "";
 
+// [BB] Extracted from PCD_SAVESTRING.
+int ACS_PushAndReturnDynamicString ( const FString &Work )
+{
+	unsigned int str_otf = ACS_StringsOnTheFly.Push(strbin1(Work));
+	if (str_otf > 0xffff)
+		return (-1);
+	else
+		return ((SDWORD)str_otf|ACSSTRING_OR_ONTHEFLY);
+}
+
 //============================================================================
 //
 //
