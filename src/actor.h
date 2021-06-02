@@ -918,6 +918,7 @@ public:
 	SDWORD Mass;
 	SWORD PainChance;
 	FNameNoInit DamageType;
+	fixed_t DamageFactor;
 
 	FState *SpawnState;
 	FState *SeeState;

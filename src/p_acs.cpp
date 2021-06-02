@@ -2885,6 +2885,7 @@ enum
 	APROP_Dropped		= 18,
 	APROP_Notarget		= 19,
 	APROP_Species		= 20,
+	APROP_DamageFactor	= 24,
 };	
 */
 
@@ -3112,6 +3113,14 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 	case APROP_Species:
 		actor->Species = FBehavior::StaticLookupString(value);
 		break;
+
+	case APROP_DamageFactor:
+		actor->DamageFactor = value;
+		break;
+
+	default:
+		// do nothing.
+		break;
 	}
 }
 
@@ -3141,6 +3150,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_Health:		return actor->health;
 	case APROP_Speed:		return actor->Speed;
 	case APROP_Damage:		return actor->Damage;	// Should this call GetMissileDamage() instead?
+	case APROP_DamageFactor:return actor->DamageFactor;
 	case APROP_Alpha:		return actor->alpha;
 	case APROP_RenderStyle:	for (int style = STYLE_None; style < STYLE_Count; ++style)
 							{ // Check for a legacy render style that matches.
@@ -3199,6 +3209,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_Health:
 		case APROP_Speed:
 		case APROP_Damage:
+		case APROP_DamageFactor:
 		case APROP_Alpha:
 		case APROP_RenderStyle:
 		case APROP_Gravity:

@@ -337,11 +337,12 @@ void AActor::Serialize (FArchive &arc)
 		<< ulNetworkFlags
 		<< ulInvasionWave
 		<< pMonsterSpot
-		<< pPickupSpot;
+		<< pPickupSpot
+		<< Species;
 
-	if (SaveVersion >= 1573)
+	if (SaveVersion >= 1689)
 	{
-		arc << Species;
+		arc << DamageFactor;
 	}
 
 	if (arc.IsStoring ())

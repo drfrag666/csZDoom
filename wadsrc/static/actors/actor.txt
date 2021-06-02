@@ -17,6 +17,7 @@ ACTOR Actor native //: Thinker
 	BounceCount -1
 	FloatSpeed 4
 	Gravity 1
+	DamageFactor 1.0
 	DesignatedTeam 255
 
 	// Variables for the expression evaluator
