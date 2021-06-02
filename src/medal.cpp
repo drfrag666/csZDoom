@@ -270,7 +270,7 @@ void MEDAL_Render( void )
 		// If that length is greater then the screen width, display the medals as "<icon> <name> X <num>"
 		if ( ulLength >= 320 )
 		{
-			ulCurXPos = 160;
+			ulCurXPos = SCREENWIDTH / 2;
 
 			if ( g_Medals[ulMedal].ulTextColor == CR_RED )
 				sprintf( szString, TEXTCOLOR_RED "%s " TEXTCOLOR_WHITE "X %d", g_Medals[ulMedal].szStr, static_cast<unsigned int> (ulNumMedals) );
@@ -280,41 +280,41 @@ void MEDAL_Render( void )
 				sprintf( szString, TEXTCOLOR_WHITE "%s " TEXTCOLOR_RED "X %d", g_Medals[ulMedal].szStr, static_cast<unsigned int> (ulNumMedals) );
 
 			if ( ulTick > ( 1 * TICRATE ))
-				screen->DrawTexture( TexMan[szPatchName], ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), DTA_Clean, true, TAG_DONE );
+				screen->DrawTexture( TexMan[szPatchName], ulCurXPos, ulCurYPos, DTA_CleanNoMove, true, TAG_DONE );
 			else
-				screen->DrawTexture( TexMan[szPatchName], ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), DTA_Clean, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
+				screen->DrawTexture( TexMan[szPatchName], ulCurXPos, ulCurYPos, DTA_CleanNoMove, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
 
-			ulCurXPos = 160 - ( SmallFont->StringWidth( szString ) / 2 );
+			ulCurXPos = SCREENWIDTH / 2 - CleanXfac * ( SmallFont->StringWidth( szString ) / 2 );
 
 			if ( ulTick > ( 1 * TICRATE ))
-				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), szString, DTA_Clean, true, TAG_DONE );
+				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, ulCurYPos, szString, DTA_CleanNoMove, true, TAG_DONE );
 			else
-				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), szString, DTA_Clean, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
+				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, ulCurYPos, szString, DTA_CleanNoMove, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
 		}
 		// Display the medal icon <usNumMedals> times centered on the screen.
 		else
 		{
 			ULONG	ulIdx;
 
-			ulCurXPos = 160 - ( ulLength / 2 );
+			ulCurXPos = SCREENWIDTH / 2 - ( CleanXfac * ulLength ) / 2;
 			sprintf( szString, "%s", g_Medals[ulMedal].szStr );
 
 			for ( ulIdx = 0; ulIdx < ulNumMedals; ulIdx++ )
 			{
 				if ( ulTick > ( 1 * TICRATE ))
-					screen->DrawTexture( TexMan[szPatchName], ulCurXPos + ( TexMan[szPatchName]->GetWidth( ) / 2 ), (LONG)( ulCurYPos / CleanYfac ), DTA_Clean, true, TAG_DONE );
+					screen->DrawTexture( TexMan[szPatchName], ulCurXPos + CleanXfac * ( TexMan[szPatchName]->GetWidth( ) / 2 ), ulCurYPos, DTA_CleanNoMove, true, TAG_DONE );
 				else
-					screen->DrawTexture( TexMan[szPatchName], ulCurXPos + ( TexMan[szPatchName]->GetWidth( ) / 2 ), (LONG)( ulCurYPos / CleanYfac ), DTA_Clean, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
+					screen->DrawTexture( TexMan[szPatchName], ulCurXPos + CleanXfac * ( TexMan[szPatchName]->GetWidth( ) / 2 ), ulCurYPos, DTA_CleanNoMove, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
 
-				ulCurXPos += TexMan[szPatchName]->GetWidth( );
+				ulCurXPos += CleanXfac * TexMan[szPatchName]->GetWidth( );
 			}
 				
-			ulCurXPos = 160 - ( SmallFont->StringWidth( szString ) / 2 );
+			ulCurXPos = SCREENWIDTH / 2 - CleanXfac * ( SmallFont->StringWidth( szString ) / 2 );
 
 			if ( ulTick >  ( 1 * TICRATE ))
-				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), szString, DTA_Clean, true, TAG_DONE );
+				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, ulCurYPos, szString, DTA_CleanNoMove, true, TAG_DONE );
 			else
-				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, (LONG)( ulCurYPos / CleanYfac ), szString, DTA_Clean, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
+				screen->DrawText( SmallFont, g_Medals[ulMedal].ulTextColor, ulCurXPos, ulCurYPos, szString, DTA_CleanNoMove, true, DTA_Alpha, (LONG)( OPAQUE * (float)( (float)ulTick / (float)TICRATE )), TAG_DONE );
 		}
 	}
 }

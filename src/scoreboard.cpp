@@ -2217,7 +2217,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 					else
 					{
 						screen->DrawText( SmallFont, ulColor,
-							(LONG)( g_aulColumnX[ulIdx] * CleanXfac ) + lXPosOffset,
+							(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ) + lXPosOffset,
 							g_ulCurYPos,
 							szHandicapString,
 							DTA_Clean,
@@ -2244,7 +2244,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 					else
 					{
 						screen->DrawTexture( TexMan[szPatchName],
-							(LONG)( g_aulColumnX[ulIdx] * CleanXfac ) + lXPosOffset,
+							(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ) + lXPosOffset,
 							g_ulCurYPos - (( TexMan[szPatchName]->GetHeight( ) - SmallFont->GetHeight( )) / 2 ),
 							TAG_DONE );
 					}
@@ -2269,7 +2269,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 					else
 					{
 						screen->DrawTexture( TexMan[szPatchName],
-							(LONG)( g_aulColumnX[ulIdx] * CleanXfac ) + lXPosOffset,
+							(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ) + lXPosOffset,
 							g_ulCurYPos,
 							DTA_Clean,
 							g_bScale,
@@ -2296,7 +2296,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 					else
 					{
 						screen->DrawTexture( TexMan[szPatchName],
-							(LONG)( g_aulColumnX[ulIdx] * CleanXfac ) + lXPosOffset,
+							(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ) + lXPosOffset,
 							g_ulCurYPos - 1,
 							DTA_Clean,
 							g_bScale,
@@ -2357,7 +2357,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 						else
 						{
 							screen->DrawText( SmallFont, ( static_cast<signed> (CALLVOTE_GetVoteCaller()) == consoleplayer ) ? CR_RED : CR_GOLD,
-								(LONG)( g_aulColumnX[ulIdx] * CleanXfac ) + lXPosOffset,
+								(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ) + lXPosOffset,
 								g_ulCurYPos,
 								szVoteString,
 								DTA_Clean,
@@ -2512,7 +2512,7 @@ static void scoreboard_RenderIndividualPlayer( ULONG ulDisplayPlayer, ULONG ulPl
 			else
 			{
 				screen->DrawText( SmallFont, ulColor,
-						(LONG)( g_aulColumnX[ulIdx] * CleanXfac ),
+						(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ),
 						g_ulCurYPos,
 						szString,
 						TAG_DONE );
@@ -3102,7 +3102,7 @@ static void scoreboard_DrawRankings( ULONG ulPlayer )
 		else
 		{
 			screen->DrawText( g_pColumnHeaderFont, CR_RED,
-				(LONG)( g_aulColumnX[ulIdx] * CleanXfac ),
+				(LONG)( g_aulColumnX[ulIdx] / 320.0f * SCREENWIDTH ),
 				g_ulCurYPos,
 				szString,
 				TAG_DONE );

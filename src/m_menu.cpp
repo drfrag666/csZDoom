@@ -1375,8 +1375,7 @@ static void M_DrawSaveLoadCommon ()
 						listboxLeft+1, listboxTop+rowHeight*i+CleanYfac, savegamestring,
 						DTA_CleanNoMove, true, TAG_DONE);
 					screen->DrawText (SmallFont, CR_WHITE,
-						// [BB] Using Skulltag's increased precision of CleanXfac is wrong here.
-						listboxLeft+1+SmallFont->StringWidth (savegamestring)*static_cast<int>(CleanXfac),
+						listboxLeft+1+SmallFont->StringWidth (savegamestring)*CleanXfac,
 						listboxTop+rowHeight*i+CleanYfac, underscore,
 						DTA_CleanNoMove, true, TAG_DONE);
 				}

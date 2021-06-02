@@ -43,10 +43,7 @@
 
 #include "network.h"
 
-// [BC] Make CleanX/Yfac floats in Skulltag.
-// [BB] This is at least needed to display the medals at the correct position.
-extern float CleanXfac, CleanYfac;
-extern int CleanWidth, CleanHeight;
+extern int CleanWidth, CleanHeight, CleanXfac, CleanYfac;
 extern int DisplayWidth, DisplayHeight, DisplayBits;
 
 bool V_DoModeSetup (int width, int height, int bits);
@@ -111,8 +108,6 @@ enum
 	DTA_TextLen,		// stop after this many characters, even if \0 not hit
 	DTA_CellX,			// horizontal size of character cell
 	DTA_CellY,			// vertical size of character cell
-
-	DTA_IsText,			// [BC] Handle the drawing slightly differently for text.
 
 	// [BB] bool: Set DTA_VirtualWidth and DTA_VirtualHeight to con_virtualwidth and con_virtualheight respectively (not limited to text).
 	DTA_UseVirtualScreen,

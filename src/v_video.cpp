@@ -1251,7 +1251,7 @@ bool FNativeTexture::CheckWrapping(bool wrapping)
 
 CCMD(clean)
 {
-	Printf ("CleanXfac: %f\nCleanYfac: %f\n", CleanXfac, CleanYfac);
+	Printf ("CleanXfac: %d\nCleanYfac: %d\n", CleanXfac, CleanYfac);
 }
 
 //
@@ -1278,7 +1278,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 		int ratio;
 		int cwidth;
 		int cheight;
-		float cx1, cy1, cx2, cy2;
+		int cx1, cy1, cx2, cy2;
 
 		ratio = CheckRatio (width, height);
 		if (ratio & 4)
@@ -1291,13 +1291,12 @@ bool V_DoModeSetup (int width, int height, int bits)
 			cwidth = width * BaseRatioSizes[ratio][3] / 48;
 			cheight = height;
 		}
-		// [BB] ST uses float accuracy for CleanXfac and CleanYfac. This is necessary at least for the proper display of medals under 1024x768.
 		// Use whichever pair of cwidth/cheight or width/height that produces less difference
 		// between CleanXfac and CleanYfac.
-		cx1 = MAX(cwidth / 320.f, 1.f);
-		cy1 = MAX(cheight / 200.f, 1.f);
-		cx2 = MAX(width / 320.f, 1.f);
-		cy2 = MAX(height / 200.f, 1.f);
+		cx1 = MAX(cwidth / 320, 1);
+		cy1 = MAX(cheight / 200, 1);
+		cx2 = MAX(width / 320, 1);
+		cy2 = MAX(height / 200, 1);
 		if (abs(cx1 - cy1) <= abs(cx2 - cy2))
 		{ // e.g. 640x360 looks better with this.
 			CleanXfac = cx1;
@@ -1309,7 +1308,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 			CleanYfac = cy2;
 		}
 	}
-/* [BB] This causes the ugly vertical menu scaling.
+
 	if (CleanXfac > 1 && CleanYfac > 1 && CleanXfac != CleanYfac)
 	{
 		if (CleanXfac < CleanYfac)
@@ -1317,14 +1316,11 @@ bool V_DoModeSetup (int width, int height, int bits)
 		else
 			CleanXfac = CleanYfac;
 	}
-*/
+
 	CleanWidth = width / CleanXfac;
 	CleanHeight = height / CleanYfac;
-
-/* [RC] This triggers in 640x480 due to the "ugly vertical menu scaling" fix.
 	assert(CleanWidth >= 320);
 	assert(CleanHeight >= 200);
-*/
 
 	DisplayWidth = width;
 	DisplayHeight = height;

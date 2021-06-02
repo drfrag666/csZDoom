@@ -57,7 +57,7 @@
 
 // [RH] Stretch values to make a 320x200 image best fit the screen
 // without using fractional steppings
-float CleanXfac, CleanYfac;
+int CleanXfac, CleanYfac;
 
 // [RH] Effective screen sizes that the above scale values give you
 int CleanWidth, CleanHeight;
@@ -304,9 +304,6 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, int x, int y, DWORD tag, va_l
 	bool translationset = false;
 	bool virtBottom;
 
-	// [BC] Potentially flag the texture as being text so we can handle it differently.
-	bool	bIsText = false;
-
 	if (img == NULL || img->UseType == FTexture::TEX_Null)
 	{
 		va_end(tags);
@@ -389,15 +386,10 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, int x, int y, DWORD tag, va_l
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				parms->x = (LONG)((parms->x - 160*FRACUNIT) * CleanXfac + (Width * (FRACUNIT/2)));
-				parms->y = (LONG)((parms->y - 100*FRACUNIT) * CleanYfac + (Height * (FRACUNIT/2)));
-				parms->destwidth = (LONG)( parms->texwidth * CleanXfac * FRACUNIT );
-
-				// [BC] Text looks horrible when it's y-stretched.
-				if ( bIsText )
-					parms->destheight = parms->texheight * (int)CleanYfac * FRACUNIT;
-				else
-					parms->destheight = (LONG)( parms->texheight * CleanYfac * FRACUNIT );
+				parms->x = (parms->x - 160*FRACUNIT) * CleanXfac + (Width * (FRACUNIT/2));
+				parms->y = (parms->y - 100*FRACUNIT) * CleanYfac + (Height * (FRACUNIT/2));
+				parms->destwidth = parms->texwidth * CleanXfac * FRACUNIT;
+				parms->destheight = parms->texheight * CleanYfac * FRACUNIT;
 			}
 			break;
 
@@ -405,16 +397,8 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, int x, int y, DWORD tag, va_l
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				if ( bIsText )
-					parms->destwidth = parms->texwidth * (int)CleanXfac * FRACUNIT;
-				else
-					parms->destwidth = (LONG)( parms->texwidth * CleanXfac * FRACUNIT );
-
-				// [BC] Text looks horrible when it's y-stretched.
-				if ( bIsText )
-					parms->destheight = parms->texheight * (int)CleanYfac * FRACUNIT;
-				else
-					parms->destheight = (LONG)( parms->texheight * CleanYfac * FRACUNIT );
+				parms->destwidth = parms->texwidth * CleanXfac * FRACUNIT;
+				parms->destheight = parms->texheight * CleanYfac * FRACUNIT;
 			}
 			break;
 
@@ -453,8 +437,8 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, int x, int y, DWORD tag, va_l
 					parms->y *= CleanYfac;
 					if (ybot)
 						parms->y = Height * FRACUNIT + parms->y;
-					parms->destwidth = static_cast<fixed_t>(parms->texwidth * CleanXfac * FRACUNIT);
-					parms->destheight = static_cast<fixed_t>(parms->texheight * CleanYfac * FRACUNIT);
+					parms->destwidth = parms->texwidth * CleanXfac * FRACUNIT;
+					parms->destheight = parms->texheight * CleanYfac * FRACUNIT;
 				}
 				else
 				{
@@ -601,11 +585,6 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, int x, int y, DWORD tag, va_l
 
 		case DTA_RenderStyle:
 			parms->style.AsDWORD = va_arg (tags, DWORD);
-			break;
-
-		// [BC] Is what we're drawing text? If so, handle it differently.
-		case DTA_IsText:
-			bIsText = !!va_arg( tags, INTBOOL );
 			break;
 
 		// [BB]
