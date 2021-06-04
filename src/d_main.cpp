@@ -538,7 +538,7 @@ static int GetCompatibility(int mask)
 }
 
 // [BB] Removed the CVAR_ARCHIVE flag.
-CUSTOM_CVAR (Int, compatflags, 0, CVAR_SERVERINFO)
+CUSTOM_CVAR (Int, compatflags, 0, CVAR_ARCHIVE|CVAR_SERVERINFO)
 {
 	i_compatflags = GetCompatibility(self) | ii_compatflags;
 
@@ -556,7 +556,7 @@ CUSTOM_CVAR (Int, compatflags, 0, CVAR_SERVERINFO)
 //
 //==========================================================================
 
-CUSTOM_CVAR (Int, compatflags2, 0, CVAR_SERVERINFO)
+CUSTOM_CVAR (Int, compatflags2, 0, CVAR_ARCHIVE|CVAR_SERVERINFO)
 {
 	// [BC] If we're the server, tell clients that the dmflags changed.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( gamestate != GS_STARTUP ))
@@ -568,35 +568,42 @@ CUSTOM_CVAR (Int, compatflags2, 0, CVAR_SERVERINFO)
 
 CUSTOM_CVAR(Int, compatmode, 0, CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
-	int v;
+	int v, w;
 
 	switch (self)
 	{
 	default:
 	case 0:
 		v = 0;
+		w = 0;
 		break;
 
 	case 1:	// Doom2.exe compatible with a few relaxed settings
 		v = COMPATF_SHORTTEX|COMPATF_STAIRINDEX|COMPATF_USEBLOCKING|COMPATF_NODOORLIGHT|
 			COMPATF_TRACE|COMPATF_MISSILECLIP|COMPATF_SOUNDTARGET|COMPATF_DEHHEALTH|COMPATF_CROSSDROPOFF;
+		w = COMPATF2_OLD_RANDOM_GENERATOR;
 		break;
 
 	case 2:	// same as 1 but stricter (NO_PASSMOBJ and INVISIBILITY are also set)
 		v = COMPATF_SHORTTEX|COMPATF_STAIRINDEX|COMPATF_USEBLOCKING|COMPATF_NODOORLIGHT|
 			COMPATF_TRACE|COMPATF_MISSILECLIP|COMPATF_SOUNDTARGET|COMPATF_NO_PASSMOBJ|COMPATF_LIMITPAIN|
-			COMPATF_DEHHEALTH|COMPATF_INVISIBILITY|COMPATF_CROSSDROPOFF;
+			COMPATF_DEHHEALTH|COMPATF_INVISIBILITY|COMPATF_CROSSDROPOFF|COMPATF_WALLRUN|COMPATF_NOTOSSDROPS|
+			COMPATF_OLDRADIUSDMG;
+		w = COMPATF2_OLD_RANDOM_GENERATOR;
 		break;
 
-	case 3:
+	case 3: // Boom compat mode
 		v = COMPATF_TRACE|COMPATF_SOUNDTARGET|COMPATF_BOOMSCROLL;
+		w = 0;
 		break;
 
-	case 4:
+	case 4: // Old ZDoom compat mode
 		v = COMPATF_SOUNDTARGET;
+		w = COMPATF2_OLD_EXPLOSION_THRUST|COMPATF2_OLD_BRIDGE_DROPS|COMPATF2_OLD_ZDOOM_ZMOVEMENT;
 		break;
 	}
 	compatflags = v;
+	compatflags2 = w;
 }
 
 CVAR (Flag, compat_shortTex,	compatflags, COMPATF_SHORTTEX);

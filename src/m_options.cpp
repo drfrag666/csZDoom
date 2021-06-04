@@ -219,7 +219,7 @@ value_t CompatModes[5] = {
 	{ 1.0, "Doom" },
 	{ 2.0, "Doom (strict)" },
 	{ 3.0, "Boom" },
-	{ 4.0, "ZDoom 2.0.63" }
+	{ 4.0, "Old ZDoom" }
 };
 
 value_t GenderVals[3] = {
