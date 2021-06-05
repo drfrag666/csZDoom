@@ -1966,11 +1966,14 @@ void G_ParseMapInfo (const char *basemapinfo)
 	}
 
 	// Parse any extra MAPINFOs.
-	while ((lump = Wads.FindLump ("MAPINFO", &lastlump)) != -1)
+	if (!Args->CheckParm ("-nomapinfo"))
 	{
-		FMapInfoParser parse;
-		level_info_t defaultinfo;
-		parse.ParseMapInfo(lump, gamedefaults, defaultinfo);
+		while ((lump = Wads.FindLump ("MAPINFO", &lastlump)) != -1)
+		{
+			FMapInfoParser parse;
+			level_info_t defaultinfo;
+			parse.ParseMapInfo(lump, gamedefaults, defaultinfo);
+		}
 	}
 	EndSequences.ShrinkToFit ();
 
