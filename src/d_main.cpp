@@ -1994,6 +1994,7 @@ void D_DoomMain (void)
 	CALLVOTE_Construct( );
 
 	FRandom::StaticClearRandom ();
+	M_ClearRandom();
 	M_FindResponseFile ();
 
 	Printf ("M_LoadDefaults: Load system defaults.\n");

@@ -38,6 +38,8 @@
 #include <stdio.h>
 #include "basictypes.h"
 #include "sfmt/SFMT.h"
+// [BB] New #includes.
+#include "m_oldrandom.h"
 
 struct PNGHandle;
 
@@ -45,7 +47,7 @@ class FRandom
 {
 public:
 	FRandom ();
-	FRandom (const char *name);
+	FRandom (const char *name, bool useold = false);
 	~FRandom ();
 
 	// Returns a random number in the range [0,255]
@@ -207,6 +209,9 @@ private:
 #ifndef NDEBUG
 	bool initialized;
 #endif
+
+	// Use the old PRNG table if/when requested [ED850]
+	bool useOldRNG;
 };
 
 extern DWORD rngseed;			// The starting seed (not part of state)

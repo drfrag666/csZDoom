@@ -9,7 +9,7 @@
 #include "thingdef/thingdef.h"
 */
 
-static FRandom pr_spidrefire ("SpidRefire");
+static FRandom pr_spidrefire ("SpidRefire", true);
 
 DEFINE_ACTION_FUNCTION(AActor, A_SpidRefire)
 {

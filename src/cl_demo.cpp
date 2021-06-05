@@ -266,6 +266,7 @@ bool CLIENTDEMO_ProcessDemoHeader( void )
 			// Read in the random number generator seed.
 			rngseed = NETWORK_ReadLong( &g_ByteStream );
 			FRandom::StaticClearRandom( );
+			M_ClearRandom();
 			break;
 /*
 		case CLD_CVARS:

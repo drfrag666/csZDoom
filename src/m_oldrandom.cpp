@@ -63,8 +63,7 @@ unsigned char rndtable[256] = {
 
 int 	prndindex = 0;
 
-// Which one is deterministic?
-int P_Random (void)
+unsigned int P_Random (void)
 {
 	prndindex = (prndindex+1)&0xff;
 	return rndtable[prndindex];

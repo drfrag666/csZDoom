@@ -12,8 +12,8 @@
 #include "g_level.h"
 */
 
-static FRandom pr_tracer ("Tracer");
-static FRandom pr_skelfist ("SkelFist");
+static FRandom pr_tracer ("Tracer", true);
+static FRandom pr_skelfist ("SkelFist", true);
 
 //
 // A_SkelMissile

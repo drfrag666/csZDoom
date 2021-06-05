@@ -35,11 +35,12 @@
 #ifndef __M_OLDRANDOM__
 #define __M_OLDRANDOM__
 
-
 #include "doomtype.h"
 
 // Returns a number from 0 to 255, from a lookup table.
-int P_Random (void);
+unsigned int P_Random (void);
+void M_ClearRandom (void);
 
+extern int prndindex;
 
 #endif

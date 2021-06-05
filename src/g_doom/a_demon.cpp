@@ -9,7 +9,7 @@
 #include "thingdef/thingdef.h"
 */
 
-static FRandom pr_sargattack ("SargAttack");
+static FRandom pr_sargattack ("SargAttack", true);
 
 DEFINE_ACTION_FUNCTION(AActor, A_SargAttack)
 {

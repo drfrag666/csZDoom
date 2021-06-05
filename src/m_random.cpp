@@ -68,7 +68,6 @@
 #include "c_dispatch.h"
 #include "files.h"
 // [BB] New #includes.
-#include "m_oldrandom.h"
 #include "doomdef.h"
 
 // MACROS ------------------------------------------------------------------
@@ -115,7 +114,7 @@ static TDeletingArray<FRandom *> NewRNGs;
 //==========================================================================
 
 FRandom::FRandom ()
-: NameCRC (0)
+: NameCRC (0), useOldRNG (false)
 {
 #ifndef NDEBUG
 	Name = NULL;
@@ -133,9 +132,10 @@ FRandom::FRandom ()
 //
 //==========================================================================
 
-FRandom::FRandom (const char *name)
+FRandom::FRandom (const char *name, bool useold)
 {
 	NameCRC = CalcCRC32 ((const BYTE *)name, (unsigned int)strlen (name));
+	useOldRNG = useold;
 #ifndef NDEBUG
 	initialized = false;
 	Name = name;
@@ -268,7 +268,7 @@ DWORD FRandom::StaticSumSeeds ()
 		pr_acs.sfmt.u[0] + pr_acs.idx +
 		pr_chase.sfmt.u[0] + pr_chase.idx +
 		pr_lost.sfmt.u[0] + pr_lost.idx +
-		pr_slam.sfmt.u[0] + pr_slam.idx;
+		pr_slam.sfmt.u[0] + pr_slam.idx + prndindex;
 }
 
 //==========================================================================

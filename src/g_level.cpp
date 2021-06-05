@@ -602,6 +602,7 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 				rngseed = rngseed + 1;
 			}
 			FRandom::StaticClearRandom ();
+			M_ClearRandom();
 		}
 		P_ClearACSVars(true);
 		level.time = 0;

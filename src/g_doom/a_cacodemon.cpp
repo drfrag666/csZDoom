@@ -10,7 +10,7 @@
 #include "thingdef/thingdef.h"
 */
 
-static FRandom pr_headattack ("HeadAttack");
+static FRandom pr_headattack ("HeadAttack", true);
 
 DEFINE_ACTION_FUNCTION(AActor, A_HeadAttack)
 {

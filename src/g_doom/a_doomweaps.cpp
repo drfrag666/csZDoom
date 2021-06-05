@@ -15,12 +15,12 @@
 #include "doomstat.h"
 */
 
-static FRandom pr_punch ("Punch");
-static FRandom pr_saw ("Saw");
-static FRandom pr_fireshotgun2 ("FireSG2");
-static FRandom pr_fireplasma ("FirePlasma");
+static FRandom pr_punch ("Punch", true);
+static FRandom pr_saw ("Saw", true);
+static FRandom pr_fireshotgun2 ("FireSG2", true);
+static FRandom pr_fireplasma ("FirePlasma", true);
 static FRandom pr_firerail ("FireRail");
-static FRandom pr_bfgspray ("BFGSpray");
+static FRandom pr_bfgspray ("BFGSpray", true);
 
 //
 // A_Punch

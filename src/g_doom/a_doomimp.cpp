@@ -10,7 +10,7 @@
 #include "thingdef/thingdef.h"
 */
 
-static FRandom pr_troopattack ("TroopAttack");
+static FRandom pr_troopattack ("TroopAttack", true);
 
 //
 // A_TroopAttack

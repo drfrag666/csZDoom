@@ -10,10 +10,10 @@
 #include "thingdef/thingdef.h"
 */
 
-static FRandom pr_posattack ("PosAttack");
-static FRandom pr_sposattack ("SPosAttack");
-static FRandom pr_cposattack ("CPosAttack");
-static FRandom pr_cposrefire ("CPosRefire");
+static FRandom pr_posattack ("PosAttack", true);
+static FRandom pr_sposattack ("SPosAttack", true);
+static FRandom pr_cposattack ("CPosAttack", true);
+static FRandom pr_cposrefire ("CPosRefire", true);
 
 //
 // A_PosAttack

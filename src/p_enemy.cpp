@@ -54,10 +54,10 @@
 
 #include "gi.h"
 
-static FRandom pr_checkmissilerange ("CheckMissileRange");
+static FRandom pr_checkmissilerange ("CheckMissileRange", true);
 static FRandom pr_opendoor ("OpenDoor");
-static FRandom pr_trywalk ("TryWalk");
-static FRandom pr_newchasedir ("NewChaseDir");
+static FRandom pr_trywalk ("TryWalk", true);
+static FRandom pr_newchasedir ("NewChaseDir", true);
 static FRandom pr_lookformonsters ("LookForMonsters");
 static FRandom pr_lookforplayers ("LookForPlayers");
 static FRandom pr_scaredycat ("Anubis");
