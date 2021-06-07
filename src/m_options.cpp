@@ -410,6 +410,7 @@ static menu_t ConfirmMenu = {
  *
  *=======================================*/
 
+static void MultiplayerOptions ();
 static void CustomizeControls (void);
 static void GameplayOptions (void);
 static void CompatibilityOptions (void);
@@ -446,6 +447,8 @@ void WeaponOptions()
 
 static menuitem_t OptionItems[] =
 {
+	{ more,		"Multiplayer",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)MultiplayerOptions} },
+	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ more,		"Customize Controls",	{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)CustomizeControls} },
 	{ more,		"Mouse options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)MouseOptions} },
 	{ more,		"Joystick options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)JoystickOptions} },
@@ -454,7 +457,6 @@ static menuitem_t OptionItems[] =
 	{ more,		"Gameplay Options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)GameplayOptions} },
 	{ more,		"Compatibility Options",{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)CompatibilityOptions} },
 	{ more,		"Sound Options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)SoundOptions} },
-	{ more,		"Network Options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)NetworkOptions} }, // [CK]
 	{ more,		"Display Options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)VideoOptions} },
 	{ more,		"Set video mode",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)SetVidMode} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
@@ -2190,31 +2192,35 @@ void M_StartBrowserMenu( void );
 void M_Spectate( void );
 void M_CallVote( void );
 void M_ChangeTeam( void );
+void M_Disconnect( void );
 void M_Skirmish( void );
 
 static menuitem_t MultiplayerItems[] =
 {
-	{ more,		"Offline skirmish",				{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_Skirmish} }, // [RC] Clarification that Skirmish is not hosting
+	{ more,		"Network Options",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)NetworkOptions} }, // [CK]
 	{ more,		"Browse servers",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_StartBrowserMenu} },
-	{ more,		"Player setup",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_PlayerSetup} },
+	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
+	{ more,		"Offline skirmish",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_Skirmish} }, // [RC] Clarification that Skirmish is not hosting
+//	{ more,		"Player setup",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_PlayerSetup} },
 //	{ more,		"Account setup",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_AccountSetup} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ more,		"Spectate",				{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_Spectate} },
-	{ more,		"Switch teams",				{NULL},					{0.0}, {0.0}, {0.0}, {(value_t *)M_ChangeTeam} },
+	{ more,		"Switch teams",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_ChangeTeam} },
+	{ more,		"Disconnect",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_Disconnect} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ more,		"Call a vote",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)M_CallVote} },	
-	{ more,		"Ignore a player",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)ignoreplayermenu_Show} },
+	{ more,		"Ignore a player",		{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)ignoreplayermenu_Show} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ discrete, "Allow skins",			{&cl_skins},			{3.0}, {0.0},	{0.0}, {AllowSkinVals} },
 	{ discrete, "Allow taunts",			{&cl_taunts},			{2.0}, {0.0},	{0.0}, {OnOff} },
-//	{ discrete, "Allow medals",			{&cl_medals},			{2.0}, {0.0},	{0.0}, {OnOff} },
-//	{ discrete, "Allow icons",			{&cl_icons},			{2.0}, {0.0},	{0.0}, {OnOff} },
-	{ discrete,	"Identify players",		{&cl_identifytarget},	{2.0}, {0.0}, {0.0}, {OnOff} },
+	{ discrete, "Allow medals",			{&cl_medals},			{2.0}, {0.0},	{0.0}, {OnOff} },
+	{ discrete, "Allow icons",			{&cl_icons},			{2.0}, {0.0},	{0.0}, {OnOff} },
+	{ discrete,	"Identify players",		{&cl_identifytarget},	{2.0}, {0.0},	{0.0}, {OnOff} },
 	{ discrete,	"Start as spectator",	{&cl_startasspectator},	{2.0}, {0.0},	{0.0}, {YesNo} },
-	{ discrete,	"Override player colors",	{&cl_overrideplayercolors},	{4.0}, {0.0},	{0.0}, {OverridePlayerColors} },
-	{ string,	"Server password",		{&cl_password},				{0.0}, {0.0},	{0.0}, {NULL} },
+	{ discrete,	"Override player colors",{&cl_overrideplayercolors},{4.0}, {0.0},	{0.0}, {OverridePlayerColors} },
+	{ string,	"Server password",		{&cl_password},			{0.0}, {0.0},	{0.0}, {NULL} },
 	{ string,	"Join password",		{&cl_joinpassword},		{0.0}, {0.0},	{0.0}, {NULL} },
-	{ discrete, "Connection type",		{&cl_connectiontype},	{2.0}, {0.0}, {0.0}, {ConnectionTypeVals} },
+	{ discrete, "Connection type",		{&cl_connectiontype},	{2.0}, {0.0},	{0.0}, {ConnectionTypeVals} },
 	{ discrete, "Reset frags at join",	{&cl_dontrestorefrags},	{2.0}, {0.0},	{0.0}, {YesNo} },
 };
 
@@ -2227,7 +2233,7 @@ menu_t MultiplayerMenu = {
 	0,
 	0,
 	0,
-	M_SkulltagVersionDrawer,
+	NULL,
 	false,
 };
 
@@ -2968,6 +2974,16 @@ void M_ChangeTeam( void )
 	AddCommandString( changeteam );
 }
 
+void M_Disconnect( void )
+{
+	M_ClearMenus();
+	if ( NETWORK_GetState() == NETSTATE_CLIENT )
+	{
+		C_DoCommand( "disconnect" );
+	}
+	else
+		M_StartMessage( "You must be in a netgame to disconnect.\n\npress a key.", NULL, false );
+}
 
 void M_SetupPlayerSetupMenu( void )
 {
@@ -3383,7 +3399,7 @@ menu_t SkirmishMenu = {
 	0,
 	0,
 	0,
-	NULL,
+	M_SkulltagVersionDrawer,
 	false,
 	NULL,
 	MNF_ALIGNLEFT,
@@ -3794,7 +3810,7 @@ static menuitem_t PlayerClassSelectionItems[] =
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
-	{ discretes,	"Class",				{&menu_teamplayerclass},		   		{1.0}, {0.0},	{0.0}, {NULL} },
+	{ discretes,	"Class",			{&menu_teamplayerclass},{1.0}, {0.0},	{0.0}, {NULL} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
 	{ more,		"Join game",			{NULL},					{0.0}, {0.0},	{0.0}, {(value_t *)SelectClassAndJoinTeam} },
 	{ redtext,	" ",					{NULL},					{0.0}, {0.0},	{0.0}, {NULL} },
@@ -4393,13 +4409,6 @@ void M_SwitchMenu (menu_t *menu)
 	}
 
 	flagsvar = 0;
-}
-
-// [BC]
-bool M_StartMultiplayerMenu (void)
-{
-	M_SwitchMenu (&MultiplayerMenu);
-	return true;
 }
 
 bool M_StartOptionsMenu (void)
@@ -7359,6 +7368,11 @@ static void SetVidMode ()
 static void NetworkOptions ()
 {
 	M_SwitchMenu (&NetworkMenu);
+}
+
+static void MultiplayerOptions ()
+{
+	M_SwitchMenu (&MultiplayerMenu);
 }
 
 CCMD (menu_video)

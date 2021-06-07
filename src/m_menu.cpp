@@ -178,7 +178,6 @@ static void M_DrawHereticMainMenu ();
 static void M_DrawFiles ();
 
 // [BC] New prototypes.
-static void M_Multiplayer( int choice );
 static void M_ChooseBotSkill( int choice );
 static void M_DrawBotSkill( );
 
@@ -300,7 +299,6 @@ static const char *saved_playerclass = NULL;
 static oldmenuitem_t MainMenu[]=
 {
 	{1,0,'n',"M_NGAME",false,false,M_NewGame, CR_UNTRANSLATED},
-	{1,0,'m',"M_MULTI",false,false,M_Multiplayer, CR_UNTRANSLATED},
 	{1,0,'o',"M_OPTION",false,false,M_Options, CR_UNTRANSLATED},
 	{1,0,'l',"M_LOADG",false,false,M_LoadGame, CR_UNTRANSLATED},
 	{1,0,'s',"M_SAVEG",false,false,M_SaveGame, CR_UNTRANSLATED},
@@ -323,7 +321,6 @@ static oldmenu_t MainDef =
 static oldmenuitem_t HereticMainMenu[] =
 {
 	{1,1,'n',"$MNU_NEWGAME",false,false,M_NewGame, CR_UNTRANSLATED},
-	{1,1,'m',"$MNU_MULTIPLAYER",false,false,M_Multiplayer, CR_UNTRANSLATED},
 	{1,1,'o',"$MNU_OPTIONS",false,false,M_Options, CR_UNTRANSLATED},
 	{1,1,'f',"$MNU_GAMEFILES",false,false,M_GameFiles, CR_UNTRANSLATED},
 	{1,1,'i',"$MNU_INFO",false,false,M_ReadThis, CR_UNTRANSLATED},
@@ -1833,11 +1830,6 @@ void M_NewGame(int choice)
 	{
 		M_SetupNextMenu (&EpiDef);
 	}
-}
-
-void M_Multiplayer (int choice)
-{
-	OptionsActive = M_StartMultiplayerMenu ();
 }
 
 //==========================================================================
