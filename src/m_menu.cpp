@@ -2010,11 +2010,8 @@ void M_ChooseSkill (int choice)
 	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 		CLIENT_QuitNetworkGame( NULL );
 
-	// [BC] Put us back in single player mode, and reset our dmflags.
+	// [BC] Put us back in single player mode.
 	NETWORK_SetState( NETSTATE_SINGLE );
-	Val.Int = 0;
-	dmflags.ForceSet( Val, CVAR_Int );
-	dmflags2.ForceSet( Val, CVAR_Int );
 
 	// Assume normal mode for going through the menu.
 	Val.Bool = false;

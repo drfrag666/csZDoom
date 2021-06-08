@@ -1459,6 +1459,8 @@ static menuitem_t DMFlagsItems[] = {
 	{ bitflag,	"Allow freelook",		{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_FREELOOK} },
 	{ bitflag,	"Allow FOV",			{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_FOV} },
 	{ bitflag,	"Allow BFG aiming",		{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_FREEAIMBFG} },
+	{ bitflag,	"Rocket jumping",		{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_ROCKET_JUMPING} },
+	{ bitflag,	"Unblock players",		{&dmflags3},	{0}, {0}, {0}, {(value_t *)DF3_UNBLOCK_PLAYERS} },
 	{ bitflag,	"Allow automap",		{&dmflags2},	{1}, {0}, {0}, {(value_t *)DF2_NO_AUTOMAP} },
 	{ bitflag,	"Automap allies",		{&dmflags2},	{1}, {0}, {0}, {(value_t *)DF2_NO_AUTOMAP_ALLIES} },
 	{ bitflag,	"Allow spying",			{&dmflags2},	{1}, {0}, {0}, {(value_t *)DF2_DISALLOW_SPYING} },
@@ -1469,11 +1471,13 @@ static menuitem_t DMFlagsItems[] = {
 
 	{ bitflag,	"Lose frag if fragged",	{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_LOSEFRAG} },
 	{ bitflag,	"Keep frags gained",	{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_KEEPFRAGS} },
+	{ bitflag,	"Award damage dealt",	{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_AWARD_DAMAGE_INSTEAD_KILLS} },
 	{ bitflag,	"No team switching",	{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_TEAM_SWITCH} },
 
 	{ redtext,	" ",					{NULL},			{0}, {0}, {0}, {NULL} },
 	{ whitetext,"Cooperative Settings",	{NULL},			{0}, {0}, {0}, {NULL} },
 	{ bitflag,	"Spawn multi. weapons", {&dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_COOP_WEAPON_SPAWN} },
+	{ bitflag,	"Spawn singleplayer actors",{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_COOP_SP_ACTOR_SPAWN} },
 	{ bitflag,	"Lose entire inventory",{&dmflags},		{0}, {0}, {0}, {(value_t *)DF_COOP_LOSE_INVENTORY} },
 	{ bitflag,	"Keep keys",			{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_KEYS} },
 	{ bitflag,	"Keep weapons",			{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_WEAPONS} },
@@ -1481,6 +1485,7 @@ static menuitem_t DMFlagsItems[] = {
 	{ bitflag,	"Keep powerups",		{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_POWERUPS} },
 	{ bitflag,	"Keep ammo",			{&dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_AMMO} },
 	{ bitflag,	"Lose half ammo",		{&dmflags},		{0}, {0}, {0}, {(value_t *)DF_COOP_HALVE_AMMO} },
+	{ bitflag,	"Share keys",			{&dmflags3},	{0}, {0}, {0}, {(value_t *)DF3_SHARE_KEYS} },
 	{ bitflag,	"Spawn where died",		{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_SAME_SPAWN_SPOT} },
 	{ bitflag,	"Start with shotgun",	{&dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_COOP_SHOTGUNSTART} },
 };
@@ -3366,8 +3371,8 @@ CVAR( Int, menu_teambotspawn16, -1, CVAR_ARCHIVE );
 CVAR( Int, menu_teambotspawn17, -1, CVAR_ARCHIVE );
 CVAR( Int, menu_teambotspawn18, -1, CVAR_ARCHIVE );
 CVAR( Int, menu_teambotspawn19, -1, CVAR_ARCHIVE );
-CVAR( Int, menu_dmflags, 20612, CVAR_ARCHIVE );
-CVAR( Int, menu_dmflags2, 512, CVAR_ARCHIVE );
+CVAR( Int, menu_dmflags, 0, CVAR_ARCHIVE );
+CVAR( Int, menu_dmflags2, 0, CVAR_ARCHIVE );
 CVAR( Int, menu_modifier, 0, CVAR_ARCHIVE );
 
 static menuitem_t SkirmishItems[] = {
@@ -3400,7 +3405,7 @@ menu_t SkirmishMenu = {
 	0,
 	0,
 	0,
-	M_SkulltagVersionDrawer,
+	NULL,
 	false,
 	NULL,
 	MNF_ALIGNLEFT,
@@ -3621,16 +3626,28 @@ static menuitem_t SkirmishDMFlagsItems[] = {
 	{ bitflag,	"Allow jump",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_JUMP} },
 	{ bitflag,	"Allow freelook",		{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_FREELOOK} },
 	{ bitflag,	"Allow FOV",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_FOV} },
+	{ bitflag,	"Allow BFG aiming",		{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_FREEAIMBFG} },
+	{ bitflag,	"Rocket jumping",		{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_ROCKET_JUMPING} },
+	{ bitflag,	"Lose frag if fragged",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_LOSEFRAG} },
+	{ bitflag,	"Keep frags gained",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_KEEPFRAGS} },
 	{ bitflag,	"Drop weapons (DM)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_WEAPONDROP} },
 	{ bitflag,	"Don't spawn runes (DM)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_RUNES} },
-	{ bitflag,	"Instant flag return (ST/CTF)",{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_INSTANT_RETURN} },
+	{ bitflag,	"Instant flag return (ST/CTF)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_INSTANT_RETURN} },
 	{ bitflag,	"No team switching (ST/CTF)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_TEAM_SWITCH} },
 	{ bitflag,	"Server picks teams (ST/CTF)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_TEAM_SELECT} },
 	{ bitflag,	"Double ammo (DM)",		{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_DOUBLEAMMO} },
 	{ bitflag,	"Degeneration (DM)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_DEGENERATION} },
-	{ bitflag,	"Allow BFG aiming",		{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_YES_FREEAIMBFG} },
 	{ bitflag,	"Barrels respawn (DM)",	{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_BARRELS_RESPAWN} },
 	{ bitflag,	"No respawn protection (DM)",{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_NO_RESPAWN_INVUL} },
+	{ bitflag,	"Spawn multi. weapons", {&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_NO_COOP_WEAPON_SPAWN} },
+	{ bitflag,	"Spawn singleplayer actors",{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_COOP_SP_ACTOR_SPAWN} },
+	{ bitflag,	"Lose entire inventory",{&menu_dmflags},		{0}, {0}, {0}, {(value_t *)DF_COOP_LOSE_INVENTORY} },
+	{ bitflag,	"Keep keys",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_KEYS} },
+	{ bitflag,	"Keep weapons",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_WEAPONS} },
+	{ bitflag,	"Keep armor",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_ARMOR} },
+	{ bitflag,	"Keep powerups",		{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_POWERUPS} },
+	{ bitflag,	"Keep ammo",			{&menu_dmflags},		{1}, {0}, {0}, {(value_t *)DF_COOP_LOSE_AMMO} },
+	{ bitflag,	"Lose half ammo",		{&menu_dmflags},		{0}, {0}, {0}, {(value_t *)DF_COOP_HALVE_AMMO} },
 	{ bitflag,	"Start with shotgun",{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_COOP_SHOTGUNSTART} },
 	{ bitflag,	"Spawn where died (coop)",{&menu_dmflags2},	{0}, {0}, {0}, {(value_t *)DF2_SAME_SPAWN_SPOT} },
 };
