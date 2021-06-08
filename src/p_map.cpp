@@ -1736,6 +1736,11 @@ bool P_CheckPosition (AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm)
 		tm.dropoffz = thingdropoffz;
 	}
 
+	if ( !(thing->flags&(MF_DROPOFF|MF_FLOAT))
+		&& tm.floorz - tm.dropoffz > thing->MaxDropOffHeight && dmflags2 & DF2_DOUBLESPAWN
+		&& (gameinfo.gametype == GAME_Doom || gameinfo.gametype == GAME_Heretic))
+		return false;       // don't stand over a dropoff
+
 	return (thing->BlockingMobj = thingblocker) == NULL;
 }
 

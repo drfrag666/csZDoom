@@ -5172,6 +5172,86 @@ APlayerPawn *P_SpawnPlayer (FMapThing *mthing, bool bClientUpdate, player_t *p, 
 }
 
 
+bool CheckDoubleSpawn (AActor *&mobj, const AActor *info, const FMapThing *mthing, const fixed_t z, const PClass *type, bool first)
+{
+	bool spawned = true;
+
+	if (first) // not a double spawn
+	{
+		if (!P_CheckPosition (mobj, mobj->x, mobj->y))
+		{
+			mobj->Destroy();
+			mobj = AActor::StaticSpawn (type, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+		}
+		else return spawned;
+	}
+
+	if (!P_CheckPosition (mobj, mobj->x, mobj->y))
+	{
+		mobj->Destroy();
+		mobj = AActor::StaticSpawn (type, mthing->x - 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+		if (!P_CheckPosition (mobj, mobj->x, mobj->y))
+		{
+			mobj->Destroy();
+			mobj = AActor::StaticSpawn (type, mthing->x, mthing->y + 2 * info->radius, z, NO_REPLACE, true);
+			if (!P_CheckPosition (mobj, mobj->x, mobj->y))
+			{
+				mobj->Destroy();
+				mobj = AActor::StaticSpawn (type, mthing->x, mthing->y - 2 * info->radius, z, NO_REPLACE, true);
+				if (!P_CheckPosition (mobj, mobj->x, mobj->y))
+				{
+					mobj->Destroy();
+					spawned = false;
+				}
+			}
+		}
+	}
+
+	return spawned;
+}
+
+void SetMobj (AActor *mobj, const FMapThing *mthing, const PClass *type)
+{
+	mobj->SpawnPoint[0] = mthing->x;
+	mobj->SpawnPoint[1] = mthing->y;
+	mobj->SpawnPoint[2] = mthing->z;
+	mobj->SpawnAngle = mthing->angle;
+	mobj->SpawnFlags = mthing->flags;
+	P_FindFloorCeiling(mobj, true);
+
+	if (!(mobj->flags2 & MF2_ARGSDEFINED))
+	{
+		// [RH] Set the thing's special
+		mobj->special = mthing->special;
+		for(int j=0;j<5;j++) mobj->args[j]=mthing->args[j];
+	}
+
+	// [BC] Save the thing's special for resetting the map.
+	mobj->SavedSpecial = mobj->special;
+
+	// [Dusk] Save args
+	for (int i = 0; i < 5; ++i)
+		mobj->SavedArgs[i] = mobj->args[i];
+
+	// [RH] Add ThingID to mobj and link it in with the others
+	mobj->tid = mthing->thingid;
+	mobj->AddToHash ();
+
+	// [Dusk] Save TID for map resets.
+	mobj->SavedTID = mobj->tid;
+
+	mobj->angle = (DWORD)((mthing->angle * UCONST64(0x100000000)) / 360);
+	mobj->BeginPlay ();
+	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
+	{
+		mobj->LevelSpawned ();
+	}
+
+	// [BB] Potentially adjust the default flags of this actor.
+	GAMEMODE_AdjustActorSpawnFlags ( mobj );
+}
+
+
 //
 // P_SpawnMapThing
 // The fields of the mapthing should
@@ -5182,8 +5262,9 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 {
 	const PClass *i;
 	int mask;
-	AActor *mobj;
+	AActor *mobj, *mobj2;
 	fixed_t x, y, z;
+	bool spawned = true;
 
 	if (mthing->type == 0 || mthing->type == -1)
 		return NULL;
@@ -5524,43 +5605,25 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
-	mobj->SpawnPoint[0] = mthing->x;
-	mobj->SpawnPoint[1] = mthing->y;
-	mobj->SpawnPoint[2] = mthing->z;
-	mobj->SpawnAngle = mthing->angle;
-	mobj->SpawnFlags = mthing->flags;
-	P_FindFloorCeiling(mobj, true);
-
-	if (!(mobj->flags2 & MF2_ARGSDEFINED))
+	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && (gameinfo.gametype == GAME_Doom || gameinfo.gametype == GAME_Heretic))
 	{
-		// [RH] Set the thing's special
-		mobj->special = mthing->special;
-		for(int j=0;j<5;j++) mobj->args[j]=mthing->args[j];
+		spawned = CheckDoubleSpawn (mobj, info, mthing, z, i, true); // previously double spawned monster might block
 	}
 
-	// [BC] Save the thing's special for resetting the map.
-	mobj->SavedSpecial = mobj->special;
-
-	// [Dusk] Save args
-	for (int i = 0; i < 5; ++i)
-		mobj->SavedArgs[i] = mobj->args[i];
-
-	// [RH] Add ThingID to mobj and link it in with the others
-	mobj->tid = mthing->thingid;
-	mobj->AddToHash ();
-
-	// [Dusk] Save TID for map resets.
-	mobj->SavedTID = mobj->tid;
-
-	mobj->angle = (DWORD)((mthing->angle * UCONST64(0x100000000)) / 360);
-	mobj->BeginPlay ();
-	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
+	if (spawned)
 	{
-		mobj->LevelSpawned ();
+		SetMobj(mobj, mthing, i);
 	}
-  
-	// [BB] Potentially adjust the default flags of this actor.
-	GAMEMODE_AdjustActorSpawnFlags ( mobj );
+
+	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && (gameinfo.gametype == GAME_Doom || gameinfo.gametype == GAME_Heretic))
+	{
+		mobj2 = AActor::StaticSpawn (i, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+		spawned = CheckDoubleSpawn (mobj2, info, mthing, z, i, false);
+		if (spawned)
+		{
+			SetMobj(mobj2, mthing, i);
+		}
+	}
 
 	return mobj;
 }

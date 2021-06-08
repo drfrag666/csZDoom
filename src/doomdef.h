@@ -257,6 +257,7 @@ enum
 	DF2_CHASECAM			= 1 << 26,	// Players can use the chasecam cheat.
 	DF2_NOSUICIDE			= 1 << 27,	// Players are allowed to suicide.
 	DF2_NOAUTOAIM			= 1 << 28,	// Players cannot use autoaim.
+	DF2_DOUBLESPAWN			= 1 << 30,	// Spawn double the monsters
 
 	// [BB] Enforces some Gl rendering options to their default values.
 	DF2_FORCE_GL_DEFAULTS		= 1 << 18,
