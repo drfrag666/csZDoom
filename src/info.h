@@ -167,7 +167,7 @@ struct FActorInfo
 
 	FActorInfo *GetReplacement ();
 	FActorInfo *GetReplacee ();
-
+	const PClass *GetClassicModeReplacements ();
 	PClass *Class;
 	FState *OwnedStates;
 	FActorInfo *Replacement;

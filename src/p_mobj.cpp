@@ -5511,6 +5511,8 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		// Handle decorate replacements explicitly here
 		// to check for missing frames in the replacement object.
 		i = i->ActorInfo->GetReplacement()->Class;
+		if (dmflags2 & DF2_NO_DOOM2_MONSTERS && gameinfo.gametype == GAME_Doom)
+			i = i->ActorInfo->GetClassicModeReplacements();
 
 		const AActor *defaults = GetDefaultByType (i);
 		if (defaults->SpawnState == NULL ||

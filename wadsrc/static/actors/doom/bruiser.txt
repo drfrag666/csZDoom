@@ -135,3 +135,10 @@ ACTOR BaronBall
 	}
 }
 
+ACTOR ArachnotronReplacer_LZ : BaronOfHell
+{
+}
+
+ACTOR FatsoReplacer_LZ : BaronOfHell
+{
+}

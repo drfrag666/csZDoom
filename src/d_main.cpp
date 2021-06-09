@@ -487,6 +487,7 @@ CVAR (Flag, sv_awarddamageinsteadkills,		dmflags2, DF2_AWARD_DAMAGE_INSTEAD_KILL
 CVAR (Flag, sv_forcealpha,		dmflags2, DF2_FORCE_ALPHA);
 CVAR (Flag, sv_coop_spactorspawn,	dmflags2, DF2_COOP_SP_ACTOR_SPAWN);
 CVAR (Flag, sv_doublespawn,			dmflags2, DF2_DOUBLESPAWN);
+CVAR (Flag, sv_nodoom2monsters,		dmflags2, DF2_NO_DOOM2_MONSTERS);
 
 CVAR (Flag, sv_norunes,				dmflags2, DF2_NO_RUNES);
 CVAR (Flag, sv_instantreturn,		dmflags2, DF2_INSTANT_RETURN);

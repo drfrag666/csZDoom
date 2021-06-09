@@ -3179,7 +3179,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 		return;
 
 	if (
-		((level.flags & LEVEL_MAP07SPECIAL) && (type == NAME_Fatso || type == NAME_Arachnotron)) ||
+		((level.flags & LEVEL_MAP07SPECIAL) && (type == NAME_Fatso || type == NAME_Arachnotron ||
+			type == FName("FatsoReplacer_LZ") || type == FName("ArachnotronReplacer_LZ"))) ||
 		((level.flags & LEVEL_BRUISERSPECIAL) && (type == NAME_BaronOfHell)) ||
 		((level.flags & LEVEL_CYBORGSPECIAL) && (type == NAME_Cyberdemon)) ||
 		((level.flags & LEVEL_SPIDERSPECIAL) && (type == NAME_SpiderMastermind)) ||
@@ -3203,13 +3204,13 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 	}
 	if (level.flags & LEVEL_MAP07SPECIAL)
 	{
-		if (type == NAME_Fatso)
+		if (type == NAME_Fatso || type == FName("FatsoReplacer_LZ"))
 		{
 			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, 0, 0, false);
 			return;
 		}
 		
-		if (type == NAME_Arachnotron)
+		if (type == NAME_Arachnotron || type == FName("ArachnotronReplacer_LZ"))
 		{
 			EV_DoFloor (DFloor::floorRaiseByTexture, NULL, 667, FRACUNIT, 0, 0, 0, false);
 			return;

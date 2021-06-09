@@ -207,6 +207,37 @@ FActorInfo *FActorInfo::GetReplacee ()
 //
 //==========================================================================
 
+const PClass *FActorInfo::GetClassicModeReplacements()
+{
+	FName repname = NAME_None;
+
+	if (Class->TypeName == FName("Arachnotron"))
+		repname = FName("ArachnotronReplacer_LZ");
+	else if (Class->TypeName == FName("Archvile"))
+		repname = FName("BaronOfHell");
+	else if (Class->TypeName == FName("HellKnight"))
+		repname = FName("BaronOfHell");
+	else if (Class->TypeName == FName("Fatso"))
+		repname = FName("FatsoReplacer_LZ");
+	else if (Class->TypeName == FName("PainElemental"))
+		repname = FName("Cacodemon");
+	else if (Class->TypeName == FName("ChaingunGuy"))
+		repname = FName("ZombieMan");
+	else if (Class->TypeName == FName("Revenant"))
+		repname = FName("DoomImp");
+	else
+		repname = Class->TypeName;
+
+	const PClass *rep = PClass::FindClass(repname);
+
+	return rep;
+}
+
+//==========================================================================
+//
+//
+//==========================================================================
+
 void FActorInfo::SetDamageFactor(FName type, fixed_t factor)
 {
 	if (factor != FRACUNIT) 
