@@ -102,28 +102,29 @@ static	ULONG			g_ulCompatFlags;
 static	ULONG			g_ulCompatFlags2;
 static	ULONG			g_ulDMFlags;
 static	ULONG			g_ulDMFlags2;
+static	ULONG			g_ulDMFlags3;
 static	ULONG			g_ulLMSAllowedWeapons;
 static	ULONG			g_ulLMSSpectatorSettings;
 
 //==================================================================================
 // [RC] This big map of fun ties all of the DMFlags to their respective checkboxes.
 //==================================================================================
-#define NUMBER_OF_FLAGS 101
+#define NUMBER_OF_FLAGS 103
 
 static	FLAGMAPPING_t	g_Flags[NUMBER_OF_FLAGS] = 
 {
 	// If a flag does not have a checkbox, simply use NULL:
 	// { DF_NO_ITEMS,					NULL,							&g_ulDMFlags, },
-	{ DF_NO_HEALTH,						IDC_NO_HEALTH1,					&g_ulDMFlags, },	
-	{ DF_WEAPONS_STAY,					IDC_WEAPONS_STAY,				&g_ulDMFlags, },		
-	{ DF_SPAWN_FARTHEST,				IDC_SPAWN_FARTHEST,				&g_ulDMFlags, },	
-	{ DF_FORCE_RESPAWN,					IDC_FORCE_RESPAWN,				&g_ulDMFlags, },	
+	{ DF_NO_HEALTH,						IDC_NO_HEALTH1,					&g_ulDMFlags, },
+	{ DF_WEAPONS_STAY,					IDC_WEAPONS_STAY,				&g_ulDMFlags, },
+	{ DF_SPAWN_FARTHEST,				IDC_SPAWN_FARTHEST,				&g_ulDMFlags, },
+	{ DF_FORCE_RESPAWN,					IDC_FORCE_RESPAWN,				&g_ulDMFlags, },
 	{ DF_NO_ARMOR,						IDC_NO_ARMOR,					&g_ulDMFlags, },
 	{ DF_INFINITE_AMMO,					IDC_INFINITE_AMMO,				&g_ulDMFlags, },
 	{ DF_NO_MONSTERS,					IDC_NO_MONSTERS,				&g_ulDMFlags, },
 	{ DF_MONSTERS_RESPAWN,				IDC_MONSTERS_RESPAWN,			&g_ulDMFlags, },
 	{ DF_ITEMS_RESPAWN,					IDC_ITEMS_RESPAWN,				&g_ulDMFlags, },
-	{ DF_FAST_MONSTERS,					IDC_FAST_MONSTERS,				&g_ulDMFlags, },	
+	{ DF_FAST_MONSTERS,					IDC_FAST_MONSTERS,				&g_ulDMFlags, },
 	{ DF_NO_FREELOOK,					IDC_NO_FREELOOK,				&g_ulDMFlags, },
 	{ DF_RESPAWN_SUPER,					IDC_RESPAWN_SUPER,				&g_ulDMFlags, },
 	{ DF_NO_FOV,						IDC_NO_FOV,						&g_ulDMFlags, },
@@ -159,17 +160,19 @@ static	FLAGMAPPING_t	g_Flags[NUMBER_OF_FLAGS] =
 	{ DF2_CHASECAM,						IDC_DF2_CHASECAM,				&g_ulDMFlags2, },
 	{ DF2_NOSUICIDE,					IDC_DF2_NOSUICIDE,				&g_ulDMFlags2, },
 	{ DF2_NOAUTOAIM,					IDC_DF2_NOAUTOAIM,				&g_ulDMFlags2, },
-	{ DF2_DOUBLESPAWN,					NULL,							&g_ulDMFlags2, },
-	{ DF2_NO_DOOM2_MONSTERS,			NULL,							&g_ulDMFlags2, },
+	{ DF2_DOUBLESPAWN,					IDC_DF2_DOUBLESPAWN,			&g_ulDMFlags2, },
+	{ DF2_NO_DOOM2_MONSTERS,			IDC_DF2_NO_DOOM2_MONSTERS,		&g_ulDMFlags2, },
 	{ DF2_FORCE_GL_DEFAULTS,			IDC_DF2_FORCE_GL_DEFAULTS,		&g_ulDMFlags2, },
 	{ DF2_NO_ROCKET_JUMPING,			IDC_DF2_NO_ROCKET_JUMPING,		&g_ulDMFlags2, },
 	{ DF2_AWARD_DAMAGE_INSTEAD_KILLS,	IDC_DF2_AWARD_DAMAGE_INSTEAD_KILLS,	&g_ulDMFlags2, },
 	{ DF2_FORCE_ALPHA,					IDC_DF2_FORCE_ALPHA,			&g_ulDMFlags2, },
-	{ DF2_COOP_SP_ACTOR_SPAWN,			NULL,							&g_ulDMFlags2, },
+	{ DF2_COOP_SP_ACTOR_SPAWN,			IDC_DF2_COOP_SP_ACTOR_SPAWN,	&g_ulDMFlags2, },
+	{ DF3_UNBLOCK_PLAYERS,				IDC_DF3_UNBLOCK_PLAYERS,		&g_ulDMFlags3, },
+	{ DF3_SHARE_KEYS,					IDC_DF3_SHARE_KEYS,				&g_ulDMFlags3, },
 	{ COMPATF_SHORTTEX,					IDC_SHORTTEX,					&g_ulCompatFlags, },
 	{ COMPATF_STAIRINDEX,				IDC_STAIRINDEX,					&g_ulCompatFlags, },
 	{ COMPATF_LIMITPAIN,				IDC_LIMITPAIN,					&g_ulCompatFlags, },
-	{ COMPATF_SILENTPICKUP,				IDC_SILENTPICKUP,				&g_ulCompatFlags, },	
+	{ COMPATF_SILENTPICKUP,				IDC_SILENTPICKUP,				&g_ulCompatFlags, },
 	{ COMPATF_NO_PASSMOBJ,				IDC_NO_PASSMOBJ,				&g_ulCompatFlags, },
 	{ COMPATF_MAGICSILENCE,				IDC_MAGICSILENCE,				&g_ulCompatFlags, },
 	{ COMPATF_WALLRUN,					IDC_WALLRUN,					&g_ulCompatFlags, },
@@ -193,16 +196,16 @@ static	FLAGMAPPING_t	g_Flags[NUMBER_OF_FLAGS] =
 	{ COMPATF_DISABLETAUNTS,			IDC_DISABLETAUNTS,				&g_ulCompatFlags, },
 	{ COMPATF_ORIGINALSOUNDCURVE,		IDC_ORIGINALSOUNDCURVE,			&g_ulCompatFlags, },
 	{ COMPATF_OLDINTERMISSION,			IDC_OLDINTERMISSION,			&g_ulCompatFlags, },
-	{ COMPATF_DISABLESTEALTHMONSTERS,	IDC_DISABLESTEALTHMONSTERS,		&g_ulCompatFlags, },	
+	{ COMPATF_DISABLESTEALTHMONSTERS,	NULL,							&g_ulCompatFlags, },
 	{ COMPATF_OLDRADIUSDMG,				IDC_COMPATF_OLDRADIUSDMG,		&g_ulCompatFlags, },
 	{ COMPATF_NO_CROSSHAIR,				IDC_COMPATF_NO_CROSSHAIR,		&g_ulCompatFlags, },
 	{ COMPATF_OLD_WEAPON_SWITCH,		IDC_COMPATF_OLD_WEAPON_SWITCH,	&g_ulCompatFlags, },
 	{ COMPATF2_NETSCRIPTS_ARE_CLIENTSIDE,IDC_COMPATF2_NETSCRIPTS_ARE_CLIENTSIDE, &g_ulCompatFlags2, },
 	{ COMPATF2_CLIENTS_SEND_FULL_BUTTON_INFO, NULL,						&g_ulCompatFlags2, },
 	{ COMPATF2_NO_LAND,					NULL,							&g_ulCompatFlags2, },
-	{ COMPATF2_OLD_RANDOM_GENERATOR,					NULL,							&g_ulCompatFlags2, },
-	{ COMPATF2_NOGRAVITY_SPHERES,					NULL,							&g_ulCompatFlags2, },
-	{ COMPATF2_DONT_STOP_PLAYER_SCRIPTS_ON_DISCONNECT,					NULL,							&g_ulCompatFlags2, },
+	{ COMPATF2_OLD_RANDOM_GENERATOR,	IDC_COMPATF2_OLD_RANDOM_GENERATOR,&g_ulCompatFlags2, },
+	{ COMPATF2_NOGRAVITY_SPHERES,		NULL,							&g_ulCompatFlags2, },
+	{ COMPATF2_DONT_STOP_PLAYER_SCRIPTS_ON_DISCONNECT,NULL,				&g_ulCompatFlags2, },
 	{ LMS_AWF_CHAINSAW,					IDC_LMS_ALLOWCHAINSAW,			&g_ulLMSAllowedWeapons, },
 	{ LMS_AWF_PISTOL,					IDC_LMS_ALLOWPISTOL,			&g_ulLMSAllowedWeapons, },
 	{ LMS_AWF_SHOTGUN,					IDC_LMS_ALLOWSHOTGUN,			&g_ulLMSAllowedWeapons, },
@@ -294,6 +297,7 @@ BOOL CALLBACK SERVERCONSOLE_DMFlagsCallback( HWND hDlg, UINT Message, WPARAM wPa
 			g_hDlg = hDlg;
 			g_ulDMFlags = dmflags;
 			g_ulDMFlags2 = dmflags2;
+			g_ulDMFlags3 = dmflags3;
 			g_ulCompatFlags = compatflags;
 			g_ulCompatFlags2 = compatflags2;
 			g_ulLMSAllowedWeapons = lmsallowedweapons;
@@ -301,6 +305,7 @@ BOOL CALLBACK SERVERCONSOLE_DMFlagsCallback( HWND hDlg, UINT Message, WPARAM wPa
 
 			SendDlgItemMessage( hDlg, IDC_DMFLAGS_VALUE, EM_SETLIMITTEXT, 12, 0 );
 			SendDlgItemMessage( hDlg, IDC_DMFLAGS2_VALUE, EM_SETLIMITTEXT, 12, 0 );
+			SendDlgItemMessage( hDlg, IDC_DMFLAGS3_VALUE, EM_SETLIMITTEXT, 12, 0 );
 			SendDlgItemMessage( hDlg, IDC_COMPATFLAGS_VALUE, EM_SETLIMITTEXT, 12, 0 );
 			SendDlgItemMessage( hDlg, IDC_COMPATFLAGS2_VALUE, EM_SETLIMITTEXT, 12, 0 );
 			SendMessage( GetDlgItem( hDlg, IDC_TITLE ), WM_SETFONT, (WPARAM) CreateFont( 24, 0, 0, 0, 900, 0, 0, 0, 0, 0, 0, 0, 0, "Tahoma" ), (LPARAM) 1);
@@ -349,6 +354,10 @@ BOOL CALLBACK SERVERCONSOLE_DMFlagsCallback( HWND hDlg, UINT Message, WPARAM wPa
 
 				flags_ReadNewValue( hDlg, LOWORD( wParam ), g_ulDMFlags2 );
 				break;
+			case IDC_DMFLAGS3_VALUE:
+
+				flags_ReadNewValue( hDlg, LOWORD( wParam ), g_ulDMFlags3 );
+				break;
 			case IDC_COMPATFLAGS_VALUE:
 
 				flags_ReadNewValue( hDlg, LOWORD( wParam ), g_ulCompatFlags );
@@ -371,6 +380,8 @@ BOOL CALLBACK SERVERCONSOLE_DMFlagsCallback( HWND hDlg, UINT Message, WPARAM wPa
 				dmflags = g_ulDMFlags;
 			if ( dmflags2 != g_ulDMFlags2 )
 				dmflags2 = g_ulDMFlags2;
+			if ( dmflags3 != g_ulDMFlags3 )
+				dmflags3 = g_ulDMFlags3;
 			if ( compatflags != g_ulCompatFlags )
 				compatflags = g_ulCompatFlags;
 			if ( compatflags2 != g_ulCompatFlags2 )
@@ -467,6 +478,7 @@ static void flags_ReadValuesFromForm( void )
 {
 	g_ulDMFlags = 0;
 	g_ulDMFlags2 = 0;
+	g_ulDMFlags3 = 0;
 	g_ulCompatFlags = 0;
 	g_ulCompatFlags2 = 0;
 	g_ulLMSAllowedWeapons = 0;
@@ -493,6 +505,7 @@ static void flags_ReadValuesFromForm( void )
 	// Update the textboxes.
 	flags_UpdateValueLabel( IDC_DMFLAGS_VALUE, g_hDlg, g_ulDMFlags );
 	flags_UpdateValueLabel( IDC_DMFLAGS2_VALUE, g_hDlg, g_ulDMFlags2 );
+	flags_UpdateValueLabel( IDC_DMFLAGS3_VALUE, g_hDlg, g_ulDMFlags3 );
 	flags_UpdateValueLabel( IDC_COMPATFLAGS_VALUE, g_hDlg, g_ulCompatFlags );
 	flags_UpdateValueLabel( IDC_COMPATFLAGS2_VALUE, g_hDlg, g_ulCompatFlags2 );
 	flags_UpdateValueLabel( IDC_LMSWEAPONS_VALUE, g_hDlg_LMS, g_ulLMSAllowedWeapons );
