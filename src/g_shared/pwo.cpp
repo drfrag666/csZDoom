@@ -179,7 +179,7 @@ void PWO_FinalizeDef()
 		{
 			FString var_name;
 			const char* game_name = ((matdef[i].GameFilter != GAME_Any) ? GameNames[matdef[i].GameFilter] : NULL);
-			if(!game_name) game_name = "Zandronum";
+			if(!game_name) game_name = "csZDoom";
 			const char* weap_name = matdef[i].Name.GetChars();
 			if(matdef[i].Replacee.Len()) weap_name = matdef[i].Replacee.GetChars();
 			var_name.Format("PWO.%s.%s", game_name, weap_name);

@@ -2,7 +2,7 @@ cmake_minimum_required( VERSION 2.4 )
 project(Zandronum)
 
 set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where the pk3 files and executable will be created" )
-set( ZDOOM_EXE_NAME "zandronum" CACHE FILEPATH "Name of the executable to create" )
+set( ZDOOM_EXE_NAME "cszdoom" CACHE FILEPATH "Name of the executable to create" )
 
 find_package( JPEG )
 find_package( ZLIB )

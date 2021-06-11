@@ -130,12 +130,12 @@ static inline const char *MakeSaveSig()
 #endif
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
-#define GAMESIG "ZANDRONUM"
-#define BASEWAD "zandronum.pk3"
+#define GAMESIG "CSZDOOM"
+#define BASEWAD "cszdoom.pk3"
 
 // More stuff that needs to be different for derivatives.
-#define GAMENAME "Zandronum"
-#define GAMENAMELOWERCASE "zandronum"
+#define GAMENAME "csZDoom"
+#define GAMENAMELOWERCASE "cszdoom"
 #define DOMAIN_NAME "zandronum.com"
 #define FORUM_URL "http://" DOMAIN_NAME "/forum/"
 #define BUGS_FORUM_URL	"http://" DOMAIN_NAME "/tracker/"

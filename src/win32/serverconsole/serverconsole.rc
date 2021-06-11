@@ -161,7 +161,7 @@ FONT 8, "Tahoma"
     DEFPUSHBUTTON   "OK", IDOK, 245, 247, 55, 14, 0, WS_EX_LEFT
     PUSHBUTTON      "Cancel", IDCANCEL, 307, 247, 50, 14, 0, WS_EX_LEFT
     LTEXT           "Configure flags", IDC_TITLE, 9, 8, 160, 15, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Fine-tune your Zandronum server.", IDC_STATIC, 10, 26, 100, 8, SS_LEFT, WS_EX_LEFT
+    LTEXT           "Fine-tune your csZDoom server.", IDC_STATIC, 10, 26, 100, 8, SS_LEFT, WS_EX_LEFT
     RTEXT           "compatflags:", IDC_STATIC, 102, 235, 42, 8, SS_RIGHT, WS_EX_LEFT
     RTEXT           "compatflags2:", IDC_STATIC, 99, 249, 46, 8, SS_RIGHT, WS_EX_LEFT
     RTEXT           "dmflags:", IDC_STATIC, 10, 235, 32, 8, SS_RIGHT, WS_EX_LEFT
@@ -606,4 +606,4 @@ FONT 8, "Tahoma"
 // Icon resources
 //
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
-IDI_ICOSETTINGS    ICON           "../zandronum.ico"
+IDI_ICOSETTINGS    ICON           "../zdoom.ico"
