@@ -5210,7 +5210,7 @@ bool CheckDoubleSpawn (AActor *&mobj, const AActor *info, const FMapThing *mthin
 	return spawned;
 }
 
-void SetMobj (AActor *mobj, const FMapThing *mthing, const PClass *type)
+void SetMobj (AActor *mobj, const FMapThing *mthing)
 {
 	mobj->SpawnPoint[0] = mthing->x;
 	mobj->SpawnPoint[1] = mthing->y;
@@ -5264,7 +5264,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	int mask;
 	AActor *mobj, *mobj2;
 	fixed_t x, y, z;
-	bool spawned = true;
+	bool spawned;
 
 	if (mthing->type == 0 || mthing->type == -1)
 		return NULL;
@@ -5607,24 +5607,23 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
-	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && (gameinfo.gametype == GAME_Doom || gameinfo.gametype == GAME_Heretic))
+	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && i->TypeName != NAME_SpiderMastermind)
 	{
 		spawned = CheckDoubleSpawn (mobj, info, mthing, z, i, true); // previously double spawned monster might block
-	}
-
-	if (spawned)
-	{
-		SetMobj(mobj, mthing, i);
-	}
-
-	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && (gameinfo.gametype == GAME_Doom || gameinfo.gametype == GAME_Heretic))
-	{
+		if (spawned)
+		{
+			SetMobj(mobj, mthing);
+		}
 		mobj2 = AActor::StaticSpawn (i, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
 		spawned = CheckDoubleSpawn (mobj2, info, mthing, z, i, false);
 		if (spawned)
 		{
-			SetMobj(mobj2, mthing, i);
+			SetMobj(mobj2, mthing);
 		}
+	}
+	else
+	{
+		SetMobj(mobj, mthing);
 	}
 
 	return mobj;
