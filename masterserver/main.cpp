@@ -721,8 +721,8 @@ int main( int argc, char **argv )
 {
 	BYTESTREAM_s	*pByteStream;
 
-	std::cerr << "=== Zandronum Master ===\n";
-	std::cerr << "Revision: "SVN_REVISION_STRING"\n";
+	std::cerr << "=== csZDoom Master ===\n";
+	std::cerr << "Revision: " SVN_REVISION_STRING "\n";
 
 	std::cerr << "Port: " << DEFAULT_MASTER_PORT << std::endl << std::endl;
 
