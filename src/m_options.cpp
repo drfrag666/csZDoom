@@ -3509,8 +3509,8 @@ void M_StartSkirmishGame( void )
 
 	// [BB] In non-cooperative game modes we need to enable multiplayer emulation,
 	// otherwise respawning and player class selection won't work properly.
-	if ( !(GAMEMODE_GetFlags( GAMEMODE_GetCurrentMode( )) & GMF_COOPERATIVE) )
-		NETWORK_SetState( NETSTATE_SINGLE_MULTIPLAYER );
+	//if ( !(GAMEMODE_GetFlags( GAMEMODE_GetCurrentMode( )) & GMF_COOPERATIVE) )
+	NETWORK_SetState( NETSTATE_SINGLE_MULTIPLAYER );
 
 	// Remove all the existing bots.
 	BOTS_RemoveAllBots( false );
