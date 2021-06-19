@@ -78,6 +78,13 @@ CVAR( Bool, instagib, false, CVAR_SERVERINFO | CVAR_LATCH | CVAR_CAMPAIGNLOCK );
 CVAR( Bool, buckshot, false, CVAR_SERVERINFO | CVAR_LATCH | CVAR_CAMPAIGNLOCK );
 
 CVAR( Bool, sv_suddendeath, true, CVAR_SERVERINFO | CVAR_LATCH );
+CUSTOM_CVAR( Int, sv_survivaljointime, 60, CVAR_SERVERINFO | CVAR_LATCH )
+{
+	if ( self < 0 )
+		self = 0;
+	if ( self > 300 )
+		self = 300;
+}
 
 //*****************************************************************************
 //	VARIABLES
@@ -759,7 +766,12 @@ bool GAMEMODE_PreventPlayersFromJoining( ULONG ulExcludePlayer )
 	// [BB] The ga_newgame check fixes some problem when starting a survival invasion skirmish with bots while already in a survival invasion game with bots
 	// (the consoleplayer is spawned as spectator in this case and leaves a ghost player upon joining)
 	if ( ( gameaction != ga_worlddone ) && ( gameaction != ga_newgame ) && GAMEMODE_AreLivesLimited() && GAMEMODE_IsGameInProgressOrResultSequence() )
+	{
+		if (survival && level.time < (sv_survivaljointime * TICRATE)) // some extra time to join survival
+			return false;
+		else
 			return true;
+	}
 
 	return false;
 }
