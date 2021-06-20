@@ -424,6 +424,7 @@ void M_PlayerSetup (void);
 void M_SkulltagVersionDrawer( void );
 void Reset2Defaults (void);
 void Reset2Saved (void);
+void ResetB2Defaults (void);
 
 static void SetVidMode (void);
 
@@ -696,6 +697,8 @@ menuitem_t ControlsItems[] =
 	{ control,	"Mission objectives",	{NULL}, {0.0}, {0.0}, {0.0}, {(value_t *)"showpop 1"} },
 	{ control,	"Keys list",			{NULL}, {0.0}, {0.0}, {0.0}, {(value_t *)"showpop 2"} },
 	{ control,	"Weapons/ammo/stats",	{NULL}, {0.0}, {0.0}, {0.0}, {(value_t *)"showpop 3"} },
+	{ redtext,	" ",					{NULL}, {0.0}, {0.0}, {0.0}, {NULL} },
+	{ safemore,	"Reset to defaults",	{NULL}, {0.0}, {0.0}, {0.0}, {(value_t *)ResetB2Defaults} },
 };
 
 static TArray<menuitem_t> CustomControlsItems (0);
@@ -6819,6 +6822,12 @@ void Reset2Saved (void)
 	GameConfig->DoGlobalSetup ();
 	GameConfig->DoGameSetup (GameNames[gameinfo.gametype]);
 	UpdateStuff();
+}
+
+void ResetB2Defaults (void)
+{
+	C_SetDefaultBindings ();
+	M_PopMenuStack ();
 }
 
 static void StartMessagesMenu (void)
