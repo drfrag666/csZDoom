@@ -104,7 +104,7 @@ extern float S_GetMusicVolume (const char *music);
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
-static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range);
+static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, float attenuation);
 static bool S_IsChannelUsed(AActor *actor, int channel, int *seen);
 static void S_ActivatePlayList(bool goBack);
 static void CalcPosVel(FSoundChan *chan, FVector3 *pos, FVector3 *vel);
@@ -986,7 +986,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 	// If this sound doesn't like playing near itself, don't play it if
 	// that's what would happen.
-	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range))
+	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range, attenuation))
 	{
 		chanflags |= CHAN_EVICTED;
 	}
@@ -1193,7 +1193,7 @@ void S_RestartSound(FSoundChan *chan)
 
 		// If this sound doesn't like playing near itself, don't play it if
 		// that's what would happen.
-		if (chan->NearLimit > 0 && S_CheckSoundLimit(&S_sfx[chan->SoundID], pos, chan->NearLimit, chan->LimitRange))
+		if (chan->NearLimit > 0 && S_CheckSoundLimit(&S_sfx[chan->SoundID], pos, chan->NearLimit, chan->LimitRange, chan->DistanceScale))
 		{
 			return;
 		}
@@ -1402,7 +1402,7 @@ bool S_CheckSingular(int sound_id)
 //
 //==========================================================================
 
-bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range)
+bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, float attenuation)
 {
 	FSoundChan *chan;
 	int count;
@@ -1414,7 +1414,9 @@ bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, floa
 			FVector3 chanorigin;
 
 			CalcPosVel(chan, &chanorigin, NULL);
-			if ((chanorigin - pos).LengthSquared() <= limit_range)
+			// scale the limit distance with the attenuation. An attenuation of 0 means the limit distance is infinite and all sounds within the level are inside the limit.
+			float attn = std::min(chan->DistanceScale, attenuation);
+			if (attn <= 0 || (chanorigin - pos).LengthSquared() <= limit_range / attn)
 			{
 				count++;
 			}
