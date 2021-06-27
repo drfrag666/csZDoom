@@ -207,26 +207,26 @@ FActorInfo *FActorInfo::GetReplacee ()
 //
 //==========================================================================
 
-const PClass *FActorInfo::GetClassicModeReplacements()
+const PClass *FActorInfo::GetClassicModeReplacements(const PClass *type)
 {
 	FName repname = NAME_None;
 
-	if (Class->TypeName == FName("Arachnotron"))
+	if (type->TypeName == FName("Arachnotron"))
 		repname = FName("ArachnotronReplacer_LZ");
-	else if (Class->TypeName == FName("Archvile"))
+	else if (type->TypeName == FName("Archvile"))
 		repname = FName("BaronOfHell");
-	else if (Class->TypeName == FName("HellKnight"))
+	else if (type->TypeName == FName("HellKnight"))
 		repname = FName("BaronOfHell");
-	else if (Class->TypeName == FName("Fatso"))
+	else if (type->TypeName == FName("Fatso"))
 		repname = FName("FatsoReplacer_LZ");
-	else if (Class->TypeName == FName("PainElemental"))
+	else if (type->TypeName == FName("PainElemental"))
 		repname = FName("Cacodemon");
-	else if (Class->TypeName == FName("ChaingunGuy"))
+	else if (type->TypeName == FName("ChaingunGuy"))
 		repname = FName("ZombieMan");
-	else if (Class->TypeName == FName("Revenant"))
+	else if (type->TypeName == FName("Revenant"))
 		repname = FName("DoomImp");
 	else
-		repname = Class->TypeName;
+		repname = type->TypeName;
 
 	const PClass *rep = PClass::FindClass(repname);
 
