@@ -5172,32 +5172,40 @@ APlayerPawn *P_SpawnPlayer (FMapThing *mthing, bool bClientUpdate, player_t *p, 
 }
 
 
-bool CheckDoubleSpawn (AActor *&mobj, const AActor *info, const FMapThing *mthing, const fixed_t z, const PClass *type, bool first)
+bool CheckDoubleSpawn (AActor *&mobj, const AActor *info, const FMapThing *mthing, const fixed_t z, const PClass *type, fixed_t &x, fixed_t &y, bool first)
 {
 	bool spawned = true;
+	x = mthing->x;
+	y = mthing->y;
 
 	if (first) // not a double spawn
 	{
 		if (!P_CheckPosition (mobj, mobj->x, mobj->y))
 		{
 			mobj->Destroy();
-			mobj = AActor::StaticSpawn (type, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+			x = mthing->x + 2 * info->radius;
+			mobj = AActor::StaticSpawn (type, x, y, z, NO_REPLACE, true);
 		}
 		else return spawned;
 	}
 
+	x = mthing->x + 2 * info->radius;
 	if (!P_CheckPosition (mobj, mobj->x, mobj->y))
 	{
 		mobj->Destroy();
-		mobj = AActor::StaticSpawn (type, mthing->x - 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+		x = mthing->x - 2 * info->radius;
+		mobj = AActor::StaticSpawn (type, x, y, z, NO_REPLACE, true);
 		if (!P_CheckPosition (mobj, mobj->x, mobj->y))
 		{
 			mobj->Destroy();
-			mobj = AActor::StaticSpawn (type, mthing->x, mthing->y + 2 * info->radius, z, NO_REPLACE, true);
+			x = mthing->x;
+			y = mthing->y + 2 * info->radius;
+			mobj = AActor::StaticSpawn (type, x, y, z, NO_REPLACE, true);
 			if (!P_CheckPosition (mobj, mobj->x, mobj->y))
 			{
 				mobj->Destroy();
-				mobj = AActor::StaticSpawn (type, mthing->x, mthing->y - 2 * info->radius, z, NO_REPLACE, true);
+				y = mthing->y - 2 * info->radius;
+				mobj = AActor::StaticSpawn (type, x, y, z, NO_REPLACE, true);
 				if (!P_CheckPosition (mobj, mobj->x, mobj->y))
 				{
 					mobj->Destroy();
@@ -5210,10 +5218,10 @@ bool CheckDoubleSpawn (AActor *&mobj, const AActor *info, const FMapThing *mthin
 	return spawned;
 }
 
-void SetMobj (AActor *mobj, const FMapThing *mthing)
+void SetMobj (AActor *mobj, const FMapThing *mthing, const fixed_t &x, const fixed_t &y)
 {
-	mobj->SpawnPoint[0] = mthing->x;
-	mobj->SpawnPoint[1] = mthing->y;
+	mobj->SpawnPoint[0] = x;
+	mobj->SpawnPoint[1] = y;
 	mobj->SpawnPoint[2] = mthing->z;
 	mobj->SpawnAngle = mthing->angle;
 	mobj->SpawnFlags = mthing->flags;
@@ -5263,7 +5271,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	const PClass *i;
 	int mask;
 	AActor *mobj, *mobj2;
-	fixed_t x, y, z;
+	fixed_t x, y, z, posx, posy;
 	bool spawned;
 
 	if (mthing->type == 0 || mthing->type == -1)
@@ -5590,8 +5598,8 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	}
 
 	// spawn it
-	x = mthing->x;
-	y = mthing->y;
+	posx = x = mthing->x;
+	posy = y = mthing->y;
 
 	if (info->flags & MF_SPAWNCEILING)
 		z = ONCEILINGZ;
@@ -5609,21 +5617,21 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 
 	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && i->TypeName != NAME_SpiderMastermind)
 	{
-		spawned = CheckDoubleSpawn (mobj, info, mthing, z, i, true); // previously double spawned monster might block
+		spawned = CheckDoubleSpawn (mobj, info, mthing, z, i, posx, posy, true); // previously double spawned monster might block
 		if (spawned)
 		{
-			SetMobj(mobj, mthing);
-		}
-		mobj2 = AActor::StaticSpawn (i, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
-		spawned = CheckDoubleSpawn (mobj2, info, mthing, z, i, false);
-		if (spawned)
-		{
-			SetMobj(mobj2, mthing);
+			SetMobj(mobj, mthing, posx, posy);
+			mobj2 = AActor::StaticSpawn (i, mthing->x + 2 * info->radius, mthing->y, z, NO_REPLACE, true);
+			spawned = CheckDoubleSpawn (mobj2, info, mthing, z, i, posx, posy, false);
+			if (spawned)
+			{
+				SetMobj(mobj2, mthing, posx, posy);
+			}
 		}
 	}
 	else
 	{
-		SetMobj(mobj, mthing);
+		SetMobj(mobj, mthing, posx, posy);
 	}
 
 	return mobj;
