@@ -33,6 +33,7 @@ ACTOR WaterSplashBase
 	+NOGRAVITY
 	+DONTSPLASH
 	+DONTBLAST
+	+MOVEWITHSECTOR
 	States
 	{
 	Spawn:
@@ -50,6 +51,7 @@ ACTOR LavaSplash
 	+NOGRAVITY
 	+DONTSPLASH
 	+DONTBLAST
+	+MOVEWITHSECTOR
 	States
 	{
 	Spawn:
@@ -104,6 +106,7 @@ ACTOR SludgeSplash
 	+NOCLIP
 	+NOGRAVITY
 	+DONTSPLASH
+	+MOVEWITHSECTOR
 	States
 	{
 	Spawn:
@@ -151,6 +154,7 @@ ACTOR BloodSplashBase
 	+NOGRAVITY
 	+DONTSPLASH
 	+DONTBLAST
+	+MOVEWITHSECTOR
 	States
 	{
 	Spawn:
@@ -189,6 +193,7 @@ ACTOR SlimeSplash
 	+NOCLIP
 	+NOGRAVITY
 	+DONTSPLASH
+	+MOVEWITHSECTOR
 	States
 	{
 	Spawn:
