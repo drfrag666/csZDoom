@@ -34,9 +34,10 @@
 #ifndef __VERSION_H__
 #define __VERSION_H__
 
-// The svnrevision.h is automatically updated to grab the revision of
-// of the current source tree so that it can be included with version numbers.
-#include "svnrevision.h"
+const char *GetGitDescription();
+const char *GetGitHash();
+const char *GetGitTime();
+const char *GetVersionString();
 
 /** Lots of different version numbers **/
 
@@ -44,14 +45,12 @@
 #define GAME_MINOR_VERSION 2
 #define GAMEVER_STRING "1.4"
 #define DOTVERSIONSTR GAMEVER_STRING "-alpha"
-#define DOTVERSIONSTR_NOREV DOTVERSIONSTR
+#define VERSIONSTR DOTVERSIONSTR
 
 #define ZDVER_STRING "2.3.1"
 #define ZD_SVN_REVISION_STRING "1551"
 #define ZD_SVN_REVISION_NUMBER 1551
-
-// [BB] The version string that includes revision / compatibility data.
-#define DOTVERSIONSTR_REV DOTVERSIONSTR "-r" SVN_REVISION_STRING
+#define NET_REVISION_NUMBER 3500 // for NETGAMEVERSION
 
 // [BC] What version of ZDoom is this based off of?
 #define	ZDOOMVERSIONSTR		ZDVER_STRING"-"ZD_SVN_REVISION_STRING
@@ -69,6 +68,11 @@
 #define BUILD_ID			BUILD_INTERNAL
 #define BUILD_ID_STR		"Internal" // Used in the exe's metadata.
 
+// The version as seen in the Windows resource
+#define RC_FILEVERSION 1,4,0,0
+#define RC_PRODUCTVERSION 1,4,0,0
+#define RC_PRODUCTVERSION2 "1.4.0"
+
 // Version identifier for network games.
 // Bump it every time you do a release unless you're certain you
 // didn't change anything that will affect network protocol.
@@ -80,7 +84,7 @@
 // [BB] Use the revision number to automatically make builds from
 // different revisions incompatible. Skulltag only uses one byte
 // to transfer NETGAMEVERSION, so we need to limit its value to [0,255].
-#define NETGAMEVERSION (SVN_REVISION_NUMBER % 256)
+#define NETGAMEVERSION (NET_REVISION_NUMBER % 256)
 
 // Version stored in the ini's [LastRun] section.
 // Bump it if you made some configuration change that you want to
@@ -103,31 +107,13 @@
 // MINSAVEVER is the minimum level snapshot version that can be loaded.
 #define MINSAVEVER 1700
 
-#if ZD_SVN_REVISION_NUMBER < MINSAVEVER
-// Never write a savegame with a version lower than what we need
-#define SAVEVER			MINSAVEVER
-#define SAVESIG			MakeSaveSig()
-static inline const char *MakeSaveSig()
-{
-	static char foo[] = { 'Z','D','O','O','M','S','A','V','E',
-#if SAVEVER > 9999
-		'0' + (SAVEVER / 10000),
-#endif
-#if SAVEVER > 999
-		'0' + ((SAVEVER / 1000) % 10),
-#endif
-		'0' + ((SAVEVER / 100) % 10),
-		'0' + ((SAVEVER / 10) % 10),
-		'0' + (SAVEVER % 10),
-		'\0'
-	};
-	return foo;
-}
-#else
-// savegame versioning is based on ZDoom revisions
-#define SAVEVER			ZD_SVN_REVISION_NUMBER
-#define SAVESIG			"ZDOOMSAVE"ZD_SVN_REVISION_STRING
-#endif
+// Use 3500 as the base git save version, since it's higher than the
+// SVN revision ever got.
+#define SAVEVER 3500
+
+#define SAVEVERSTRINGIFY2(x) #x
+#define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
+#define SAVESIG "ZDOOMSAVE" SAVEVERSTRINGIFY(SAVEVER)
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
 #define GAMESIG "CSZDOOM"

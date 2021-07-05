@@ -1354,8 +1354,7 @@ void C_DrawConsole (bool hw2d)
 		if (ConBottom >= 12)
 		{
 			// [BC] In addition to drawing the program version, draw the ZDoom version as well.
-			// [RC] Also draw revision number, but break these up so it's legible.
-			sprintf( szString, "\\cIv%s (\\cD%s\\cI) \\ch%s", DOTVERSIONSTR, ZDOOMVERSIONSTR, SVN_REVISION_STRING );
+			sprintf( szString, "\\cIv%s (\\cD%s\\cI)", GetVersionString(), ZDOOMVERSIONSTR );
 			V_ColorizeString( szString );
 
 			screen->DrawText (ConFont, CR_ORANGE, SCREENWIDTH - 8 -

@@ -2283,7 +2283,7 @@ void M_SkulltagVersionDrawer( void )
 	ulCurYPos = 182;
 	ulTextHeight = ( gameinfo.gametype == GAME_Doom ? 8 : 9 );
 
-	sprintf( szString, "%s v%s", GAMENAME, DOTVERSIONSTR_REV );
+	sprintf( szString, "%s v%s", GAMENAME, GetVersionString() );
 	screen->DrawText( SmallFont, CR_WHITE, 160 - ( SmallFont->StringWidth( szString ) / 2 ), ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 	ulCurYPos += ulTextHeight;

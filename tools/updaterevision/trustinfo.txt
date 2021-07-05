@@ -5,7 +5,7 @@
       processorArchitecture="X86"
       name="UpdateRevision"
       type="win32" />
-  <description>Update svnrevision.h for the ZDoom source build process.</description>
+  <description>Update gitinfo.h for the ZDoom source build process.</description>
   <ms_asmv3:trustInfo xmlns:ms_asmv3="urn:schemas-microsoft-com:asm.v3">
     <ms_asmv3:security>
       <ms_asmv3:requestedPrivileges>
