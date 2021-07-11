@@ -44,7 +44,7 @@ const char *GetVersionString();
 #define GAME_MAJOR_VERSION 1
 #define GAME_MINOR_VERSION 2
 #define GAMEVER_STRING "1.4"
-#define DOTVERSIONSTR GAMEVER_STRING "-alpha"
+#define DOTVERSIONSTR GAMEVER_STRING
 #define VERSIONSTR DOTVERSIONSTR
 
 #define ZDVER_STRING "2.3.1"
@@ -65,8 +65,8 @@ const char *GetVersionString();
 #define BUILD_PRIVATE		3
 
 // [RC] Release code ID for this build.
-#define BUILD_ID			BUILD_INTERNAL
-#define BUILD_ID_STR		"Internal" // Used in the exe's metadata.
+#define BUILD_ID			BUILD_RELEASE
+#define BUILD_ID_STR		"Release" // Used in the exe's metadata.
 
 // The version as seen in the Windows resource
 #define RC_FILEVERSION 1,4,0,0
