@@ -29,6 +29,8 @@ Here's why you should kill your time with Zandronum, versus vanilla Doom:
     * Bots, and support for custom bots
 * So much more!
 
+csZDoom is a fork of Zandronum 1.3.
+
 Links
 -----
 
