@@ -1580,7 +1580,7 @@ flickerlight TIMEBOMB_X1
     chance 0.3
 }
 
-flickerlight TIMEBOMB_X1
+flickerlight TIMEBOMB_X2
 {
     color 0.8 0.4 0.0
     size 56
@@ -1588,7 +1588,7 @@ flickerlight TIMEBOMB_X1
     chance 0.3
 }
 
-flickerlight TIMEBOMB_X1
+flickerlight TIMEBOMB_X3
 {
     color 0.6 0.2 0.0
     size 64
@@ -1596,7 +1596,7 @@ flickerlight TIMEBOMB_X1
     chance 0.3
 }
 
-flickerlight TIMEBOMB_X1
+flickerlight TIMEBOMB_X4
 {
     color 0.4 0.0 0.0
     size 72
@@ -1604,7 +1604,7 @@ flickerlight TIMEBOMB_X1
     chance 0.3
 }
 
-flickerlight TIMEBOMB_X1
+flickerlight TIMEBOMB_X5
 {
     color 0.2 0.0 0.0
     size 80
