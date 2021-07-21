@@ -1349,10 +1349,12 @@ void DBaseStatusBar::DrawLog ()
 			hudheight = SCREENHEIGHT / CleanYfac;
 			break;
 
+		/* [BB] Zandronum doesn't support this.
 		case 2:
 			hudwidth = SCREENWIDTH / 2;
 			hudheight = SCREENHEIGHT / 2;
 			break;
+		*/
 		}
 
 		int linelen = hudwidth<640? Scale(hudwidth,9,10)-40 : 560;
