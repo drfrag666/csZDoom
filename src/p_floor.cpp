@@ -1112,7 +1112,7 @@ manual_stair:
 		floor->m_StepTime = floor->m_PerStepTime = persteptime;
 
 		floor->m_Crush = (!usespecials && speed == 4*FRACUNIT) ? 10 : -1; //jff 2/27/98 fix uninitialized crush field
-		floor->m_Hexencrush = false;
+		floor->m_Hexencrush = true;
 
 		floor->m_Speed = speed;
 		height = sec->floorplane.ZatPoint (0, 0) + stairstep;
