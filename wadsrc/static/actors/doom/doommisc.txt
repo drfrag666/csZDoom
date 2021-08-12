@@ -25,7 +25,7 @@ ACTOR ExplosiveBarrel 2035
 		BEXP A 5 BRIGHT
 		BEXP B 5 BRIGHT A_Scream
 		BEXP C 5 BRIGHT
-		BEXP D 5 BRIGHT A_Explode
+		BEXP D 10 BRIGHT A_Explode
 		BEXP E 10 BRIGHT
 		BEXP E 1050 BRIGHT A_BarrelDestroy
 		BEXP E 5 A_Respawn
