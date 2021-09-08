@@ -2201,37 +2201,37 @@ void D_DoomMain (void)
 	if (Args->CheckParm ("-altdeath"))
 	{
 		deathmatch = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_ITEMS_RESPAWN;
 	}
 	else if (Args->CheckParm ("-deathmatch"))
 	{
 		deathmatch = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-teamplay"))
 	{
 		teamplay = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-duel"))
 	{
 		duel = 1;
-		flags |= DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-terminator"))
 	{
 		terminator = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-lastmanstanding"))
 	{
 		lastmanstanding = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-teamlms"))
 	{
 		teamlms = 1;
-		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN | DF_NO_MONSTERS;
+		flags |= DF_SPAWN_FARTHEST | DF_WEAPONS_STAY | DF_ITEMS_RESPAWN;
 	}
 	if (Args->CheckParm ("-possession"))
 	{
