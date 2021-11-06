@@ -5615,7 +5615,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
-	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && i->TypeName != NAME_SpiderMastermind)
+	if (dmflags2 & DF2_DOUBLESPAWN && info->flags3 & MF3_ISMONSTER && info->radius < 65)
 	{
 		spawned = CheckDoubleSpawn (mobj, info, mthing, z, i, posx, posy, true); // previously double spawned monster might block
 		if (spawned)
